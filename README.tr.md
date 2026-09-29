@@ -15,7 +15,7 @@ Kurgu, tek bir düz dosyanın, `project.json`'un etrafında kurulmuş yerel bir 
 
 "Kurgu", İngilizcede "edit / montage" demek.
 
-<!-- screenshot -->
+<p align="center"><img src="docs/assets/hero.gif" alt="Kurgu: tek istem, on dört stil, kendi editöründe düzenlendi" width="720"></p>
 
 ## Nasıl çalışır
 

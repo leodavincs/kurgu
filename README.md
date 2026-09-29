@@ -15,7 +15,7 @@ Kurgu is a local video editor built around one plain file, `project.json`. Claud
 
 "Kurgu" is Turkish for "edit / montage".
 
-<!-- screenshot -->
+<p align="center"><img src="docs/assets/hero.gif" alt="Kurgu: one prompt, fourteen styles, edited in its own editor" width="720"></p>
 
 ## How it works
 

@@ -152,7 +152,8 @@ def test_parity_text_motion(tmp_path):
     allstats = [stats(r, p) for _, r, p in res]
     print("PARITY text", json.dumps(allstats))
     for s in allstats:
-        assert s["mean"] <= 2.0, s      # measured mean 0.7-1.2 (Pillow vs Chrome glyph rasterisation, edges only)
+        # measured mean 0.7-1.2 on macOS/Linux; Windows Chrome rasterises glyphs with DirectWrite (~2.3, inner mean ~0.01)
+        assert s["mean"] <= (3.0 if sys.platform == "win32" else 2.0), s
 
 
 def project_c():
