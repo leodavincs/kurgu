@@ -234,7 +234,7 @@ class Page:
         if pre:
             self.eval(";".join(pre))
             self.send("Page.reload")
-        self.wait_for(ready, 20)
+        self.wait_for(ready, 60 if os.environ.get("CI") else 20)
         time.sleep(0.6)
 
     # -- input
