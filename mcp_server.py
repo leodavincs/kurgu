@@ -227,7 +227,7 @@ def tool_open_editor(a, ctx):
         proc = subprocess.Popen([sys.executable, os.path.join(HERE, "server.py"), d, "--no-open"],
                                 stdin=subprocess.DEVNULL, stdout=logf, stderr=logf, cwd=d, **kw)
         logf.close()
-        deadline = time.time() + 20
+        deadline = time.time() + (60 if os.environ.get("CI") else 20)   # slow shared CI runners
         while time.time() < deadline and port is None:
             if proc.poll() is not None:
                 break
@@ -795,7 +795,7 @@ def tool_render_frame(a, ctx):
             os.close(fd)
             try:
                 r = subprocess.run([sys.executable, os.path.join(HERE, "render.py"), d, "--frame", f"{t:.3f}", "--output", tmp],
-                                   capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+                                   stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
                 if r.returncode != 0:
                     err = next((s[5:].strip() for s in r.stdout.splitlines() if s.startswith("ERROR")), None)
                     raise ToolError("Frame render failed: " + (err or (r.stderr.strip().splitlines() or ["unknown error"])[-1]))
@@ -815,7 +815,7 @@ def tool_render(a, ctx):
     draft = a.get("draft", True)
     cmd = [sys.executable, os.path.join(HERE, "render.py"), d] + (["--draft"] if draft else [])
     t0 = time.time()
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1)
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1)
     PROCS.add(proc)
     cancel = ctx["cancel"]
 

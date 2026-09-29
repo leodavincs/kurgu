@@ -18,23 +18,41 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EXAMPLE = os.path.join(ROOT, "examples", "basic")
 
+WIN_CHROME = [os.path.join(os.environ.get(v, ""), *rest) for v in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")
+              for rest in (("Google", "Chrome", "Application", "chrome.exe"),)] if sys.platform.startswith("win") else []
 CHROME_CANDIDATES = [
-    os.environ.get("CHROME_BIN", ""),
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
     "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser",
-]
+] + WIN_CHROME
+CI = bool(os.environ.get("CI"))
+STARTUP_WAIT = 60 if CI else 20      # seconds a spawned server / Chrome gets to come up
 
 
 def find_chrome():
+    """KURGU_CHROME / CHROME_PATH / CHROME_BIN (what browser-actions/setup-chrome exposes), then well-known places, then PATH."""
+    for var in ("KURGU_CHROME", "CHROME_PATH", "CHROME_BIN"):
+        c = os.environ.get(var, "").strip()
+        if c and os.path.exists(c):
+            return c
     for c in CHROME_CANDIDATES:
         if c and os.path.exists(c):
             return c
-    for name in ("google-chrome", "chromium", "chrome"):
+    for name in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome"):
         p = shutil.which(name)
         if p:
             return p
     return None
+
+
+def chrome_flags(port, profile, width, height, extra=()):
+    """Command-line flags shared by every test that starts headless Chrome. On Linux (CI runs as a user without a usable
+    sandbox / with a tiny /dev/shm) --no-sandbox and --disable-dev-shm-usage are needed."""
+    flags = ["--headless=new", "--remote-debugging-port=%d" % port, "--remote-allow-origins=*", "--user-data-dir=" + profile,
+             "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--window-size=%d,%d" % (width, height)]
+    if sys.platform.startswith("linux") or os.environ.get("CI"):
+        flags += ["--no-sandbox", "--disable-dev-shm-usage"]
+    return flags + list(extra) + ["about:blank"]
 
 
 def free_port():
@@ -45,7 +63,8 @@ def free_port():
     return p
 
 
-def wait_http(url, timeout=20):
+def wait_http(url, timeout=None):
+    timeout = timeout or STARTUP_WAIT
     t0 = time.time()
     while time.time() - t0 < timeout:
         try:
@@ -73,9 +92,18 @@ class Server:
         if fake_agent:  # the test double of the AI agent (tests/fake_agent.py) so the Ask-AI box can be driven
             import shlex
             env["KURGU_AGENT_CMD"] = "%s %s" % (shlex.quote(sys.executable), shlex.quote(os.path.join(ROOT, "tests", "fake_agent.py")))
-        self.proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py"), self.dir, "--port", str(self.port), "--no-open"],
-                                     cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        wait_http(self.url("/api/project"))
+        self.log = os.path.join(self.tmp, "server.log")
+        with open(self.log, "wb") as lf:
+            self.proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py"), self.dir, "--port", str(self.port), "--no-open"],
+                                         cwd=ROOT, env=env, stdout=lf, stderr=subprocess.STDOUT)
+        try:
+            wait_http(self.url("/api/project"))
+        except RuntimeError as e:      # say why (dead process? slow start?) in the CI log
+            try:
+                tail = open(self.log, encoding="utf-8", errors="replace").read()[-1500:]
+            except OSError:
+                tail = ""
+            raise RuntimeError("%s (server exit code %s)\n%s" % (e, self.proc.poll(), tail))
 
     def url(self, path="/"):
         return "http://127.0.0.1:%d%s" % (self.port, path)
@@ -97,10 +125,7 @@ class Chrome:
         import websocket  # noqa: F401  (import error -> caller skips)
         self.tmp = tempfile.mkdtemp(prefix="kurgu-chrome-")
         self.port = free_port()
-        self.proc = subprocess.Popen([find_chrome(), "--headless=new", "--remote-debugging-port=%d" % self.port, "--remote-allow-origins=*",
-                                      "--user-data-dir=" + self.tmp, "--no-first-run", "--no-default-browser-check", "--disable-gpu",
-                                      "--autoplay-policy=no-user-gesture-required", "--hide-scrollbars=false",
-                                      "--window-size=%d,%d" % (width, height), "about:blank"],
+        self.proc = subprocess.Popen([find_chrome()] + chrome_flags(self.port, self.tmp, width, height, ["--autoplay-policy=no-user-gesture-required", "--hide-scrollbars=false"]),
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         wait_http("http://127.0.0.1:%d/json/version" % self.port)
         self.width, self.height, self.scale = width, height, scale

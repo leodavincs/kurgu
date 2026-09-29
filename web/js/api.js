@@ -8,7 +8,7 @@ import { t, getLang } from './i18n.js';
 async function json(url, opt) {
   const r = await fetch(url, opt);
   let data = null; try { data = await r.json(); } catch (e) { /* empty body */ }
-  return { ok: r.ok, status: r.status, data };
+  return { ok: r.ok, status: r.status, data, headers: r.headers };
 }
 const sendJson = (url, method, body) => json(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
@@ -31,7 +31,9 @@ export async function loadProject() {
 export async function fetchFonts() {
   const r = await json('/api/fonts');
   if (!r.ok) return [];
-  return Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.fonts) ? r.data.fonts : []);
+  const list = Array.isArray(r.data) ? r.data : (r.data && Array.isArray(r.data.fonts) ? r.data.fonts : []);
+  list.scanning = r.headers.get('X-Kurgu-Fonts-Scanning') === '1';   // system fonts are still being scanned: ask again later
+  return list;
 }
 export async function mediaInfo(path) {
   try { const r = await json('/api/media-info?path=' + encodeURIComponent(path)); return r.ok ? r.data : null; } catch (e) { return null; }

@@ -31,7 +31,7 @@ def test_python_matches_shared_vectors():
         e = _cmp(got, c["out"])
         worst = max(worst, e)
         assert e <= v["tolerance"], c
-    assert len(v["cases"]) > 3000 and worst == 0.0      # same code that generated them: bit-identical
+    assert len(v["cases"]) > 3000 and worst <= 1e-12      # same code that generated them: identical up to libm last-bit differences (Linux/CI)
 
 
 @pytest.mark.skipif(not shutil.which("node"), reason="node not installed")

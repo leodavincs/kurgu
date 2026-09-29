@@ -1,12 +1,19 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kurgu-lockup-dark.svg">
+    <img src="docs/assets/kurgu-lockup-light.svg" alt="Kurgu" width="320">
+  </picture>
+</p>
+
 # Kurgu
 
 **English** | [Türkçe](README.tr.md)
 
-> Claude writes the video as code; you fine-tune it like Premiere.
+> **Your coding agent writes the video. You direct it.** Free, open source, runs on your machine.
 
 Kurgu is a local video editor built around one plain file, `project.json`. Claude Code writes the timeline (clips, titles, subtitles, music, effects). You open it in a browser editor with a layer list, a live preview and an inspector, and adjust what Claude got almost right. Claude sees what you changed and what you have selected, so "make this text bigger" and "cut here" just work. `render.py` turns the result into an mp4.
 
-"Kurgu" is Turkish for "edit / montage". It is a working name.
+"Kurgu" is Turkish for "edit / montage".
 
 <!-- screenshot -->
 

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <title>Kurgu</title>
+<link rel="icon" type="image/svg+xml" href="/web/favicon.svg">
 <script>/* apply the theme before first paint (theme.js keeps it in sync) */
 try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'dark') t = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; document.documentElement.dataset.theme = t; } catch (e) { document.documentElement.dataset.theme = 'dark'; }
 </script>
@@ -86,6 +87,7 @@ try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'd
 <!-- icons:end -->
 <header id="topbar" class="glass">
   <div class="tb-left">
+    <svg class="brand-mark" viewBox="0 0 16 16" aria-label="Kurgu" role="img"><path d="M3 3H6V13H3Z" fill="var(--tally, #ff5446)"/><path d="M7 8 10.633 3H13.433L9.8 8 13.433 13H10.633Z" fill="currentColor"/></svg>
     <button id="b-panel" class="ib" data-i18n-title="mp.toggleTip"><svg class="ic" aria-hidden="true"><use href="#i-panel-left"/></svg></button>
     <div class="tb-name">
       <input id="project-name" spellcheck="false" data-i18n-title="top.projectName">

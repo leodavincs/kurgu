@@ -5,6 +5,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import urllib.request
@@ -14,20 +15,8 @@ try:
 except ImportError:                                  # pragma: no cover
     websocket = None
 
-CANDIDATES = ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"]
-
-
-def find_chrome():
-    if os.environ.get("KURGU_CHROME"):
-        return os.environ["KURGU_CHROME"]
-    for c in CANDIDATES:
-        if os.path.exists(c):
-            return c
-    for n in ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser"):
-        p = shutil.which(n)
-        if p:
-            return p
-    return None
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from cdp import chrome_flags, find_chrome, STARTUP_WAIT      # noqa: E402,F401  (one launcher / one binary lookup for every Chrome test)
 
 
 def free_port():
@@ -43,12 +32,10 @@ class Chrome:
         self.port = free_port()
         self.profile = tempfile.mkdtemp(prefix="kurgu-chrome-")
         self.proc = subprocess.Popen(
-            [exe, "--headless=new", f"--remote-debugging-port={self.port}", "--remote-allow-origins=*", f"--user-data-dir={self.profile}",
-             "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--force-color-profile=srgb", "--hide-scrollbars",
-             f"--window-size={width},{height}", "about:blank"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            [exe] + chrome_flags(self.port, self.profile, width, height, ["--force-color-profile=srgb", "--hide-scrollbars"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.ws = None
         self._id = 0
-        deadline = time.time() + 20
+        deadline = time.time() + STARTUP_WAIT
         while time.time() < deadline:
             try:
                 tabs = json.load(urllib.request.urlopen(f"http://127.0.0.1:{self.port}/json/list", timeout=1))
@@ -80,6 +67,14 @@ class Chrome:
     def goto(self, url):
         self.call("Page.enable")
         self.call("Page.navigate", url=url)
+        end = time.time() + STARTUP_WAIT                 # wait until the navigation left about:blank (slow on Windows runners)
+        while time.time() < end:
+            try:
+                if self.eval("location.href").startswith(url.split("#")[0][:12]) and self.eval("document.readyState") != "loading":
+                    return
+            except RuntimeError:
+                pass
+            time.sleep(0.1)
 
     def close(self):
         try:

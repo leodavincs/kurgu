@@ -11,6 +11,8 @@ import time
 
 import pytest
 
+STARTUP_WAIT = 60 if os.environ.get("CI") else 20
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MCP = os.path.join(ROOT, "mcp_server.py")
 SERVER = os.path.join(ROOT, "server.py")
@@ -83,13 +85,14 @@ def editor(project_dir):
     log = open(os.path.join(project_dir, "server-out.log"), "w")
     p = subprocess.Popen([sys.executable, SERVER, project_dir, "--port", "0", "--no-open"], stdout=log, stderr=subprocess.STDOUT)
     info = os.path.join(project_dir, ".kurgu", "server.json")
-    for _ in range(100):
+    for _ in range(int(STARTUP_WAIT * 10)):
         if os.path.exists(info):
             break
         time.sleep(0.1)
     else:
+        code = p.poll()
         p.kill()
-        pytest.fail("server.json never appeared")
+        pytest.fail("server.json never appeared (exit code %s)\n%s" % (code, read(os.path.join(project_dir, "server-out.log"))[-1500:]))
     yield {"proc": p, "dir": project_dir, "info": info, "log": os.path.join(project_dir, "server-out.log")}
     if p.poll() is None:
         p.terminate()
@@ -378,6 +381,7 @@ def test_frame_and_import_through_editor(mcp, editor, tmp_path):
     assert "GET /api/frame" in log and "POST /api/import" in log
 
 
+@pytest.mark.skipif(sys.platform.startswith("win"), reason="Windows has no SIGTERM: send_signal kills the process, so there is no clean exit to observe")
 def test_server_json_lifecycle(editor):
     info = json.load(open(editor["info"]))
     assert info["pid"] == editor["proc"].pid and isinstance(info["port"], int) and info["started"]

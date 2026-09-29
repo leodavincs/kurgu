@@ -42,6 +42,13 @@ _lock = threading.RLock()
 _file_cache = {}      # (path, mtime_ns, size) -> [face, ...]
 _cmap_cache = {}      # (file, index) -> frozenset of code points
 _system_mem = {"stamp": None, "faces": None}
+_scan_lock = threading.Lock()   # one system scan at a time; a second caller waits and then reuses the result
+_bg = {"thread": None}
+
+
+def system_enabled():
+    """KURGU_SYSTEM_FONTS=0 turns the system font scan off (bundled + project fonts only): fast, reproducible, used by tests."""
+    return os.environ.get("KURGU_SYSTEM_FONTS", "1").strip().lower() not in ("0", "false", "no", "off")
 
 
 # ---------------------------------------------------------------- locations
@@ -174,6 +181,30 @@ def _stamp(dirs):
 
 
 def system_faces():
+    """All installed fonts (blocking: joins a running background scan instead of starting a second one)."""
+    if not system_enabled():
+        return []
+    with _scan_lock:
+        return _system_faces()
+
+
+def scanning():
+    """True while the background system scan (start_system_scan) is still running."""
+    t = _bg["thread"]
+    return bool(t and t.is_alive())
+
+
+def start_system_scan():
+    """Scan system fonts in a background thread so callers never wait for thousands of files on first launch."""
+    with _lock:
+        if not system_enabled() or scanning():
+            return
+        t = threading.Thread(target=system_faces, name="kurgu-font-scan", daemon=True)
+        _bg["thread"] = t
+        t.start()
+
+
+def _system_faces():
     dirs = system_dirs()
     stamp = _stamp(dirs)
     with _lock:
@@ -213,18 +244,27 @@ def project_faces(project_dir):
     return _scan_dir(project_fonts_dir(project_dir), "project", False)
 
 
-def registry(project_dir=None):
-    """Winning face per id (project > bundled > system), sorted by family, weight, style."""
+def registry(project_dir=None, block=True):
+    """Winning face per id (project > bundled > system), sorted by family, weight, style.
+    block=False never waits for the system scan: it starts it in the background and leaves system fonts out until done."""
+    if block:
+        system = system_faces()
+    else:
+        with _lock:
+            system = _system_mem["faces"]
+        if system is None and system_enabled():
+            start_system_scan()
+        system = system or []
     by_id = {}
-    for group in (project_faces(project_dir) if project_dir else [], bundled_faces(), system_faces()):
+    for group in (project_faces(project_dir) if project_dir else [], bundled_faces(), system):
         for f in group:
             by_id.setdefault(f["id"], f)
     return sorted(by_id.values(), key=lambda f: (SOURCE_ORDER[f["source"]], f["family"].lower(), f["weight"],
                                                  f["italic"], f["style"].lower()))
 
 
-def list_faces(project_dir=None):
-    return registry(project_dir)
+def list_faces(project_dir=None, block=True):
+    return registry(project_dir, block)
 
 
 def get_face(font_id, project_dir=None):

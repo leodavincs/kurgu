@@ -131,7 +131,7 @@ def probe_json(path, *extra, timeout=60):
     """ffprobe -> parsed JSON (raises MediaToolError on a hard failure; UnsafeSourceError for playlist containers)."""
     import json
     r = subprocess.run([ffprobe(), "-protocol_whitelist", PROTOCOLS, "-v", "error", "-print_format", "json", "-show_format",
-                        *extra, path], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
+                        *extra, path], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     if r.returncode != 0:
         raise MediaToolError((r.stderr.strip().splitlines() or ["ffprobe failed"])[-1])
     j = json.loads(r.stdout or "{}")

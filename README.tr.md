@@ -1,12 +1,19 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/kurgu-lockup-dark.svg">
+    <img src="docs/assets/kurgu-lockup-light.svg" alt="Kurgu" width="320">
+  </picture>
+</p>
+
 # Kurgu
 
 [English](README.md) | **Türkçe**
 
-> Claude videoyu kod olarak yazar; sen Premiere gibi son rötuşu yaparsın.
+> **Videoyu kodlama ajanın yazar. Sen yönetirsin.** Ücretsiz, açık kaynak, kendi bilgisayarında çalışır.
 
 Kurgu, tek bir düz dosyanın, `project.json`'un etrafında kurulmuş yerel bir video editörüdür. Claude Code zaman çizelgesini yazar (klipler, başlıklar, altyazılar, müzik, efektler). Sen de katman listesi, canlı önizleme ve özellik paneli olan tarayıcı editöründe Claude'un neredeyse doğru yaptığı yerleri düzeltirsin. Claude neyi elle değiştirdiğini ve neyi seçtiğini görür; yani "bu yazıyı büyüt" ya da "şurada kes" demen yeter. `render.py` sonucu mp4'e çevirir.
 
-"Kurgu" çalışma adıdır.
+"Kurgu", İngilizcede "edit / montage" demek.
 
 <!-- screenshot -->
 

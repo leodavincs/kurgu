@@ -14,8 +14,11 @@ import pytest
 
 websocket = pytest.importorskip("websocket")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CHROME = next((p for p in ("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", shutil.which("google-chrome") or "",
-                           shutil.which("chromium") or "", shutil.which("chromium-browser") or "") if p and os.path.exists(p)), None)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cdp  # noqa: E402
+
+CHROME = cdp.find_chrome()
+CMD = 4 if sys.platform == "darwin" else 2                          # CDP modifier bits: alt 1, ctrl 2, meta 4, shift 8; the app's command key is Meta on macOS only
 pytestmark = pytest.mark.skipif(not CHROME, reason="Chrome not found")
 PORT, DEBUG = 8897, 9337
 NOTES = [
@@ -95,10 +98,8 @@ def env(tmp_path_factory):
     server = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py"), proj, "--port", str(PORT), "--no-open"],
                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     prof = tempfile.mkdtemp(prefix="kurgu-chrome-")
-    chrome = subprocess.Popen([CHROME, "--headless=new", f"--remote-debugging-port={DEBUG}", "--remote-allow-origins=*", f"--user-data-dir={prof}",
-                               "--no-first-run", "--no-default-browser-check", "--window-size=1500,900", "--disable-gpu", "about:blank"],
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    for _ in range(100):
+    chrome = subprocess.Popen([CHROME] + cdp.chrome_flags(DEBUG, prof, 1500, 900), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(int(cdp.STARTUP_WAIT * 10)):
         try:
             urllib.request.urlopen(f"http://127.0.0.1:{DEBUG}/json/version", timeout=1)
             urllib.request.urlopen(f"http://127.0.0.1:{PORT}/api/version", timeout=1)
@@ -204,7 +205,7 @@ def test_notes_panel_flow(env):
     # delete is undoable
     pg.click(".np-ib.del", 4)
     assert pg.js("document.querySelectorAll('.np-row').length") == 4
-    pg.key("z", "KeyZ", 90, mods=4)                                # Cmd+Z
+    pg.key("z", "KeyZ", 90, mods=CMD)                              # Cmd+Z (Ctrl+Z off macOS)
     assert pg.js("document.querySelectorAll('.np-row').length") == 5
     # add from the panel and by the N box: user notes with the layers under the playhead
     pg.js(f"{S}.t = 5.0; window.__kurgu.emit('time')")

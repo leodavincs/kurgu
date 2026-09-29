@@ -85,9 +85,27 @@ def test_registry_order_and_unknown_and_fallback():
     assert found and face["id"] == "inter-bold"
 
 
-def test_system_scan_cache_written():
+def test_system_scan_cache_written(monkeypatch):
+    monkeypatch.setenv("KURGU_SYSTEM_FONTS", "1")
     fonts.system_faces()
     assert os.path.exists(os.path.join(fonts.cache_dir(), "fonts.json"))
+
+
+def test_system_scan_can_be_switched_off():
+    assert fonts.system_faces() == []            # conftest sets KURGU_SYSTEM_FONTS=0
+    assert {f["source"] for f in fonts.list_faces()} <= {"bundled", "project"}
+
+
+def test_nonblocking_list_scans_in_background(monkeypatch):
+    monkeypatch.setenv("KURGU_SYSTEM_FONTS", "1")
+    monkeypatch.setitem(fonts._system_mem, "faces", None)
+    monkeypatch.setitem(fonts._system_mem, "stamp", None)
+    fonts.list_faces(block=False)                # returns at once with bundled fonts
+    t = fonts._bg["thread"]
+    assert t is not None
+    t.join(120)
+    assert not fonts.scanning()
+    assert fonts._system_mem["faces"] is not None
 
 
 def test_broken_font_file_is_ignored(tmp_path):

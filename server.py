@@ -528,7 +528,7 @@ class App:
             if not self.media_info(path)["has_audio"]:
                 return {"rate": 100, "peaks": []}
             p = subprocess.Popen([media_tools.ffmpeg(), "-v", "error", *media_tools.input_args(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
-                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             peaks, window, rest = [], 80, b""
             while True:
                 b = p.stdout.read(CHUNK)
@@ -572,7 +572,7 @@ class App:
             if kind == "image":
                 one = os.path.join(folder, names[0])
                 cmd = [media_tools.ffmpeg(), "-y", "-v", "error", *media_tools.input_args(path), "-vf", "scale=-2:72", "-frames:v", "1", "-q:v", "5", one]
-                if subprocess.run(cmd, capture_output=True).returncode != 0:
+                if subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True).returncode != 0:
                     raise HttpError(422, "could not read image")
                 for x in names[1:]:
                     with open(one, "rb") as src, open(os.path.join(folder, x), "wb") as dst:
@@ -582,7 +582,7 @@ class App:
             cmd = [media_tools.ffmpeg(), "-y", "-v", "error", "-ss", f"{dur / (2 * n):.4f}", *media_tools.input_args(path), "-an",
                    "-vf", f"fps={n}/{dur:.6f},scale=-2:72", "-frames:v", str(n), "-q:v", "5",
                    os.path.join(folder, "%03d.jpg.tmp.jpg")]
-            r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace")
             made = sorted(x for x in os.listdir(folder) if x.endswith(".tmp.jpg"))
             if r.returncode != 0 and not made:
                 raise HttpError(422, (r.stderr.strip().splitlines() or ["thumbnail extraction failed"])[-1])
@@ -614,7 +614,7 @@ class App:
     # ------------------------------------------------------------ fonts
     def font_list(self):
         out = []
-        for f in fonts.list_faces(self.dir):
+        for f in fonts.list_faces(self.dir, block=False):   # never wait for the first system-font scan
             out.append({k: f[k] for k in ("id", "family", "style", "weight", "italic", "source")}
                        | {"file": f["file"], "index": f["index"], "url": "/font-file?id=" + quote(f["id"])})
         return out
@@ -661,7 +661,7 @@ class App:
         error, output, tail, warnings = None, None, [], []
         kw = {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)} if os.name == "nt" else {"start_new_session": True}
         try:
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1, **kw)
+            p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1, **kw)
             with self.render_lock:
                 self.render_proc = p
                 cancelled = self.render_cancel_flag
@@ -825,7 +825,7 @@ class App:
                 return png
             tmp = png + ".part.png"
             r = subprocess.run([sys.executable, os.path.join(ROOT, "render.py"), self.dir, "--frame", f"{t:.3f}",
-                                "--output", tmp, "--draft"], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+                                "--output", tmp, "--draft"], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             if r.returncode != 0 or not os.path.exists(tmp):
                 msg = next((s[5:].strip() for s in r.stdout.splitlines() if s.startswith("ERROR")), None)
                 raise HttpError(500, msg or (r.stderr.strip().splitlines() or ["could not render frame"])[-1])
@@ -964,7 +964,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/files" and method == "GET":
             return self.reply(200, app.list_files())
         elif path == "/api/fonts" and method == "GET":
-            return self.reply(200, app.font_list())
+            lst = app.font_list()
+            return self.reply(200, lst, extra={"X-Kurgu-Fonts-Scanning": "1"} if fonts.scanning() else None)
         elif path == "/api/presets" and method == "GET":
             return self.reply(200, presets.describe())
         elif path == "/api/presets/apply" and method == "POST":
@@ -1161,7 +1162,13 @@ class Handler(BaseHTTPRequestHandler):
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
-    allow_reuse_address = True
+    allow_reuse_address = os.name != "nt"     # on Windows SO_REUSEADDR lets a second server bind a port that is in use
+
+    def server_bind(self):
+        if os.name == "nt":                   # ...so ask for exclusive use: a busy port must fail and make_server go to the next one
+            import socket
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
 
     def server_close(self):
         if getattr(self, "app", None):
@@ -1201,6 +1208,7 @@ def main(argv=None):
     ap.add_argument("--no-open", action="store_true", help="do not open the browser")
     a = ap.parse_args(argv)
     srv = make_server(a.project_dir, a.port)
+    fonts.start_system_scan()
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
     print(f"Kurgu: {url}  (project: {srv.app.dir})", flush=True)
     if not a.no_open:

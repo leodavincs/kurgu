@@ -36,10 +36,11 @@ def test_env_override_and_actionable_error(tmp_path, monkeypatch):
     media_tools.reset()
     assert media_tools.find("ffmpeg") == str(fake)
     monkeypatch.setenv("KURGU_FFMPEG", str(tmp_path))          # a folder holding the tool also works
-    (tmp_path / "ffmpeg").write_text("#!/bin/sh\nexit 0\n")
-    (tmp_path / "ffmpeg").chmod(0o755)
+    exe = tmp_path / media_tools._exe("ffmpeg")                # ffmpeg.exe on Windows
+    exe.write_text("#!/bin/sh\nexit 0\n")
+    exe.chmod(0o755)
     media_tools.reset()
-    assert media_tools.find("ffmpeg") == str(tmp_path / "ffmpeg")
+    assert media_tools.find("ffmpeg") == str(exe)
     monkeypatch.delenv("KURGU_FFMPEG")
     monkeypatch.setattr(media_tools, "_extra_dirs", lambda: [])
     monkeypatch.setenv("PATH", str(tmp_path / "nothing"))

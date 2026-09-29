@@ -7,6 +7,7 @@ export const FALLBACK_ID = 'inter-regular';
 const status = new Map();   // id -> 'loading' | 'ok' | 'error'
 let epoch = 0;              // bumped whenever a face finishes loading (cache key for text layout)
 const loadCallbacks = [];
+let rescan = null;         // pending refetch while the server is still scanning system fonts
 
 export const fontsEpoch = () => epoch;
 export function onFontLoaded(fn) { loadCallbacks.push(fn); }
@@ -37,5 +38,6 @@ export async function refreshFonts() {
   S.fonts = list; S.fontMap = new Map(list.map(f => [f.id, f]));
   ensureFont(FALLBACK_ID);
   emit('fonts');
+  if (list.scanning && !rescan) rescan = setTimeout(() => { rescan = null; refreshFonts().catch(() => {}); }, 1500);
   return list;
 }
