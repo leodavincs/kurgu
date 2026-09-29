@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "templates": [
+    {
+      "id": "captions-vertical",
+      "name": {
+        "en": "Vertical captions (talking head)",
+        "tr": "Dikey altyazı (konuşan kafa)"
+      },
+      "aspect": "9:16",
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "duration": 12.0,
+      "folder": "captions-vertical",
+      "project": "captions-vertical/project.json",
+      "thumbnail": "captions-vertical/thumbnail.png",
+      "thumbnail_time": 4.3,
+      "description": {
+        "en": "Word-by-word captions with a highlighted active word, a hook, a progress bar and a follow button. Drop your clip in, then let make_captions replace the sample words.",
+        "tr": "Kelime kelime altyazı, aktif kelimede vurgu, giriş cümlesi, ilerleme çubuğu ve takip düğmesi. Kendi klibini koy, örnek kelimeleri make_captions ile değiştir."
+      },
+      "tags": [
+        "vertical",
+        "captions",
+        "shorts",
+        "reels",
+        "tiktok"
+      ],
+      "shared_media": [
+        "../_media/audio/lofi_keys.m4a",
+        "../_media/video/flow_dusk.mp4"
+      ]
+    },
+    {
+      "id": "youtube-intro",
+      "name": {
+        "en": "YouTube title / intro card",
+        "tr": "YouTube başlık / giriş kartı"
+      },
+      "aspect": "16:9",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": 8.0,
+      "folder": "youtube-intro",
+      "project": "youtube-intro/project.json",
+      "thumbnail": "youtube-intro/thumbnail.png",
+      "thumbnail_time": 4.2,
+      "description": {
+        "en": "An 8 second animated title card on a slow neon-grid horizon: episode tag, two-line title with an underline sweep, one line of subtitle, music and impact sounds.",
+        "tr": "Yavaş bir neon ızgara ufku üzerinde 8 saniyelik animasyonlu başlık kartı: bölüm etiketi, iki satır başlık, alt çizgi, alt başlık, müzik ve efekt sesleri."
+      },
+      "tags": [
+        "youtube",
+        "intro",
+        "title",
+        "16:9"
+      ],
+      "shared_media": [
+        "../_media/audio/upbeat_pluck.m4a",
+        "../_media/sfx/click.wav",
+        "../_media/sfx/hit.wav",
+        "../_media/sfx/whoosh.wav",
+        "../_media/video/neon_grid.mp4"
+      ]
+    },
+    {
+      "id": "product-promo",
+      "name": {
+        "en": "Product promo (1:1, 15 s)",
+        "tr": "Ürün tanıtımı (1:1, 15 sn)"
+      },
+      "aspect": "1:1",
+      "width": 1080,
+      "height": 1080,
+      "fps": 30,
+      "duration": 15.0,
+      "folder": "product-promo",
+      "project": "product-promo/project.json",
+      "thumbnail": "product-promo/thumbnail.png",
+      "thumbnail_time": 7.6,
+      "description": {
+        "en": "A bright 15 second product spot: hook, floating product, three feature call-outs, price-free call to action. The product is a placeholder slab; swap in your own cut-out PNG.",
+        "tr": "Aydınlık, 15 saniyelik ürün filmi: giriş cümlesi, süzülen ürün, üç özellik, harekete geçirici çağrı. Ürün bir yer tutucu; kendi PNG'nle değiştir."
+      },
+      "tags": [
+        "product",
+        "promo",
+        "square",
+        "instagram",
+        "ad"
+      ],
+      "shared_media": [
+        "../_media/audio/upbeat_pluck.m4a",
+        "../_media/sfx/click.wav",
+        "../_media/sfx/pop.wav",
+        "../_media/sfx/whoosh.wav",
+        "../_media/video/flow_pearl.mp4"
+      ]
+    },
+    {
+      "id": "quote-stat-card",
+      "name": {
+        "en": "Quote and stat card (4:5)",
+        "tr": "Alıntı ve rakam kartı (4:5)"
+      },
+      "aspect": "4:5",
+      "width": 1080,
+      "height": 1350,
+      "fps": 30,
+      "duration": 9.0,
+      "folder": "quote-stat-card",
+      "project": "quote-stat-card/project.json",
+      "thumbnail": "quote-stat-card/thumbnail.png",
+      "thumbnail_time": 7.6,
+      "description": {
+        "en": "A 9 second card for feed posts: a serif quote that resolves into a big animated number with a meter. Two acts on one slow gradient.",
+        "tr": "Akış paylaşımları için 9 saniyelik kart: serif bir alıntı, ardından ölçek çubuklu büyük bir rakama dönüşür. Tek bir yavaş gradyan üzerinde iki perde."
+      },
+      "tags": [
+        "quote",
+        "stat",
+        "card",
+        "4:5",
+        "instagram",
+        "linkedin"
+      ],
+      "shared_media": [
+        "../_media/audio/cinematic_pad.m4a",
+        "../_media/sfx/hit.wav",
+        "../_media/sfx/pop.wav",
+        "../_media/sfx/whoosh.wav",
+        "../_media/video/flow_dusk.mp4"
+      ]
+    },
+    {
+      "id": "lower-thirds",
+      "name": {
+        "en": "Lower-third pack (3 styles)",
+        "tr": "Alt bant paketi (3 stil)"
+      },
+      "aspect": "16:9",
+      "width": 1920,
+      "height": 1080,
+      "fps": 30,
+      "duration": 12.0,
+      "folder": "lower-thirds",
+      "project": "lower-thirds/project.json",
+      "thumbnail": "lower-thirds/thumbnail.png",
+      "thumbnail_time": 6.2,
+      "description": {
+        "en": "Three name-plate styles on one 12 second timeline: minimal line, white card, bold block. Copy the style you like into your own project and change start, end and text.",
+        "tr": "Tek bir 12 saniyelik zaman çizelgesinde üç isim bandı stili: sade çizgi, beyaz kart, kalın blok. Beğendiğini kendi projene kopyala; başlangıç, bitiş ve metni değiştir."
+      },
+      "tags": [
+        "lower third",
+        "name",
+        "16:9",
+        "pack"
+      ],
+      "shared_media": [
+        "../_media/sfx/whoosh.wav",
+        "../_media/video/bokeh_city.mp4"
+      ]
+    }
+  ]
+}

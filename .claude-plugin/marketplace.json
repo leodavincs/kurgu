@@ -1,0 +1,12 @@
+{
+  "name": "kurgu",
+  "description": "Kurgu: a local video editor that Claude Code writes as code",
+  "owner": { "name": "leodavincs" },
+  "plugins": [
+    {
+      "name": "kurgu",
+      "source": "./",
+      "description": "Skill, /kurgu command and dependency check for the Kurgu video editor"
+    }
+  ]
+}

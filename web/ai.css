@@ -1,0 +1,42 @@
+/* Assistant box (web/js/ai.js; "Ask AI" in code) — native and calm, not a chatbot: one field, one action, a quiet status line.
+   No sparkles, no glow: the assistant is a tool in the cutting room, so it looks like the other tools.
+   Tokens come from tokens.css; component base styles (textarea, .pbtn) from app.css. */
+.ai-box { display: flex; flex-direction: column; gap: var(--s-4); margin-top: var(--s-4); }
+.ai-title { display: flex; align-items: center; gap: 6px; color: var(--t3); font-size: var(--fs-cap); font-weight: 600; }
+.ai-title .ic { color: var(--t2); }
+textarea.ai-input { width: 100%; min-height: 56px; resize: vertical; border-radius: var(--r-md); background: var(--sunken); padding: 9px 12px; line-height: 1.4; }
+textarea.ai-input:disabled { opacity: .6; }
+.ai-row { display: flex; align-items: center; gap: var(--s-4); }
+.ai-scope { flex: 1; color: var(--t3); font-size: var(--fs-cap); min-width: 0; line-height: 1.25; }
+.pbtn.ai-go { background: var(--pri); color: var(--on-pri); font-weight: 600; padding: 0 14px; box-shadow: none; }
+.pbtn.ai-go:hover:not(:disabled) { background: var(--pri-hover); } .pbtn.ai-go:active:not(:disabled) { background: var(--pri-press); }
+.pbtn.ai-go:disabled { background: var(--hover); color: var(--t3); box-shadow: inset 0 0 0 1px var(--line); opacity: 1; }
+.ai-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.ai-chip { background: transparent; box-shadow: inset 0 0 0 1px var(--line2); color: var(--t2); border-radius: var(--r-sm); padding: 2px 8px; font-size: var(--fs-cap); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: background var(--dur-1), color var(--dur-1); }
+.ai-chip:hover { background: var(--hover); color: var(--t1); }
+.ai-status { position: relative; overflow: hidden; background: var(--hover); border-radius: var(--r-md); padding: 8px 10px; display: flex; flex-direction: column; gap: var(--s-3); }
+.ai-status.error { background: var(--err-soft); }
+.ai-status.running::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(var(--acc), var(--acc)) 0 0 / 30% 100% no-repeat; animation: shimmer 1.4s linear infinite; }
+.ai-events { display: flex; flex-direction: column; gap: 3px; max-height: 150px; overflow-y: auto; }
+.ai-ev { display: flex; gap: var(--s-3); align-items: center; color: var(--t2); font-size: var(--fs-cap); }
+.ai-ev-icon { width: 14px; flex: none; display: inline-flex; justify-content: center; color: var(--t3); }
+.ai-ev.text .ai-ev-text { color: var(--t1); } .ai-ev.thinking .ai-ev-text { color: var(--t3); }
+.ai-spin { display: none; }
+.ai-final { color: var(--t1); line-height: 1.45; } .ai-final.err { color: var(--err); }
+.ai-detail { color: var(--t3); font-size: var(--fs-cap); word-break: break-word; }
+.ai-actions { display: flex; align-items: center; gap: var(--s-3); flex-wrap: wrap; }
+.ai-time { color: var(--t3); font-size: var(--fs-cap); margin-left: auto; }
+
+/* project brief + conversation thread */
+.ai-brief { display: flex; flex-direction: column; gap: var(--s-3); background: var(--hover); border-radius: var(--r-md); padding: 8px 10px; }
+.ai-brief-head { display: flex; align-items: baseline; gap: var(--s-3); min-width: 0; }
+.ai-brief-tog { background: none; border: 0; padding: 0; color: var(--t1); font: inherit; font-weight: 600; font-size: var(--fs-cap); cursor: pointer; white-space: nowrap; }
+.ai-brief-first { flex: 1; min-width: 0; color: var(--t3); font-size: var(--fs-cap); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-brief-body { display: flex; flex-direction: column; gap: var(--s-3); }
+.ai-brief-text { white-space: pre-wrap; font-size: var(--fs-cap); color: var(--t2); max-height: 140px; overflow-y: auto; line-height: 1.45; }
+.ai-brief-text.empty { color: var(--t3); }
+.ai-brief-badge { color: var(--ok); font-size: var(--fs-cap); white-space: nowrap; }
+.ai-thread { display: flex; flex-direction: column; gap: var(--s-3); max-height: 320px; overflow-y: auto; }
+.ai-msg.user { align-self: flex-end; max-width: 92%; color: var(--t1); background: var(--hover); border-radius: var(--r-md); padding: 5px 10px; font-size: var(--fs-cap); line-height: 1.4; }
+.ai-msg.agent { display: flex; flex-direction: column; gap: var(--s-2); padding-left: 10px; border-left: 2px solid var(--line2); color: var(--t2); font-size: var(--fs-cap); line-height: 1.45; }
+.ai-msg.agent.err { border-left-color: var(--err-soft); }

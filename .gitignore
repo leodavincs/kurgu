@@ -1,0 +1,14 @@
+.DS_Store
+__pycache__/
+.pytest_cache/
+.kurgu/
+_ic/
+*_draft.mp4
+output.mp4
+build/
+dist/
+*.egg-info/
+
+# bundled generated media must be committed
+!templates/_media/**
+!examples/**/*.mp4

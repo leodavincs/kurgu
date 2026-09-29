@@ -1,0 +1,1371 @@
+{
+  "version": 2,
+  "name": "Product promo (1:1, 15 s)",
+  "width": 1080,
+  "height": 1080,
+  "fps": 30,
+  "duration": 15.0,
+  "background": "#000000",
+  "output": "output.mp4",
+  "global": {
+    "grain": 0.6,
+    "vignette": 0.0,
+    "loudness_lufs": -14,
+    "fade_out": 0.8
+  },
+  "layers": [
+    {
+      "id": "cta_url",
+      "name": "URL",
+      "type": "text",
+      "group": "CTA",
+      "start": 12.2,
+      "end": 15,
+      "x": 690,
+      "y": 790,
+      "text": "yourwebsite.com",
+      "font": "inter-regular",
+      "size": 32,
+      "color": "#6e6e73",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 800,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 790
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 4,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.56,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "cta_button",
+      "name": "Button text",
+      "type": "text",
+      "group": "CTA",
+      "start": 11.9,
+      "end": 15,
+      "x": 690,
+      "y": 690,
+      "text": "Get yours today",
+      "font": "inter-semibold",
+      "size": 34,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 700,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.6,
+            "v": 690
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cta_pill",
+      "name": "Button",
+      "type": "image",
+      "group": "CTA",
+      "src": "media/pill.png",
+      "fit": "native",
+      "start": 11.9,
+      "end": 15,
+      "x": 690,
+      "y": 690,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.7,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.6,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.3,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cta2",
+      "name": "CTA line 2",
+      "type": "text",
+      "group": "CTA",
+      "start": 11.45,
+      "end": 15,
+      "x": 690,
+      "y": 510,
+      "text": "now.",
+      "font": "inter-bold",
+      "size": 110,
+      "color": "#7c5cff",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "letter_spacing": -0.03,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 550,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 510
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 10,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.72,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "cta1",
+      "name": "CTA line 1",
+      "type": "text",
+      "group": "CTA",
+      "start": 11.3,
+      "end": 15,
+      "x": 690,
+      "y": 400,
+      "text": "Available",
+      "font": "inter-bold",
+      "size": 110,
+      "color": "#1d1d1f",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "letter_spacing": -0.03,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 440,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 400
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 10,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.72,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "feat1_text",
+      "name": "Feature 1 text",
+      "type": "text",
+      "group": "Features",
+      "start": 5.02,
+      "end": 10.9,
+      "x": 752,
+      "y": 452,
+      "text": "One short line.",
+      "font": "inter-regular",
+      "size": 30,
+      "color": "#6e6e73",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 452,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 452
+          },
+          {
+            "t": 5.48,
+            "v": 452,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 5.88,
+            "v": 452
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 5.48,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 5.88,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 8,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.64,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 712,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 752
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "feat1_title",
+      "name": "Feature 1",
+      "type": "text",
+      "group": "Features",
+      "start": 4.9,
+      "end": 10.9,
+      "x": 796,
+      "y": 400,
+      "text": "Feature one",
+      "font": "inter-bold",
+      "size": 50,
+      "color": "#1d1d1f",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 400,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 400
+          },
+          {
+            "t": 5.6,
+            "v": 400,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 6,
+            "v": 400
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 5.6,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 6,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 8,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.64,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 756,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 796
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "feat2_text",
+      "name": "Feature 2 text",
+      "type": "text",
+      "group": "Features",
+      "start": 6.12,
+      "end": 10.9,
+      "x": 804,
+      "y": 602,
+      "text": "Keep it to a sentence.",
+      "font": "inter-regular",
+      "size": 30,
+      "color": "#6e6e73",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 602,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 602
+          },
+          {
+            "t": 4.38,
+            "v": 602,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 4.78,
+            "v": 602
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 4.38,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 4.78,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 8,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.64,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 764,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 804
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "feat2_title",
+      "name": "Feature 2",
+      "type": "text",
+      "group": "Features",
+      "start": 6,
+      "end": 10.9,
+      "x": 796.5,
+      "y": 550,
+      "text": "Feature two",
+      "font": "inter-bold",
+      "size": 50,
+      "color": "#1d1d1f",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 550,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 550
+          },
+          {
+            "t": 4.5,
+            "v": 550,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 4.9,
+            "v": 550
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 4.5,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 4.9,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 8,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.64,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 756.5,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 796.5
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "feat3_text",
+      "name": "Feature 3 text",
+      "type": "text",
+      "group": "Features",
+      "start": 7.22,
+      "end": 10.9,
+      "x": 819.5,
+      "y": 752,
+      "text": "Three is the sweet spot.",
+      "font": "inter-regular",
+      "size": 30,
+      "color": "#6e6e73",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 752,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 752
+          },
+          {
+            "t": 3.28,
+            "v": 752,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.68,
+            "v": 752
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 3.28,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.68,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 8,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.64,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 779.5,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 819.5
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "feat3_title",
+      "name": "Feature 3",
+      "type": "text",
+      "group": "Features",
+      "start": 7.1,
+      "end": 10.9,
+      "x": 815.5,
+      "y": 700,
+      "text": "Feature three",
+      "font": "inter-bold",
+      "size": 50,
+      "color": "#1d1d1f",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 700,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 700
+          },
+          {
+            "t": 3.4,
+            "v": 700,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.8,
+            "v": 700
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 3.4,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.8,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 8,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.64,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 775.5,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 815.5
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "feat1_dot",
+      "name": "Feature 1 dot",
+      "type": "image",
+      "group": "Features",
+      "src": "media/dot.png",
+      "fit": "native",
+      "start": 4.9,
+      "end": 10.9,
+      "x": 610,
+      "y": 414,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.5,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 5.65,
+            "v": 1
+          },
+          {
+            "t": 6,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "feat2_dot",
+      "name": "Feature 2 dot",
+      "type": "image",
+      "group": "Features",
+      "src": "media/dot.png",
+      "fit": "native",
+      "start": 6,
+      "end": 10.9,
+      "x": 610,
+      "y": 564,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.5,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 4.55,
+            "v": 1
+          },
+          {
+            "t": 4.9,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "feat3_dot",
+      "name": "Feature 3 dot",
+      "type": "image",
+      "group": "Features",
+      "src": "media/dot.png",
+      "fit": "native",
+      "start": 7.1,
+      "end": 10.9,
+      "x": 610,
+      "y": 714,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.5,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 3.45,
+            "v": 1
+          },
+          {
+            "t": 3.8,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "hook2",
+      "name": "Hook 2",
+      "type": "text",
+      "group": "Titles",
+      "start": 0.55,
+      "end": 3.7,
+      "x": 540,
+      "y": 350,
+      "text": "Product Name.",
+      "font": "inter-bold",
+      "size": 130,
+      "color": "#1d1d1f",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "letter_spacing": -0.03,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 400,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1,
+            "v": 350
+          },
+          {
+            "t": 2.75,
+            "v": 350,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.15,
+            "v": 324
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 2.75,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.15,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 12,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.8,
+            "v": 0
+          },
+          {
+            "t": 2.75,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.15,
+            "v": 10
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "hook1",
+      "name": "Hook 1",
+      "type": "text",
+      "group": "Titles",
+      "start": 0.3,
+      "end": 3.7,
+      "x": 540,
+      "y": 250,
+      "text": "Meet the all-new",
+      "font": "inter-medium",
+      "size": 60,
+      "color": "#6e6e73",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 300,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1,
+            "v": 250
+          },
+          {
+            "t": 3,
+            "v": 250,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.4,
+            "v": 224
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 3,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.4,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 12,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.8,
+            "v": 0
+          },
+          {
+            "t": 3,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.4,
+            "v": 10
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "product",
+      "name": "Product (replace me)",
+      "type": "image",
+      "group": "Picture",
+      "src": "media/product.png",
+      "fit": "native",
+      "start": 1,
+      "end": 15,
+      "x": 540,
+      "y": 640,
+      "scale": 0.95,
+      "mods": {
+        "y": [
+          {
+            "type": "wiggle",
+            "amp": 9,
+            "freq": 0.35,
+            "octaves": 2,
+            "seed": 4
+          }
+        ],
+        "rotation": [
+          {
+            "type": "wiggle",
+            "amp": 1.2,
+            "freq": 0.3,
+            "octaves": 2,
+            "seed": 9
+          }
+        ]
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 800,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1.3,
+            "v": 640
+          },
+          {
+            "t": 2.6,
+            "v": 640,
+            "ease": "in-out-cubic"
+          },
+          {
+            "t": 3.5,
+            "v": 560
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 540,
+            "ease": "linear"
+          },
+          {
+            "t": 2.6,
+            "v": 540,
+            "ease": "in-out-cubic"
+          },
+          {
+            "t": 3.6,
+            "v": 300,
+            "ease": "in-out-cubic"
+          },
+          {
+            "t": 9.8,
+            "v": 300,
+            "ease": "in-out-cubic"
+          },
+          {
+            "t": 10.8,
+            "v": 300
+          }
+        ],
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.8,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1.3,
+            "v": 0.95
+          },
+          {
+            "t": 2.6,
+            "v": 0.95,
+            "ease": "in-out-cubic"
+          },
+          {
+            "t": 3.6,
+            "v": 0.72
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.5,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "bg",
+      "name": "Pearl gradient",
+      "type": "video",
+      "group": "Picture",
+      "src": "../_media/video/flow_pearl.mp4",
+      "src_in": 0,
+      "start": 0,
+      "end": 15,
+      "fit": "cover",
+      "muted": true,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 15,
+            "v": 1.06
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 540,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 15,
+            "v": 500
+          }
+        ],
+        "y": [
+          {
+            "t": 0,
+            "v": 540,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 15,
+            "v": 520
+          }
+        ]
+      }
+    },
+    {
+      "id": "sfx_whoosh1",
+      "name": "Whoosh (intro)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 0.7,
+      "end": 1.7,
+      "volume_db": -10
+    },
+    {
+      "id": "sfx_pop1",
+      "name": "Pop 1",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/pop.wav",
+      "src_in": 0,
+      "start": 4.9,
+      "end": 5.2,
+      "volume_db": -10
+    },
+    {
+      "id": "sfx_pop2",
+      "name": "Pop 2",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/pop.wav",
+      "src_in": 0,
+      "start": 6,
+      "end": 6.3,
+      "volume_db": -10
+    },
+    {
+      "id": "sfx_pop3",
+      "name": "Pop 3",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/pop.wav",
+      "src_in": 0,
+      "start": 7.1,
+      "end": 7.4,
+      "volume_db": -10
+    },
+    {
+      "id": "sfx_whoosh2",
+      "name": "Whoosh (CTA)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 10.9,
+      "end": 11.9,
+      "volume_db": -11
+    },
+    {
+      "id": "sfx_click",
+      "name": "Click (button)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/click.wav",
+      "src_in": 0,
+      "start": 12.3,
+      "end": 12.39,
+      "volume_db": -12
+    },
+    {
+      "id": "music",
+      "name": "Music bed",
+      "type": "audio",
+      "group": "Sound",
+      "src": "../_media/audio/upbeat_pluck.m4a",
+      "src_in": 0,
+      "start": 0,
+      "end": 15,
+      "volume_db": -3,
+      "fade_in": 0.4,
+      "fade_out": 1.5
+    }
+  ],
+  "notes": [],
+  "requires": [
+    "keys",
+    "mods"
+  ]
+}

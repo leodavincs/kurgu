@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "kurgu": {
+      "command": "uvx",
+      "args": ["--from", "${CLAUDE_PLUGIN_ROOT}", "kurgu-mcp"]
+    }
+  }
+}

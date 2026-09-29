@@ -1,0 +1,13 @@
+# Runtime dependencies. Prefer the install routes in the README (pipx / uvx / a virtualenv)
+# over a bare `pip install`: modern Python installs refuse system-wide pip (PEP 668).
+numpy>=1.24
+Pillow>=10.0
+fonttools>=4.40
+
+# Optional: automatic captions (pick one; Kurgu uses whichever is installed)
+# mlx-whisper>=0.4        # Apple Silicon
+# faster-whisper>=1.0     # Linux / Windows / Intel Mac
+
+# Development
+# pytest>=7
+# websocket-client        # browser UI tests

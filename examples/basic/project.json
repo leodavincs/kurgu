@@ -1,0 +1,366 @@
+{
+  "version": 2,
+  "name": "Kurgu example",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 12,
+  "background": "#000000",
+  "output": "output.mp4",
+  "global": {
+    "grain": 0,
+    "vignette": 0.4,
+    "loudness_lufs": -14,
+    "fade_out": 1
+  },
+  "layers": [
+    {
+      "type": "text",
+      "id": "k_buyuk",
+      "name": "Big title",
+      "group": "Titles",
+      "start": 1,
+      "end": 4.5,
+      "x": 960,
+      "y": 520,
+      "text": "ORBIT",
+      "size": 220,
+      "letter_spacing": 0.1,
+      "color": "#f1efe9",
+      "fade_in": 0.6,
+      "fade_out": 0.5,
+      "shadow": {
+        "enabled": true,
+        "blur": 14,
+        "opacity": 0.8
+      },
+      "font": "bebas-neue-regular",
+      "hidden": false,
+      "locked": false,
+      "scale": 1,
+      "opacity": 1,
+      "effects": [],
+      "line_height": 1.25,
+      "align": "center"
+    },
+    {
+      "type": "text",
+      "id": "k_sol",
+      "name": "Left aligned",
+      "group": "Titles",
+      "start": 4,
+      "end": 9,
+      "x": 520,
+      "y": 900,
+      "text": "LEFT ALIGNED — İşğüçö\nletter spacing 0.3",
+      "size": 56,
+      "letter_spacing": 0.3,
+      "color": "#c8794a",
+      "fade_in": 0.4,
+      "fade_out": 0,
+      "align": "left",
+      "shadow": {
+        "enabled": true,
+        "blur": 6,
+        "opacity": 0.6
+      },
+      "font": "space-grotesk-bold",
+      "hidden": false,
+      "locked": false,
+      "scale": 1,
+      "opacity": 1,
+      "effects": [],
+      "line_height": 1.25
+    },
+    {
+      "type": "text",
+      "id": "k_orta",
+      "name": "Multi-line",
+      "group": "Titles",
+      "start": 2,
+      "end": 6,
+      "x": 960,
+      "y": 200,
+      "text": "Kurgu example\nşğıöüç İ — second line",
+      "size": 64,
+      "line_height": 1.3,
+      "fade_in": 0.3,
+      "fade_out": 0.3,
+      "font": "inter-regular",
+      "hidden": false,
+      "locked": false,
+      "scale": 1,
+      "opacity": 1,
+      "effects": [],
+      "color": "#f1efe9",
+      "letter_spacing": 0,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 9,
+        "opacity": 0.7
+      }
+    },
+    {
+      "type": "image",
+      "id": "k_logo",
+      "name": "Logo",
+      "group": "Picture",
+      "start": 0.5,
+      "end": 11.5,
+      "x": 1750,
+      "y": 140,
+      "scale": 0.4,
+      "opacity": 0.85,
+      "src": "media/logo.png",
+      "fade_in": 0.5,
+      "fade_out": 0,
+      "fit": "native",
+      "hidden": false,
+      "locked": false,
+      "effects": [],
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      }
+    },
+    {
+      "type": "color",
+      "id": "k_slate",
+      "name": "Black gap",
+      "group": "Picture",
+      "start": 8.5,
+      "end": 9,
+      "color": "#000000",
+      "fade_in": 0,
+      "fade_out": 0,
+      "hidden": false,
+      "locked": false,
+      "x": 960,
+      "y": 540,
+      "scale": 1,
+      "opacity": 1,
+      "effects": []
+    },
+    {
+      "type": "video",
+      "id": "k_dondur",
+      "name": "Frozen frame",
+      "group": "Picture",
+      "start": 2,
+      "end": 8,
+      "x": 330,
+      "y": 820,
+      "scale": 0.3,
+      "src": "media/a.mp4",
+      "src_in": 3,
+      "muted": true,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fit": "contain",
+      "effects": [
+        {
+          "type": "freeze",
+          "enabled": true
+        },
+        {
+          "type": "saturation",
+          "enabled": true,
+          "value": 0.5
+        },
+        {
+          "type": "blur",
+          "enabled": true,
+          "radius": 2
+        }
+      ],
+      "hidden": false,
+      "locked": false,
+      "opacity": 1,
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "volume_db": 0,
+      "envelope": []
+    },
+    {
+      "type": "video",
+      "id": "k_kose",
+      "name": "Held last frame",
+      "group": "Picture",
+      "start": 10,
+      "end": 12,
+      "x": 1700,
+      "y": 900,
+      "scale": 0.25,
+      "src": "media/b.mp4",
+      "src_in": 5,
+      "muted": true,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fit": "contain",
+      "hidden": false,
+      "locked": false,
+      "opacity": 1,
+      "effects": [],
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "volume_db": 0,
+      "envelope": []
+    },
+    {
+      "type": "video",
+      "id": "k_c",
+      "name": "Push-in",
+      "group": "Picture",
+      "start": 9,
+      "end": 12,
+      "scale": 0.8,
+      "src": "media/a.mp4",
+      "src_in": 2,
+      "volume_db": -15,
+      "fade_in": 0,
+      "fade_out": 0,
+      "fit": "contain",
+      "effects": [
+        {
+          "type": "zoom",
+          "enabled": true,
+          "from": 1,
+          "to": 1.25
+        },
+        {
+          "type": "brightness",
+          "enabled": true,
+          "value": -0.1
+        }
+      ],
+      "hidden": false,
+      "locked": false,
+      "x": 960,
+      "y": 540,
+      "opacity": 1,
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "muted": false,
+      "envelope": []
+    },
+    {
+      "type": "video",
+      "id": "k_b",
+      "name": "B cropped",
+      "group": "Picture",
+      "start": 5.5,
+      "end": 8.5,
+      "src": "media/b.mp4",
+      "src_in": 0,
+      "muted": true,
+      "fade_in": 1,
+      "fade_out": 0,
+      "crop": {
+        "top": 0.1,
+        "bottom": 0.1,
+        "left": 0.2,
+        "right": 0.2
+      },
+      "effects": [
+        {
+          "type": "grayscale",
+          "enabled": true,
+          "amount": 1
+        },
+        {
+          "type": "contrast",
+          "enabled": true,
+          "value": 0.3
+        }
+      ],
+      "hidden": false,
+      "locked": false,
+      "x": 960,
+      "y": 540,
+      "scale": 1,
+      "opacity": 1,
+      "fit": "cover",
+      "volume_db": 0,
+      "envelope": []
+    },
+    {
+      "type": "video",
+      "id": "k_a",
+      "name": "A clip",
+      "group": "Picture",
+      "start": 0,
+      "end": 6.5,
+      "src": "media/a.mp4",
+      "src_in": 0,
+      "volume_db": -12,
+      "fade_in": 0,
+      "fade_out": 0,
+      "hidden": false,
+      "locked": false,
+      "x": 960,
+      "y": 540,
+      "scale": 1,
+      "opacity": 1,
+      "effects": [],
+      "fit": "cover",
+      "crop": {
+        "top": 0,
+        "bottom": 0,
+        "left": 0,
+        "right": 0
+      },
+      "muted": false,
+      "envelope": []
+    },
+    {
+      "type": "audio",
+      "id": "k_muzik",
+      "name": "Music",
+      "group": "Sound",
+      "start": 0,
+      "end": 12,
+      "src": "media/muzik.wav",
+      "volume_db": 0,
+      "envelope": [
+        [
+          0,
+          -20
+        ],
+        [
+          2,
+          -6
+        ],
+        [
+          8,
+          -6
+        ],
+        [
+          10,
+          -18
+        ]
+      ],
+      "fade_in": 1,
+      "fade_out": 1.5,
+      "hidden": false,
+      "locked": false,
+      "src_in": 0,
+      "muted": false
+    }
+  ],
+  "notes": []
+}

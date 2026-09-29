@@ -1,0 +1,118 @@
+/* Kurgu "Cue & Tally" design tokens (successor of "Lumen"). Dark is the default; [data-theme=light] overrides. Loaded before app.css.
+   Everything visual (colours, radii, spacing, type, elevation, motion) reads from here; canvas-drawn colours too
+   (web/js/theme.js reads the --cv-* tokens through getComputedStyle). Spec: _ic/tasarim/DESIGN.md, _ic/tasarim/deslop/
+   Identity: a quiet, slightly warm graphite workbench. Colour is a signal, never decoration:
+     cue yellow (--acc)  = what is selected / switched on / focused (Final Cut's selection frame, the editor's grease pencil)
+     tally red (--tally) = where time is now (the playhead, like a camera's tally lamp)
+   Buttons are flat, 5 px corners, no glow, no gradient; the primary button is solid neutral ink, not a colour. */
+:root {
+  color-scheme: dark;
+  /* surfaces: warm-neutral graphite (hue ~40deg, almost no chroma) */
+  --bg: #0c0c0b; --panel: #151413; --raised: #1e1d1b; --sunken: #0f0f0e;
+  --hover: rgba(255, 250, 240, .055); --press: rgba(255, 250, 240, .09);
+  --line: rgba(255, 250, 240, .075); --line2: rgba(255, 250, 240, .13);
+  /* text (t3 is AA on panel: 4.7:1) */
+  --t1: #efece6; --t2: #aaa59c; --t3: #858077;
+  /* signal colours */
+  --acc: #f3c34b; --acc-soft: rgba(243, 195, 75, .15); --acc-line: rgba(243, 195, 75, .55); --on-acc: #1a1405;
+  --acc-glow: transparent; /* legacy name: no glows in this identity */
+  --tally: #ff5446; --tally-soft: rgba(255, 84, 70, .16);
+  --note: #f3c34b; --note-soft: rgba(243, 195, 75, .13);
+  /* primary button: solid neutral ink */
+  --pri: #ece8e1; --pri-hover: #ffffff; --pri-press: #d3cec5; --on-pri: #141311;
+  /* status */
+  --ok: #6cc592; --warn: #f0904c; --err: #ff6b5e;
+  --warn-soft: rgba(240, 144, 76, .14); --err-soft: rgba(255, 107, 94, .12);
+  /* clip / layer type colours (content colours: muted, warm-leaning) */
+  --c-video: #55739b; --c-image: #8270a8; --c-text: #ad8a58; --c-audio: #3f9582; --c-color: #7a766f;
+  /* materials: solid surfaces (the "glass" names stay for compatibility; no blur, no translucency) */
+  --glass: var(--raised); --glass-strong: var(--raised); --glass-line: var(--line2);
+  --glass-blur: none; --glass-blur-strong: none;
+  --scrim: rgba(0, 0, 0, .58);
+  --ambient: none;
+  /* elevation: short, neutral shadows only where something floats */
+  --shadow: 0 6px 20px rgba(0, 0, 0, .45);
+  --shadow-dialog: 0 18px 48px rgba(0, 0, 0, .55);
+  --shadow-frame: 0 0 0 1px var(--line2);
+  --highlight: 0 0 0 0 transparent;
+  /* radii: small and consistent */
+  --r-xs: 3px; --r-sm: 4px; --r-md: 5px; --r-lg: 6px; --r-xl: 8px; --r-2xl: 10px; --r-full: 999px;
+  /* spacing scale */
+  --s-1: 2px; --s-2: 4px; --s-3: 6px; --s-4: 8px; --s-5: 10px; --s-6: 12px; --s-7: 16px; --s-8: 20px; --s-9: 24px; --s-10: 32px;
+  /* control heights */
+  --h-lg: 32px; --h-md: 28px; --h-sm: 24px;
+  /* type: the platform's own UI face (SF on Mac, Segoe on Windows) + a real monospace for every timecode */
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --mono: "SF Mono", ui-monospace, "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  --fs-cap: 11px; --fs-body: 12.5px; --fs-md: 13px; --fs-lg: 16px; --fs-tc: 18px; --fs-title: 17px;
+  /* motion */
+  --dur-1: 90ms; --dur-2: 160ms; --dur-3: 200ms; --dur-4: 240ms;
+  --ease-out: cubic-bezier(.2, .8, .2, 1); --ease-in: cubic-bezier(.4, 0, 1, 1); --ease-spring: cubic-bezier(.2, .8, .2, 1);
+  /* layout */
+  --lp-h: 350px; --mp-w: 256px; --insp-w: 312px; --row-h: 28px; --gap: 10px;
+
+  /* canvas-drawn colours (timeline strips, ruler, viewer overlay) — read by web/js/theme.js */
+  --cv-wave-audio: rgba(120, 205, 175, .85); --cv-wave-video: rgba(236, 232, 225, .5);
+  --cv-fade: rgba(0, 0, 0, .4); --cv-fade-edge: rgba(255, 255, 255, .35);
+  --cv-env: rgba(255, 255, 255, .85); --cv-env-dim: rgba(255, 255, 255, .35); --cv-env-handle: #ffffff; --cv-env-handle-ring: rgba(0, 0, 0, .55);
+  --cv-clip-label: #ffffff; --cv-clip-label-shadow: rgba(0, 0, 0, .45); --cv-label-soft: #ffffff; --cv-label-soft-shadow: rgba(0, 0, 0, .45);
+  --cv-film-tint: rgba(60, 58, 54, .50);
+  --cv-tick: rgba(255, 250, 240, .12); --cv-tick-minor: rgba(255, 250, 240, .07); --cv-tick-label: #858077;
+  --cv-sel: #f3c34b; --cv-sel-locked: #aaa59c; --cv-handle: #ffffff; --cv-guide: #f3c34b;
+  --cv-tag-bg: rgba(0, 0, 0, .7); --cv-tag-fg: #efece6; --cv-split-fg: #1a1405;
+  --cv-guide-action: rgba(120, 220, 255, .9); --cv-guide-title: rgba(255, 225, 120, .9);
+  --cv-guide-social: rgba(255, 120, 120, .85); --cv-guide-social-fill: rgba(0, 0, 0, .42); --cv-guide-social-text: rgba(255, 170, 170, .95);
+  --cv-guide-centre: rgba(255, 255, 255, .55);
+  --cv-mask: rgba(0, 0, 0, .55);
+
+}
+:root[data-theme=light] {
+  color-scheme: light;
+  --bg: #e8e6e1; --panel: #fbfaf8; --raised: #f1efeb; --sunken: #e9e7e2;
+  --hover: rgba(30, 25, 15, .05); --press: rgba(30, 25, 15, .09);
+  --line: rgba(30, 25, 15, .09); --line2: rgba(30, 25, 15, .16);
+  --t1: #181715; --t2: #57534c; --t3: #6b665e;
+  /* on paper, cue yellow becomes ochre ink (5.5:1 on panel) and a highlighter wash */
+  --acc: #8a5d00; --acc-soft: rgba(236, 178, 30, .18); --acc-line: rgba(138, 93, 0, .5); --on-acc: #ffffff;
+  --tally: #cf2a1d; --tally-soft: rgba(207, 42, 29, .12);
+  --note: #8a5d00; --note-soft: rgba(236, 178, 30, .2);
+  --pri: #1b1a18; --pri-hover: #34322e; --pri-press: #000000; --on-pri: #faf9f7;
+  --ok: #1d7a4c; --warn: #a84c0c; --err: #c42b2b;
+  --warn-soft: rgba(168, 76, 12, .12); --err-soft: rgba(196, 43, 43, .10);
+  --c-video: #86a0c2; --c-image: #a898cc; --c-text: #cfa86e; --c-audio: #72bba8; --c-color: #a29e96;
+  --scrim: rgba(40, 36, 30, .32);
+  --shadow: 0 6px 20px rgba(40, 30, 10, .14);
+  --shadow-dialog: 0 18px 48px rgba(40, 30, 10, .22);
+  --shadow-frame: 0 0 0 1px var(--line2);
+
+  --cv-wave-audio: rgba(41, 132, 109, .85); --cv-wave-video: rgba(255, 255, 255, .6);
+  --cv-fade: rgba(20, 18, 14, .32); --cv-fade-edge: rgba(255, 255, 255, .5);
+  --cv-env: rgba(24, 23, 21, .8); --cv-env-dim: rgba(24, 23, 21, .3); --cv-env-handle: #ffffff; --cv-env-handle-ring: rgba(24, 23, 21, .6);
+  --cv-clip-label: #ffffff; --cv-clip-label-shadow: rgba(0, 0, 0, .35); --cv-label-soft: #1a1712; --cv-label-soft-shadow: rgba(255, 255, 255, 0);
+  --cv-film-tint: rgba(150, 144, 134, .38);
+  --cv-tick: rgba(30, 25, 15, .18); --cv-tick-minor: rgba(30, 25, 15, .09); --cv-tick-label: #6b665e;
+  --cv-sel: #e0a91c; --cv-sel-locked: #57534c; --cv-guide: #e0a91c; --cv-split-fg: #1a1405;
+  --cv-mask: rgba(255, 255, 255, .55);
+}
+/* fewer translucent layers when asked */
+@media (prefers-reduced-transparency: reduce) {
+  :root { --glass: var(--raised); --glass-strong: var(--raised); --glass-blur: none; --glass-blur-strong: none; }
+}
+@media (prefers-contrast: more) {
+  :root { --line: var(--line2); --t3: var(--t2); --glass: var(--raised); --glass-strong: var(--raised); --glass-blur: none; --glass-blur-strong: none; }
+}
+body.no-glass { --glass: var(--raised); --glass-strong: var(--raised); --glass-blur: none; --glass-blur-strong: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-1: .01ms; --dur-2: .01ms; --dur-3: .01ms; --dur-4: .01ms; }
+}
+
+/* ==== timeline group colours (wp-kf): calm, desaturated, warm-leaning content hues (none of them is the cue yellow or tally red), one per kind of group (web/js/layers.js groupInfos()) ==== */
+:root {
+  --grp-titles: #b08a60; --grp-captions: #b86f86; --grp-video: #5a78a2; --grp-image: #8672aa;
+  --grp-color: #85817a; --grp-audio: #3f9884; --grp-coral: #bf7658; --grp-olive: #8fa05a;
+}
+:root[data-theme=light] {
+  --grp-titles: #c9a47a; --grp-captions: #d48ea4; --grp-video: #86a0c2; --grp-image: #a898cc;
+  --grp-color: #a29e96; --grp-audio: #72bba8; --grp-coral: #d9967a; --grp-olive: #a8b870;
+}
+/* ==== /timeline group colours ==== */

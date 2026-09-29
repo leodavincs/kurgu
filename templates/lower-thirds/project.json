@@ -1,0 +1,711 @@
+{
+  "version": 2,
+  "name": "Lower-third pack (3 styles)",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 12.0,
+  "background": "#000000",
+  "output": "output.mp4",
+  "global": {
+    "grain": 1.0,
+    "vignette": 0.25,
+    "loudness_lufs": -14,
+    "fade_out": 0.6
+  },
+  "layers": [
+    {
+      "id": "ltA_role",
+      "name": "A role",
+      "type": "text",
+      "group": "Style A",
+      "start": 0.75,
+      "end": 4,
+      "x": 348,
+      "y": 940,
+      "text": "Role or company",
+      "font": "inter-regular",
+      "size": 32,
+      "color": "#c7c7cc",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 940,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 940
+          },
+          {
+            "t": 2.9,
+            "v": 940,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.25,
+            "v": 940
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 2.9,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.25,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 6,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.56,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 304,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 348
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "ltA_name",
+      "name": "A name",
+      "type": "text",
+      "group": "Style A",
+      "start": 0.62,
+      "end": 4,
+      "x": 486,
+      "y": 882,
+      "text": "Firstname Lastname",
+      "font": "inter-semibold",
+      "size": 54,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 882,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 882
+          },
+          {
+            "t": 3.03,
+            "v": 882,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.38,
+            "v": 882
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 3.03,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.38,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 6,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.56,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 442,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 486
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "ltA_bar",
+      "name": "A bar",
+      "type": "image",
+      "group": "Style A",
+      "src": "media/a_bar.png",
+      "fit": "native",
+      "start": 0.5,
+      "end": 4,
+      "x": 190,
+      "y": 900,
+      "anchor_y": 0.5,
+      "keys": {
+        "scale_y": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.6,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 3.15,
+            "v": 1
+          },
+          {
+            "t": 3.5,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "ltB_role",
+      "name": "B role",
+      "type": "text",
+      "group": "Style B",
+      "start": 4.5,
+      "end": 8,
+      "x": 380.5,
+      "y": 932,
+      "text": "Role or company",
+      "font": "inter-regular",
+      "size": 30,
+      "color": "#6e6e73",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "x": [
+          {
+            "t": 0,
+            "v": 260.5,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 380.5
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0.1,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.5,
+            "v": 1
+          },
+          {
+            "t": 3.15,
+            "v": 1
+          },
+          {
+            "t": 3.5,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "ltB_name",
+      "name": "B name",
+      "type": "text",
+      "group": "Style B",
+      "start": 4.5,
+      "end": 8,
+      "x": 500,
+      "y": 878,
+      "text": "Firstname Lastname",
+      "font": "inter-bold",
+      "size": 48,
+      "color": "#1d1d1f",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "keys": {
+        "x": [
+          {
+            "t": 0,
+            "v": 380,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 500
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0.1,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.5,
+            "v": 1
+          },
+          {
+            "t": 3.15,
+            "v": 1
+          },
+          {
+            "t": 3.5,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "ltB_dot",
+      "name": "B dot",
+      "type": "image",
+      "group": "Style B",
+      "src": "media/b_dot.png",
+      "fit": "native",
+      "start": 4.5,
+      "end": 8,
+      "x": 230,
+      "y": 900,
+      "keys": {
+        "x": [
+          {
+            "t": 0,
+            "v": 110,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 230
+          }
+        ],
+        "scale": [
+          {
+            "t": 0.15,
+            "v": 0,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.7,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 3.15,
+            "v": 1
+          },
+          {
+            "t": 3.5,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "ltB_card",
+      "name": "B card",
+      "type": "image",
+      "group": "Style B",
+      "src": "media/b_card.png",
+      "fit": "native",
+      "start": 4.5,
+      "end": 8,
+      "x": 550,
+      "y": 900,
+      "keys": {
+        "x": [
+          {
+            "t": 0,
+            "v": 430,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 550
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.3,
+            "v": 1
+          },
+          {
+            "t": 3.15,
+            "v": 1
+          },
+          {
+            "t": 3.5,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "ltC_role",
+      "name": "C role",
+      "type": "text",
+      "group": "Style C",
+      "start": 8.9,
+      "end": 12,
+      "x": 373.84,
+      "y": 960,
+      "text": "ROLE OR COMPANY",
+      "font": "inter-semibold",
+      "size": 26,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "letter_spacing": 0.12,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 960,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.6,
+            "v": 960
+          },
+          {
+            "t": 2.8,
+            "v": 960,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.1,
+            "v": 960
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 2.8,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.1,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 313.84,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 373.84
+          }
+        ]
+      }
+    },
+    {
+      "id": "ltC_name",
+      "name": "C name",
+      "type": "text",
+      "group": "Style C",
+      "start": 8.75,
+      "end": 12,
+      "x": 506.39,
+      "y": 880,
+      "text": "FIRSTNAME LASTNAME",
+      "font": "bebas-neue-regular",
+      "size": 78,
+      "color": "#0b1220",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "letter_spacing": 0.03,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 880,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.6,
+            "v": 880
+          },
+          {
+            "t": 2.95,
+            "v": 880,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.25,
+            "v": 880
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 2.95,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.25,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 446.39,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 506.39
+          }
+        ]
+      }
+    },
+    {
+      "id": "ltC_strip",
+      "name": "C strip",
+      "type": "image",
+      "group": "Style C",
+      "src": "media/c_strip.png",
+      "fit": "native",
+      "start": 8.5,
+      "end": 12,
+      "x": 190,
+      "y": 960,
+      "anchor_x": 0,
+      "keys": {
+        "scale_x": [
+          {
+            "t": 0.15,
+            "v": 0,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 1
+          },
+          {
+            "t": 3.2,
+            "v": 1,
+            "ease": "in-expo"
+          },
+          {
+            "t": 3.5,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "ltC_block",
+      "name": "C block",
+      "type": "image",
+      "group": "Style C",
+      "src": "media/c_block.png",
+      "fit": "native",
+      "start": 8.5,
+      "end": 12,
+      "x": 190,
+      "y": 880,
+      "anchor_x": 0,
+      "keys": {
+        "scale_x": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.6,
+            "v": 1
+          },
+          {
+            "t": 3.1,
+            "v": 1,
+            "ease": "in-expo"
+          },
+          {
+            "t": 3.5,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "bg",
+      "name": "Footage (replace me)",
+      "type": "video",
+      "group": "Picture",
+      "src": "../_media/video/bokeh_city.mp4",
+      "src_in": 0,
+      "start": 0,
+      "end": 12,
+      "fit": "cover",
+      "muted": true,
+      "effects": [
+        {
+          "type": "brightness",
+          "enabled": true,
+          "value": -0.2
+        }
+      ]
+    },
+    {
+      "id": "sfx_a",
+      "name": "Whoosh A",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 0.6,
+      "end": 1.6,
+      "volume_db": -14
+    },
+    {
+      "id": "sfx_b",
+      "name": "Whoosh B",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 4.6,
+      "end": 5.6,
+      "volume_db": -14
+    },
+    {
+      "id": "sfx_c",
+      "name": "Whoosh C",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 8.6,
+      "end": 9.6,
+      "volume_db": -14
+    }
+  ],
+  "notes": [],
+  "requires": [
+    "keys",
+    "transform"
+  ]
+}

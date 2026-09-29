@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kurgu"
+version = "0.1.0"
+description = "A local video editor that coding agents and humans edit together: a timeline over a project.json."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["video", "editor", "ffmpeg", "timeline", "subtitles", "mcp"]
+dependencies = ["numpy>=1.24", "Pillow>=10.0", "fonttools>=4.40"]
+
+[project.optional-dependencies]
+captions-mac = ["mlx-whisper>=0.4"]
+captions = ["faster-whisper>=1.0"]
+dev = ["pytest>=7", "websocket-client"]
+
+[project.urls]
+Homepage = "https://github.com/leodavincs/kurgu"
+
+[project.scripts]
+kurgu = "server:main"
+kurgu-render = "render:main"
+kurgu-mcp = "mcp_server:main"
+
+[tool.setuptools]
+py-modules = ["media_tools", "server", "render", "schema", "fonts", "anim", "presets", "ai", "exports", "transcribe", "captions", "mcp_server", "kurgu_paths"]
+license-files = ["LICENSE"]

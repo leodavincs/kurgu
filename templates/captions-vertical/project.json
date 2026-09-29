@@ -1,0 +1,1325 @@
+{
+  "version": 2,
+  "name": "Captions (vertical 9:16)",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "duration": 12.0,
+  "background": "#000000",
+  "output": "output.mp4",
+  "global": {
+    "grain": 1.0,
+    "vignette": 0.3,
+    "loudness_lufs": -14,
+    "fade_out": 0.6
+  },
+  "layers": [
+    {
+      "id": "cta_text",
+      "name": "CTA text",
+      "type": "text",
+      "group": "Titles",
+      "start": 10.3,
+      "end": 12,
+      "x": 540,
+      "y": 1640,
+      "text": "FOLLOW FOR MORE",
+      "font": "inter-bold",
+      "size": 36,
+      "color": "#1d1d1f",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "letter_spacing": 0.06,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 1664,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 1640
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cta_pill",
+      "name": "CTA pill",
+      "type": "image",
+      "group": "Titles",
+      "src": "media/pill.png",
+      "fit": "native",
+      "start": 10.3,
+      "end": 12,
+      "x": 540,
+      "y": 1640,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.6,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.6,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_19",
+      "name": "Highlight 19: TRANSCRIPT.",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 10.9,
+      "end": 11.35,
+      "x": 697,
+      "y": 1267.2,
+      "text": "TRANSCRIPT.",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_18",
+      "name": "Highlight 18: YOUR",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 10.45,
+      "end": 10.9,
+      "x": 187,
+      "y": 1267.2,
+      "text": "YOUR",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_17",
+      "name": "Highlight 17: FOR",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 10,
+      "end": 10.45,
+      "x": 867,
+      "y": 1267.2,
+      "text": "FOR",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_16",
+      "name": "Highlight 16: THEM",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 9.55,
+      "end": 10,
+      "x": 593.5,
+      "y": 1267.2,
+      "text": "THEM",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_15",
+      "name": "Highlight 15: SWAP",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 9.1,
+      "end": 9.55,
+      "x": 266.5,
+      "y": 1267.2,
+      "text": "SWAP",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_14",
+      "name": "Highlight 14: COLOUR.",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 8.65,
+      "end": 9.1,
+      "x": 752,
+      "y": 1267.2,
+      "text": "COLOUR.",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_13",
+      "name": "Highlight 13: IN",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 8.2,
+      "end": 8.65,
+      "x": 447,
+      "y": 1267.2,
+      "text": "IN",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_12",
+      "name": "Highlight 12: POPS",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 7.75,
+      "end": 8.2,
+      "x": 235,
+      "y": 1267.2,
+      "text": "POPS",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_11",
+      "name": "Highlight 11: WORD",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 7.3,
+      "end": 7.75,
+      "x": 855.5,
+      "y": 1267.2,
+      "text": "WORD",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_10",
+      "name": "Highlight 10: ACTIVE",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 6.85,
+      "end": 7.3,
+      "x": 481.5,
+      "y": 1267.2,
+      "text": "ACTIVE",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_9",
+      "name": "Highlight 9: THE",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 6.4,
+      "end": 6.85,
+      "x": 166,
+      "y": 1267.2,
+      "text": "THE",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_8",
+      "name": "Highlight 8: TIME.",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 5.95,
+      "end": 6.4,
+      "x": 589.5,
+      "y": 1267.2,
+      "text": "TIME.",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_7",
+      "name": "Highlight 7: A",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 5.5,
+      "end": 5.95,
+      "x": 386.5,
+      "y": 1267.2,
+      "text": "A",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_6",
+      "name": "Highlight 6: AT",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 5.05,
+      "end": 5.5,
+      "x": 819,
+      "y": 1267.2,
+      "text": "AT",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_5",
+      "name": "Highlight 5: ONE",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 4.6,
+      "end": 5.05,
+      "x": 617,
+      "y": 1267.2,
+      "text": "ONE",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_4",
+      "name": "Highlight 4: HERE,",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 4.15,
+      "end": 4.6,
+      "x": 338,
+      "y": 1267.2,
+      "text": "HERE,",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_3",
+      "name": "Highlight 3: APPEAR",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 3.7,
+      "end": 4.15,
+      "x": 901.5,
+      "y": 1267.2,
+      "text": "APPEAR",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_2",
+      "name": "Highlight 2: WORDS",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 3.25,
+      "end": 3.7,
+      "x": 481.5,
+      "y": 1267.2,
+      "text": "WORDS",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_hl_1",
+      "name": "Highlight 1: YOUR",
+      "type": "text",
+      "group": "Caption highlight",
+      "start": 2.8,
+      "end": 3.25,
+      "x": 120,
+      "y": 1267.2,
+      "text": "YOUR",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#ffe14d",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.16,
+            "v": 1.1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 0.34,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_7",
+      "name": "Caption 7",
+      "type": "text",
+      "group": "Captions",
+      "start": 10.45,
+      "end": 11.85,
+      "x": 540,
+      "y": 1267.2,
+      "text": "YOUR TRANSCRIPT.",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.12,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_6",
+      "name": "Caption 6",
+      "type": "text",
+      "group": "Captions",
+      "start": 9.1,
+      "end": 10.45,
+      "x": 540,
+      "y": 1267.2,
+      "text": "SWAP THEM FOR",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.12,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_5",
+      "name": "Caption 5",
+      "type": "text",
+      "group": "Captions",
+      "start": 7.75,
+      "end": 9.1,
+      "x": 540,
+      "y": 1267.2,
+      "text": "POPS IN COLOUR.",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.12,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_4",
+      "name": "Caption 4",
+      "type": "text",
+      "group": "Captions",
+      "start": 6.4,
+      "end": 7.75,
+      "x": 540,
+      "y": 1267.2,
+      "text": "THE ACTIVE WORD",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.12,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_3",
+      "name": "Caption 3",
+      "type": "text",
+      "group": "Captions",
+      "start": 5.5,
+      "end": 6.4,
+      "x": 540,
+      "y": 1267.2,
+      "text": "A TIME.",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.12,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_2",
+      "name": "Caption 2",
+      "type": "text",
+      "group": "Captions",
+      "start": 4.15,
+      "end": 5.5,
+      "x": 540,
+      "y": 1267.2,
+      "text": "HERE, ONE AT",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.12,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cap_1",
+      "name": "Caption 1",
+      "type": "text",
+      "group": "Captions",
+      "start": 2.8,
+      "end": 4.15,
+      "x": 540,
+      "y": 1267.2,
+      "text": "YOUR WORDS APPEAR",
+      "font": "inter-bold",
+      "size": 100,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.6
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.12,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "hook",
+      "name": "Hook",
+      "type": "text",
+      "group": "Titles",
+      "start": 0.3,
+      "end": 2.7,
+      "x": 540,
+      "y": 430,
+      "text": "YOUR HOOK\nGOES HERE",
+      "font": "bebas-neue-regular",
+      "size": 210,
+      "color": "#f5f5f7",
+      "line_height": 0.95,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.5
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 1.25,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          },
+          {
+            "t": 2.1,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 2.4,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "progress",
+      "name": "Progress",
+      "type": "image",
+      "group": "UI",
+      "src": "media/fill.png",
+      "fit": "native",
+      "start": 0,
+      "end": 12,
+      "x": 60,
+      "y": 96,
+      "anchor_x": 0,
+      "keys": {
+        "scale_x": [
+          {
+            "t": 0,
+            "v": 0.001
+          },
+          {
+            "t": 12,
+            "v": 1,
+            "ease": "linear"
+          }
+        ]
+      }
+    },
+    {
+      "id": "progress_track",
+      "name": "Progress track",
+      "type": "image",
+      "group": "UI",
+      "src": "media/track.png",
+      "fit": "native",
+      "start": 0,
+      "end": 12,
+      "x": 540,
+      "y": 96
+    },
+    {
+      "id": "shade",
+      "name": "Bottom shade",
+      "type": "image",
+      "group": "Picture",
+      "src": "media/shade.png",
+      "fit": "native",
+      "start": 0,
+      "end": 12,
+      "x": 540,
+      "y": 1420
+    },
+    {
+      "id": "talking_head",
+      "name": "Talking head (replace me)",
+      "type": "video",
+      "group": "Picture",
+      "src": "../_media/video/flow_dusk.mp4",
+      "src_in": 0,
+      "start": 0,
+      "end": 12,
+      "fit": "cover",
+      "muted": true,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 12,
+            "v": 1.08
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 540,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 12,
+            "v": 500
+          }
+        ],
+        "y": [
+          {
+            "t": 0,
+            "v": 960,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 12,
+            "v": 940
+          }
+        ]
+      }
+    },
+    {
+      "id": "music",
+      "name": "Music bed",
+      "type": "audio",
+      "group": "Sound",
+      "src": "../_media/audio/lofi_keys.m4a",
+      "src_in": 0,
+      "start": 0,
+      "end": 12,
+      "volume_db": -14,
+      "fade_in": 0.6,
+      "fade_out": 1.0
+    }
+  ],
+  "notes": [],
+  "requires": [
+    "keys",
+    "transform"
+  ]
+}

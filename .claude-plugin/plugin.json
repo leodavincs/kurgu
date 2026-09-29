@@ -1,0 +1,11 @@
+{
+  "name": "kurgu",
+  "displayName": "Kurgu",
+  "version": "0.1.0",
+  "description": "Claude writes the video as code; you fine-tune it like Premiere. A local timeline editor over a project.json that Claude Code and a human co-edit.",
+  "author": { "name": "leodavincs" },
+  "homepage": "https://github.com/leodavincs/kurgu",
+  "repository": "https://github.com/leodavincs/kurgu",
+  "license": "MIT",
+  "keywords": ["video", "editor", "ffmpeg", "timeline", "subtitles"]
+}

@@ -1,0 +1,2352 @@
+{
+  "version": 2,
+  "name": "Kurgu showcase",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "duration": 26.0,
+  "background": "#000000",
+  "output": "output.mp4",
+  "global": {
+    "grain": 1.2,
+    "vignette": 0.3,
+    "loudness_lufs": -14,
+    "fade_out": 1.4
+  },
+  "layers": [
+    {
+      "id": "s5_sub",
+      "name": "End subtitle",
+      "type": "text",
+      "group": "End card",
+      "start": 21.6,
+      "end": 26,
+      "x": 960,
+      "y": 745,
+      "text": "Open source. Runs on your machine. Written by an agent, refined by you.",
+      "font": "inter-regular",
+      "size": 34,
+      "color": "#b4b4ba",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.7
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 763,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1,
+            "v": 745
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 6,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.8,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s5_title",
+      "name": "End title",
+      "type": "text",
+      "group": "End card",
+      "start": 20.9,
+      "end": 26,
+      "x": 960,
+      "y": 600,
+      "text": "Made with Kurgu",
+      "font": "inter-bold",
+      "size": 128,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": -0.02,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 640,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1.1,
+            "v": 600
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 16,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.88,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s5_logo",
+      "name": "Logo mark",
+      "type": "image",
+      "group": "End card",
+      "src": "media/logo.png",
+      "fit": "native",
+      "start": 20.5,
+      "end": 26,
+      "x": 960,
+      "y": 400,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.6,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.9,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.4,
+            "v": 1
+          }
+        ],
+        "rotation": [
+          {
+            "t": 0,
+            "v": -12,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1.2,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "s4_attr",
+      "name": "Attribution",
+      "type": "text",
+      "group": "Quote",
+      "start": 18,
+      "end": 19.6,
+      "x": 960,
+      "y": 902,
+      "text": "H O W   K U R G U   T H I N K S",
+      "font": "inter-medium",
+      "size": 24,
+      "color": "#a1a1a6",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": 0.3,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 912,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 902
+          },
+          {
+            "t": 1.2,
+            "v": 902,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 1.6,
+            "v": 892
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 1.2,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 1.6,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 4,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.64,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s4_rule",
+      "name": "Rule",
+      "type": "image",
+      "group": "Quote",
+      "src": "media/rule.png",
+      "fit": "native",
+      "start": 17.8,
+      "end": 19.6,
+      "x": 960,
+      "y": 850,
+      "keys": {
+        "scale_x": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 1.4,
+            "v": 1
+          },
+          {
+            "t": 1.8,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "s4_q3",
+      "name": "Quote line 3",
+      "type": "text",
+      "group": "Quote",
+      "start": 17,
+      "end": 19.6,
+      "x": 960,
+      "y": 701,
+      "text": "Write them down.",
+      "font": "cormorant-garamond-italic",
+      "size": 108,
+      "color": "#ffd9c7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 735,
+            "ease": "out-quart"
+          },
+          {
+            "t": 1.1,
+            "v": 701
+          },
+          {
+            "t": 2.15,
+            "v": 701,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 2.6,
+            "v": 683
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 2.15,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 2.6,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 12,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.88,
+            "v": 0
+          },
+          {
+            "t": 2.15,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 2.6,
+            "v": 8
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s4_q2",
+      "name": "Quote line 2",
+      "type": "text",
+      "group": "Quote",
+      "start": 16.25,
+      "end": 19.6,
+      "x": 960,
+      "y": 573,
+      "text": "of decisions.",
+      "font": "cormorant-garamond-italic",
+      "size": 108,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 607,
+            "ease": "out-quart"
+          },
+          {
+            "t": 1.1,
+            "v": 573
+          },
+          {
+            "t": 2.9,
+            "v": 573,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.35,
+            "v": 555
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 2.9,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.35,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 12,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.88,
+            "v": 0
+          },
+          {
+            "t": 2.9,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.35,
+            "v": 8
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s4_q1",
+      "name": "Quote line 1",
+      "type": "text",
+      "group": "Quote",
+      "start": 15.7,
+      "end": 19.6,
+      "x": 960,
+      "y": 445,
+      "text": "A video is a list",
+      "font": "cormorant-garamond-italic",
+      "size": 108,
+      "color": "#f5f5f7",
+      "line_height": 1.1,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 479,
+            "ease": "out-quart"
+          },
+          {
+            "t": 1.1,
+            "v": 445
+          },
+          {
+            "t": 3.45,
+            "v": 445,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.9,
+            "v": 427
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 3.45,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.9,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 12,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.88,
+            "v": 0
+          },
+          {
+            "t": 3.45,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.9,
+            "v": 8
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s4_mark",
+      "name": "Quote mark",
+      "type": "text",
+      "group": "Quote",
+      "start": 15.3,
+      "end": 19.6,
+      "x": 960,
+      "y": 350,
+      "text": "“",
+      "font": "cormorant-garamond-bold",
+      "size": 520,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": false,
+        "blur": 22,
+        "opacity": 0
+      },
+      "opacity": 0.14,
+      "keys": {
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 1,
+            "v": 0.14
+          },
+          {
+            "t": 3.9,
+            "v": 0.14,
+            "ease": "in-quad"
+          },
+          {
+            "t": 4.3,
+            "v": 0
+          }
+        ],
+        "y": [
+          {
+            "t": 0,
+            "v": 390,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 1.4,
+            "v": 350
+          }
+        ]
+      }
+    },
+    {
+      "id": "s3_sub",
+      "name": "Subline",
+      "type": "text",
+      "group": "Titles",
+      "start": 12.2,
+      "end": 14.7,
+      "x": 960,
+      "y": 800,
+      "text": "Runs on 127.0.0.1. Nothing leaves your machine.",
+      "font": "inter-regular",
+      "size": 38,
+      "color": "#a1a1a6",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 820,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 800
+          },
+          {
+            "t": 2.1,
+            "v": 800,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 2.5,
+            "v": 774
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 2.1,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 2.5,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 6,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.72,
+            "v": 0
+          },
+          {
+            "t": 2.1,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 2.5,
+            "v": 10
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s3_n100",
+      "name": "Counter 100",
+      "type": "text",
+      "group": "Counter",
+      "start": 12.2,
+      "end": 14.7,
+      "x": 960,
+      "y": 560,
+      "text": "100%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#7ee7ff",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      },
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 1.1,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.6,
+            "v": 1,
+            "ease": "in-out-sine"
+          }
+        ],
+        "y": [
+          {
+            "t": 2.1,
+            "v": 560,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 2.5,
+            "v": 534
+          }
+        ],
+        "opacity": [
+          {
+            "t": 2.1,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 2.5,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 2.1,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 2.5,
+            "v": 10
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s3_n90",
+      "name": "Counter 90",
+      "type": "text",
+      "group": "Counter",
+      "start": 11.4573,
+      "end": 12.2,
+      "x": 960,
+      "y": 560,
+      "text": "90%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n80",
+      "name": "Counter 80",
+      "type": "text",
+      "group": "Counter",
+      "start": 11.2643,
+      "end": 11.4573,
+      "x": 960,
+      "y": 560,
+      "text": "80%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n70",
+      "name": "Counter 70",
+      "type": "text",
+      "group": "Counter",
+      "start": 11.1289,
+      "end": 11.2643,
+      "x": 960,
+      "y": 560,
+      "text": "70%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n60",
+      "name": "Counter 60",
+      "type": "text",
+      "group": "Counter",
+      "start": 11.0211,
+      "end": 11.1289,
+      "x": 960,
+      "y": 560,
+      "text": "60%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n50",
+      "name": "Counter 50",
+      "type": "text",
+      "group": "Counter",
+      "start": 10.9301,
+      "end": 11.0211,
+      "x": 960,
+      "y": 560,
+      "text": "50%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n40",
+      "name": "Counter 40",
+      "type": "text",
+      "group": "Counter",
+      "start": 10.8505,
+      "end": 10.9301,
+      "x": 960,
+      "y": 560,
+      "text": "40%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n30",
+      "name": "Counter 30",
+      "type": "text",
+      "group": "Counter",
+      "start": 10.7794,
+      "end": 10.8505,
+      "x": 960,
+      "y": 560,
+      "text": "30%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n20",
+      "name": "Counter 20",
+      "type": "text",
+      "group": "Counter",
+      "start": 10.7147,
+      "end": 10.7794,
+      "x": 960,
+      "y": 560,
+      "text": "20%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n10",
+      "name": "Counter 10",
+      "type": "text",
+      "group": "Counter",
+      "start": 10.6552,
+      "end": 10.7147,
+      "x": 960,
+      "y": 560,
+      "text": "10%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      }
+    },
+    {
+      "id": "s3_n0",
+      "name": "Counter 0",
+      "type": "text",
+      "group": "Counter",
+      "start": 10.6,
+      "end": 10.6552,
+      "x": 960,
+      "y": 560,
+      "text": "0%",
+      "font": "jetbrains-mono-bold",
+      "size": 300,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.3
+      },
+      "keys": {
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.25,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "s3_eyebrow",
+      "name": "Eyebrow",
+      "type": "text",
+      "group": "Titles",
+      "start": 10.4,
+      "end": 14.7,
+      "x": 960,
+      "y": 290,
+      "text": "P R I V A T E   B Y   D E S I G N",
+      "font": "inter-semibold",
+      "size": 28,
+      "color": "#7ee7ff",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": 0.28,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 304,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 290
+          },
+          {
+            "t": 3.9,
+            "v": 290,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 4.3,
+            "v": 264
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 3.9,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 4.3,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 6,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.72,
+            "v": 0
+          },
+          {
+            "t": 3.9,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 4.3,
+            "v": 10
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s2_lt2",
+      "name": "LT subtitle",
+      "type": "text",
+      "group": "Lower third",
+      "start": 8.5,
+      "end": 9.7,
+      "x": 491,
+      "y": 964,
+      "text": "Type, motion and camera are plain JSON.",
+      "font": "inter-regular",
+      "size": 30,
+      "color": "#a1a1a6",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 964,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 964
+          },
+          {
+            "t": 0.85,
+            "v": 964,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 1.2,
+            "v": 964
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 0.85,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 1.2,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 6,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.56,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 451,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 491
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s2_lt1",
+      "name": "LT title",
+      "type": "text",
+      "group": "Lower third",
+      "start": 8.35,
+      "end": 9.7,
+      "x": 421,
+      "y": 902,
+      "text": "Made in one prompt",
+      "font": "inter-semibold",
+      "size": 46,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "left",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 902,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.7,
+            "v": 902
+          },
+          {
+            "t": 1,
+            "v": 902,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 1.35,
+            "v": 902
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 1,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 1.35,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 8,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.56,
+            "v": 0
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 381,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.8,
+            "v": 421
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s2_bar",
+      "name": "LT bar",
+      "type": "image",
+      "group": "Lower third",
+      "src": "media/bar.png",
+      "fit": "native",
+      "start": 8.2,
+      "end": 9.7,
+      "x": 170,
+      "y": 934,
+      "scale_y": 0.0,
+      "anchor_y": 0.5,
+      "keys": {
+        "scale_y": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.6,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 1.15,
+            "v": 1
+          },
+          {
+            "t": 1.5,
+            "v": 0
+          }
+        ]
+      }
+    },
+    {
+      "id": "s2_l3",
+      "name": "List 3",
+      "type": "text",
+      "group": "Titles",
+      "start": 7.3,
+      "end": 9.7,
+      "x": 960,
+      "y": 700,
+      "text": "Camera moves.",
+      "font": "inter-bold",
+      "size": 118,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": -0.02,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.8,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.4,
+            "v": 1
+          },
+          {
+            "t": 2,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 2.4,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 16,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.6,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s2_l2",
+      "name": "List 2",
+      "type": "text",
+      "group": "Titles",
+      "start": 6.5,
+      "end": 9.7,
+      "x": 960,
+      "y": 550,
+      "text": "Easing.",
+      "font": "inter-bold",
+      "size": 118,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": -0.02,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.8,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.4,
+            "v": 1
+          },
+          {
+            "t": 0.85,
+            "v": 1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 1.35,
+            "v": 0.28
+          },
+          {
+            "t": 2.8,
+            "v": 0.28,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.2,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 16,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.6,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s2_l1",
+      "name": "List 1",
+      "type": "text",
+      "group": "Titles",
+      "start": 5.7,
+      "end": 9.7,
+      "x": 960,
+      "y": 400,
+      "text": "Keyframes.",
+      "font": "inter-bold",
+      "size": 118,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": -0.02,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 0.9,
+            "ease": "out-back"
+          },
+          {
+            "t": 0.8,
+            "v": 1
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.4,
+            "v": 1
+          },
+          {
+            "t": 0.85,
+            "v": 1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 1.35,
+            "v": 0.28
+          },
+          {
+            "t": 3.6,
+            "v": 0.28,
+            "ease": "in-quad"
+          },
+          {
+            "t": 4,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 16,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.6,
+            "v": 0
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s1_t2",
+      "name": "Title 2",
+      "type": "text",
+      "group": "Titles",
+      "start": 1.8,
+      "end": 4.9,
+      "x": 960,
+      "y": 690,
+      "text": "Watch it cut.",
+      "font": "inter-bold",
+      "size": 150,
+      "color": "#d2c4ff",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": -0.02,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 750,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1.1,
+            "v": 690
+          },
+          {
+            "t": 2.6,
+            "v": 690,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.1,
+            "v": 664
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 2.6,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.1,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 18,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.88,
+            "v": 0
+          },
+          {
+            "t": 2.6,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.1,
+            "v": 10
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s1_t1",
+      "name": "Title 1",
+      "type": "text",
+      "group": "Titles",
+      "start": 1,
+      "end": 4.9,
+      "x": 960,
+      "y": 520,
+      "text": "Describe it.",
+      "font": "inter-bold",
+      "size": 150,
+      "color": "#f5f5f7",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": -0.02,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 580,
+            "ease": "out-expo"
+          },
+          {
+            "t": 1.1,
+            "v": 520
+          },
+          {
+            "t": 3.4,
+            "v": 520,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.9,
+            "v": 494
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 3.4,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 3.9,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 18,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.88,
+            "v": 0
+          },
+          {
+            "t": 3.4,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 3.9,
+            "v": 10
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "s1_eyebrow",
+      "name": "Eyebrow",
+      "type": "text",
+      "group": "Titles",
+      "start": 0.6,
+      "end": 4.9,
+      "x": 960,
+      "y": 372,
+      "text": "K U R G U",
+      "font": "inter-semibold",
+      "size": 30,
+      "color": "#7ee7ff",
+      "line_height": 1.15,
+      "align": "center",
+      "shadow": {
+        "enabled": true,
+        "blur": 22,
+        "opacity": 0.35
+      },
+      "letter_spacing": 0.35,
+      "keys": {
+        "y": [
+          {
+            "t": 0,
+            "v": 386,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.9,
+            "v": 372
+          },
+          {
+            "t": 3.8,
+            "v": 372,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 4.3,
+            "v": 346
+          }
+        ],
+        "opacity": [
+          {
+            "t": 0,
+            "v": 0,
+            "ease": "out-quad"
+          },
+          {
+            "t": 0.55,
+            "v": 1
+          },
+          {
+            "t": 3.8,
+            "v": 1,
+            "ease": "in-quad"
+          },
+          {
+            "t": 4.3,
+            "v": 0
+          }
+        ],
+        "fx.bl.radius": [
+          {
+            "t": 0,
+            "v": 6,
+            "ease": "out-cubic"
+          },
+          {
+            "t": 0.72,
+            "v": 0
+          },
+          {
+            "t": 3.8,
+            "v": 0,
+            "ease": "in-cubic"
+          },
+          {
+            "t": 4.3,
+            "v": 10
+          }
+        ]
+      },
+      "effects": [
+        {
+          "type": "blur",
+          "id": "bl",
+          "radius": 0
+        }
+      ]
+    },
+    {
+      "id": "rings",
+      "name": "Rings",
+      "type": "video",
+      "group": "Picture",
+      "src": "../../templates/_media/video/geo_rings.mp4",
+      "src_in": 0.5,
+      "start": 20,
+      "end": 26,
+      "fit": "cover",
+      "muted": true,
+      "fade_in": 0.7,
+      "effects": [
+        {
+          "type": "brightness",
+          "enabled": true,
+          "value": -0.3
+        }
+      ]
+    },
+    {
+      "id": "dusk",
+      "name": "Dusk gradient",
+      "type": "video",
+      "group": "Picture",
+      "src": "../../templates/_media/video/flow_dusk.mp4",
+      "src_in": 1.5,
+      "start": 15,
+      "end": 20.6,
+      "fit": "cover",
+      "muted": true,
+      "fade_in": 0.7,
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 1.08
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 960,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 920
+          }
+        ],
+        "y": [
+          {
+            "t": 0,
+            "v": 540,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 520
+          }
+        ]
+      }
+    },
+    {
+      "id": "bokeh",
+      "name": "City bokeh",
+      "type": "video",
+      "group": "Picture",
+      "src": "../../templates/_media/video/bokeh_city.mp4",
+      "src_in": 0,
+      "start": 10,
+      "end": 15.6,
+      "fit": "cover",
+      "muted": true,
+      "fade_in": 0.6,
+      "effects": [
+        {
+          "type": "brightness",
+          "enabled": true,
+          "value": -0.05
+        }
+      ],
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 1,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 1.16
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 960,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 920
+          }
+        ],
+        "y": [
+          {
+            "t": 0,
+            "v": 550,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 510
+          }
+        ]
+      }
+    },
+    {
+      "id": "ink",
+      "name": "Ink",
+      "type": "video",
+      "group": "Picture",
+      "src": "../../templates/_media/video/ink.mp4",
+      "src_in": 1.0,
+      "start": 5,
+      "end": 10.6,
+      "fit": "cover",
+      "muted": true,
+      "fade_in": 0.5,
+      "effects": [
+        {
+          "type": "brightness",
+          "enabled": true,
+          "value": -0.26
+        }
+      ],
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 1,
+            "ease": "out-expo"
+          },
+          {
+            "t": 0.18,
+            "v": 1.09,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 1.08,
+            "v": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora",
+      "type": "video",
+      "group": "Picture",
+      "src": "../../templates/_media/video/aurora.mp4",
+      "src_in": 0,
+      "start": 0,
+      "end": 5.6,
+      "fit": "cover",
+      "muted": true,
+      "effects": [
+        {
+          "type": "brightness",
+          "enabled": true,
+          "value": -0.24
+        }
+      ],
+      "keys": {
+        "scale": [
+          {
+            "t": 0,
+            "v": 1.02,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 1.14
+          }
+        ],
+        "x": [
+          {
+            "t": 0,
+            "v": 984,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 936
+          }
+        ],
+        "y": [
+          {
+            "t": 0,
+            "v": 540,
+            "ease": "in-out-sine"
+          },
+          {
+            "t": 5.6,
+            "v": 520
+          }
+        ]
+      }
+    },
+    {
+      "id": "sfx_hit2",
+      "name": "Hit (end)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/hit.wav",
+      "src_in": 0,
+      "start": 20,
+      "end": 21.6,
+      "volume_db": -8
+    },
+    {
+      "id": "sfx_shimmer",
+      "name": "Shimmer (end card)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/shimmer.wav",
+      "src_in": 0,
+      "start": 20.5,
+      "end": 23.1,
+      "volume_db": -10
+    },
+    {
+      "id": "sfx_whoosh4",
+      "name": "Whoosh (cut 3)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 14.5,
+      "end": 15.5,
+      "volume_db": -10
+    },
+    {
+      "id": "sfx_pop",
+      "name": "Pop (100%)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/pop.wav",
+      "src_in": 0,
+      "start": 12.2,
+      "end": 12.5,
+      "volume_db": -9
+    },
+    {
+      "id": "sfx_tick100",
+      "name": "Tick 100",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 12.2,
+      "end": 12.26,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick90",
+      "name": "Tick 90",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 11.4573,
+      "end": 11.5173,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick80",
+      "name": "Tick 80",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 11.2643,
+      "end": 11.3243,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick70",
+      "name": "Tick 70",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 11.1289,
+      "end": 11.1889,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick60",
+      "name": "Tick 60",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 11.0211,
+      "end": 11.0811,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick50",
+      "name": "Tick 50",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 10.9301,
+      "end": 10.9901,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick40",
+      "name": "Tick 40",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 10.8505,
+      "end": 10.9105,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick30",
+      "name": "Tick 30",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 10.7794,
+      "end": 10.8394,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick20",
+      "name": "Tick 20",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 10.7147,
+      "end": 10.7747,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick10",
+      "name": "Tick 10",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 10.6552,
+      "end": 10.7152,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_tick0",
+      "name": "Tick 0",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/tick.wav",
+      "src_in": 0,
+      "start": 10.6,
+      "end": 10.66,
+      "volume_db": -17
+    },
+    {
+      "id": "sfx_whoosh3",
+      "name": "Whoosh (cut 2)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 9.5,
+      "end": 10.5,
+      "volume_db": -10
+    },
+    {
+      "id": "sfx_whoosh2",
+      "name": "Whoosh (lower third)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 8.05,
+      "end": 9.05,
+      "volume_db": -12
+    },
+    {
+      "id": "sfx_click3",
+      "name": "Click (list 3)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/click.wav",
+      "src_in": 0,
+      "start": 7.3,
+      "end": 7.39,
+      "volume_db": -14
+    },
+    {
+      "id": "sfx_click2",
+      "name": "Click (list 2)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/click.wav",
+      "src_in": 0,
+      "start": 6.5,
+      "end": 6.59,
+      "volume_db": -14
+    },
+    {
+      "id": "sfx_click1",
+      "name": "Click (list 1)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/click.wav",
+      "src_in": 0,
+      "start": 5.7,
+      "end": 5.79,
+      "volume_db": -14
+    },
+    {
+      "id": "sfx_hit1",
+      "name": "Hit (cut 1)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/hit.wav",
+      "src_in": 0,
+      "start": 5,
+      "end": 6.6,
+      "volume_db": -6
+    },
+    {
+      "id": "sfx_riser",
+      "name": "Riser",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/riser.wav",
+      "src_in": 0,
+      "start": 2.4,
+      "end": 5,
+      "volume_db": -9
+    },
+    {
+      "id": "sfx_whoosh1",
+      "name": "Whoosh (title)",
+      "type": "audio",
+      "group": "SFX",
+      "src": "../../templates/_media/sfx/whoosh.wav",
+      "src_in": 0,
+      "start": 0.75,
+      "end": 1.75,
+      "volume_db": -8
+    },
+    {
+      "id": "music",
+      "name": "Cinematic pad",
+      "type": "audio",
+      "group": "Music",
+      "src": "../../templates/_media/audio/cinematic_pad.m4a",
+      "src_in": 0,
+      "start": 0,
+      "end": 26,
+      "volume_db": -2,
+      "fade_in": 1.6,
+      "fade_out": 2.0,
+      "envelope": [
+        [
+          0,
+          0
+        ],
+        [
+          15.4,
+          0
+        ],
+        [
+          16.2,
+          -5
+        ],
+        [
+          19.2,
+          -5
+        ],
+        [
+          20.2,
+          0
+        ]
+      ]
+    }
+  ],
+  "notes": [],
+  "requires": [
+    "keys",
+    "transform"
+  ]
+}

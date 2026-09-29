@@ -1,0 +1,13 @@
+#!/bin/bash
+# Kurgu launcher: kurgu [project_dir] [server options]   (works through symlinks)
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P "$(dirname "$src")" && pwd)"
+  src="$(readlink "$src")"
+  [[ "$src" != /* ]] && src="$dir/$src"
+done
+dir="$(cd -P "$(dirname "$src")" && pwd)"
+project="${1:-.}"; [ $# -gt 0 ] && shift
+project="$(cd "$project" 2>/dev/null && pwd)" || { echo "No such folder: $project" >&2; exit 1; }
+py="$(command -v python3 || command -v python)" || { echo "Python 3.10+ not found (https://www.python.org/downloads/)" >&2; exit 1; }
+exec "$py" "$dir/server.py" "$project" "$@"

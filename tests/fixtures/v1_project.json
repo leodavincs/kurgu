@@ -1,0 +1,25 @@
+{
+  "surum": 1, "ad": "Go for Orbit", "genislik": 1280, "yukseklik": 720, "fps": 25, "sure": 20,
+  "arkaplan": "#101010", "cikti": "cikti.mp4",
+  "genel": {"gren": 2, "vinyet": 0.3, "ses_hedef_lufs": null, "son_karartma": 1.5},
+  "katmanlar": [
+    {"id": "k_yazi", "ad": "Başlık", "tur": "yazi", "grup": "Yazı", "gizli": true, "kilitli": true,
+     "baslangic": 1, "bitis": 5, "metin": "GO\nşğıİöüç", "font": "gill-semibold", "boyut": 100, "renk": "#ffffff",
+     "harf_araligi": 0.2, "satir_yuksekligi": 1.1, "hiza": "sol", "x": 100, "y": 200, "olcek": 1.5, "opaklik": 0.8,
+     "golge": {"acik": false, "bulaniklik": 4, "opaklik": 0.5},
+     "giris": {"tur": "fade", "sure": 0.5}, "cikis": {"tur": "yok", "sure": 9},
+     "efektler": [{"tur": "siyahbeyaz", "miktar": 0.5}, {"tur": "parlaklik", "deger": 0.1, "acik": false}]},
+    {"id": "k_yazi2", "tur": "yazi", "baslangic": 0, "bitis": 2, "metin": "plain"},
+    {"id": "k_gorsel", "ad": "Logo", "tur": "gorsel", "kaynak": "medya/logo.png", "baslangic": 0, "bitis": 3,
+     "kirp": {"ust": 0.1, "sag": 0.2}, "cikis": {"tur": "fade", "sure": 1}},
+    {"id": "k_gorsel2", "tur": "gorsel", "kaynak": "medya/x.png", "sigdir": "dogal", "baslangic": 0, "bitis": 3},
+    {"id": "k_video", "ad": "Klip", "tur": "video", "kaynak": "medya/a.mp4", "kaynak_bas": 4, "sigdir": "sigdir",
+     "baslangic": 0, "bitis": 10, "ses_duzeyi": -6, "sessiz": true, "zarf": [[0, -20], [2, 0]],
+     "efektler": [{"tur": "yakinlas", "bas": 1, "son": 1.3}, {"tur": "doygunluk", "deger": -0.2},
+                  {"tur": "kontrast", "deger": 0.3}, {"tur": "bulaniklik", "yaricap": 3}, {"tur": "dondur"}]},
+    {"id": "k_renk", "tur": "renk", "renk": "#000000", "baslangic": 9, "bitis": 10, "sigdir": "kapla"},
+    {"id": "k_ses", "ad": "Müzik", "tur": "ses", "kaynak": "medya/m.wav", "baslangic": 0, "bitis": 20,
+     "giris": {"tur": "fade", "sure": 1}, "cikis": {"tur": "fade", "sure": 2}}
+  ],
+  "notlar": [{"id": "n_1", "t": 12.3, "metin": "burada ses yüksek", "zaman": "2026-09-29T15:04:00"}]
+}
