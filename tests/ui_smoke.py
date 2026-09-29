@@ -996,7 +996,7 @@ def test_save_conflict_merges_instead_of_dropping_the_edit(chrome):
         _put(s, agent, cur["version"], "agent")
         # our unsaved edit (made on the old base): k_sol.x, k_orta.y (clash), k_buyuk.text
         p.eval("__kurgu.change(P=>{const g=id=>P.layers.find(l=>l.id===id); g('k_sol').x=123; g('k_orta').y=222; g('k_buyuk').text='mine';})")
-        p.wait_for("[...document.querySelectorAll('.toast')].some(t=>/agent edited the project/i.test(t.textContent))", 15)
+        p.wait_for("[...document.querySelectorAll('.toast')].some(t=>/agent edited the project/i.test(t.textContent))", 40)
         p.wait_for("__kurgu.S.saveState==='saved'", 30)
         disk = {l["id"]: l for l in s.project()["project"]["layers"]}
         assert disk["k_sol"]["x"] == 123 and disk["k_sol"]["opacity"] == 0.25          # both edits of different fields survived

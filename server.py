@@ -98,7 +98,15 @@ def write_atomic(path, data):
     tmp = f"{path}.tmp{os.getpid()}{threading.get_ident()}"
     with open(tmp, "wb") as f:
         f.write(data)
-    os.replace(tmp, path)
+    for attempt in range(20):  # Windows refuses to replace a file another handle is reading: retry briefly
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            if attempt == 19:
+                os.remove(tmp)
+                raise
+            time.sleep(0.025)
 
 
 def safe_name(name):
