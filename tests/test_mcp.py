@@ -152,6 +152,7 @@ def test_modern_era_without_handshake(project_dir):
         assert d["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "kurgu"
         tl = m.call("tools/list", meta=meta)["result"]
         assert tl["resultType"] == "complete" and len(tl["tools"]) == 17
+        assert isinstance(tl["ttlMs"], int) and tl["cacheScope"] in ("public", "private")  # required by Claude Code 2.1.296
         r = m.call("tools/call", {"name": "get_project", "arguments": {"summary": True}}, meta=meta)["result"]
         assert r["resultType"] == "complete" and "k_buyuk" in r["content"][0]["text"]
         bad = m.call("tools/list", meta={"io.modelcontextprotocol/protocolVersion": "1900-01-01"})["error"]

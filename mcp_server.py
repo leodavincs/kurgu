@@ -1231,7 +1231,10 @@ def handle(msg):
     if method == "ping":
         return {"jsonrpc": "2.0", "id": rid, "result": finish({}, modern)}
     if method == "tools/list":
-        return {"jsonrpc": "2.0", "id": rid, "result": finish({"tools": tool_list()}, modern)}
+        res = {"tools": tool_list()}
+        if modern:                                          # 2026-07-28 list results must say how long they may be cached
+            res.update(ttlMs=0, cacheScope="private")
+        return {"jsonrpc": "2.0", "id": rid, "result": finish(res, modern)}
     if method == "tools/call":
         if not isinstance(params, dict):
             return rpc_error(rid, -32602, "Invalid params")
