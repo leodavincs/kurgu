@@ -609,5 +609,11 @@
   "watch.noScene": "katman yok",
   "guides.realFrame": "Gerçek kare (R)",
   "np.sent": "gönderildi ✓",
-  "np.fixed": "düzeltildi"
+  "np.fixed": "düzeltildi",
+  "layers.viewAudio": "Ses",
+  "av.hint": "tıkla = git · sürükle = kaydır · {mod} + tekerlek ya da + / - = yakınlaştır",
+  "av.loading": "Ses okunuyor…",
+  "av.noAudio": "Bu projede ses katmanı yok",
+  "av.overTip": "Bütün proje: kutuyu sürükle ya da bir yere tıkla",
+  "av.wordsTip": "Altyazı / yazı katmanlarının kelimeleri (her katmanın süresine eşit dağıtılır)"
 }

@@ -609,5 +609,11 @@
   "watch.noScene": "no layer",
   "guides.realFrame": "Real render frame (R)",
   "np.sent": "sent ✓",
-  "np.fixed": "fixed"
+  "np.fixed": "fixed",
+  "layers.viewAudio": "Audio",
+  "av.hint": "click = go · drag = scroll · {mod} + wheel or + / - = zoom",
+  "av.loading": "Reading the sound…",
+  "av.noAudio": "No audio layer in this project",
+  "av.overTip": "Whole project: drag the box to scroll, click to jump",
+  "av.wordsTip": "Words of the caption / text layers (spread evenly over each layer)"
 }

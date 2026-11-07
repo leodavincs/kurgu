@@ -1014,7 +1014,7 @@ def tk(chrome):
     """Synthetic 40-layer project (Kartlar 4 / Altyazı 15 / Görüntü 18 with crossfades / Ses 3), private server, track view (the default)."""
     s = cdp.Server(prepare=synthetic)
     p = chrome.new_page()
-    p.open(s.url("/"), lang="en", view=None)          # view=None: nothing stored, so this is the real default
+    p.open(s.url("/"), lang="en", view="tracks")          # the Audio pane is the default for projects with audio (tests/test_audio_view.py); here the track view is chosen
     p.eval("document.documentElement.style.setProperty('--lp-h','640px')")
     time.sleep(0.3)
     yield p, s
@@ -1203,7 +1203,7 @@ def _with_pair(p):
 def lk(chrome):
     s = cdp.Server(prepare=_with_pair)
     p = chrome.new_page()
-    p.open(s.url("/"), lang="en", view=None)
+    p.open(s.url("/"), lang="en", view="tracks")
     p.eval("document.documentElement.style.setProperty('--lp-h','520px')")
     time.sleep(0.3)
     yield p, s

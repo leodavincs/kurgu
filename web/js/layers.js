@@ -9,6 +9,7 @@ import { mediaStatus } from './preview.js';
 import { el, icon, setIcon } from './dom.js';
 import { t, fmt } from './i18n.js';
 import { cv as tok, themeKey } from './theme.js';
+import { mountAudio, setAudioActive, audioHooks, hasAudioLayer } from './audioview.js';
 import * as KF from './keyframes.js';
 import { sections, layout, place, collides } from './trackpack.js';
 
@@ -25,8 +26,12 @@ const dpr = () => Math.min(2, window.devicePixelRatio || 1);
 let visibleOrder = [];
 let lastSelectionKey = '';
 // ---- track view state
-const VIEW_KEY = 'kurgu.layerView';
-let viewMode = (() => { try { return localStorage.getItem(VIEW_KEY) === 'layers' ? 'layers' : 'tracks'; } catch (e) { return 'tracks'; } })();
+const VIEW_KEY = 'kurgu.layerView';                       // 'audio' | 'tracks' | 'layers': the pane the user chose last
+const LIST_KEY = 'kurgu.layerView.list';                  // the list view ('tracks' | 'layers') that Audio hides, so switching back is exact
+const lsGet = k => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+// default pane: Audio when the project has an audio layer (the choice is remembered once made)
+let pane = 'list';                                         // set in startLayerPanel (needs the loaded project)
+let viewMode = (() => { const v = lsGet(VIEW_KEY), l = lsGet(LIST_KEY); return (v === 'layers' || (v === 'audio' && l === 'layers')) ? 'layers' : 'tracks'; })();
 const clips = new Map();           // layer id -> clip (track view)
 const trackRows = new Map();       // 'section|track' -> track row
 let trackNodes = [];               // [{el, si, k}] rows currently shown, top to bottom (hit testing)
@@ -53,18 +58,29 @@ export function setZoom(z, centerT) {
   if (dom.zoomInput) { dom.zoomInput.value = String(Math.log(zoom) / Math.log(60)); dom.zoomInput.style.setProperty('--p', (parseFloat(dom.zoomInput.value) * 100) + '%'); }
 }
 
+function applyPane() {
+  const audio = pane === 'audio';
+  dom.root.classList.toggle('pane-audio', audio);
+  if (dom.body) dom.body.hidden = audio;
+  if (dom.audioHost) dom.audioHost.hidden = !audio;
+  setAudioActive(audio);
+  for (const b of dom.root.querySelectorAll('.lp-seg-btn')) { const on = audio ? b.dataset.view === 'audio' : b.dataset.view === viewMode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+}
 export function setView(mode) {
-  if (mode !== 'tracks' && mode !== 'layers') return;
-  if (mode === viewMode) return;
-  viewMode = mode; try { localStorage.setItem(VIEW_KEY, mode); } catch (e) { /* ignore */ }
-  for (const b of dom.root.querySelectorAll('.lp-seg-btn')) { const on = b.dataset.view === mode; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+  if (mode !== 'tracks' && mode !== 'layers' && mode !== 'audio') return;
+  try { localStorage.setItem(VIEW_KEY, mode); if (mode !== 'audio') localStorage.setItem(LIST_KEY, mode); } catch (e) { /* ignore */ }
+  if (mode === 'audio') { pane = 'audio'; applyPane(); return; }
+  const was = pane; pane = 'list';
+  if (mode === viewMode) { applyPane(); if (was === 'audio') redraw(true); return; }
+  viewMode = mode;
+  applyPane();
   dom.list.classList.toggle('view-tracks', mode === 'tracks'); dom.list.replaceChildren(); rows.clear(); clips.clear(); trackRows.clear(); lanes.clear(); headerCache.clear(); frozen = null; layoutCache = null;
   redraw(true);
   const id = S.selection[S.selection.length - 1];
   const node = id && (viewMode === 'tracks' ? clips.get(id)?.el : rows.get(id)?.el);
   if (node) node.scrollIntoView({ block: 'nearest' });
 }
-export const getView = () => viewMode;
+export const getView = () => (pane === 'audio' ? 'audio' : viewMode);
 
 // ---------------------------------------------------------------- build
 function build() {
@@ -80,11 +96,13 @@ function build() {
   zoomInput.addEventListener('input', () => { fillZoom(); setZoom(Math.pow(60, parseFloat(zoomInput.value)), S.t); });
   const fitBtn = el('button', 'lp-btn', t('layers.fit')); fitBtn.addEventListener('click', () => { setZoom(1); dom.body.scrollLeft = 0; });
   const seg = el('div', 'lp-seg'); seg.setAttribute('role', 'group'); seg.title = t('layers.viewTip');
-  for (const [mode, key] of [['tracks', 'layers.viewTracks'], ['layers', 'layers.viewLayers']]) {
-    const b = el('button', 'lp-seg-btn' + (viewMode === mode ? ' on' : ''), t(key)); b.type = 'button'; b.dataset.view = mode; b.setAttribute('aria-pressed', String(viewMode === mode));
+  for (const [mode, key] of [['audio', 'layers.viewAudio'], ['tracks', 'layers.viewTracks'], ['layers', 'layers.viewLayers']]) {
+    const on = mode === 'audio' ? pane === 'audio' : pane !== 'audio' && viewMode === mode;
+    const b = el('button', 'lp-seg-btn' + (on ? ' on' : ''), t(key)); b.type = 'button'; b.dataset.view = mode; b.setAttribute('aria-pressed', String(on));
     b.addEventListener('click', () => setView(mode)); seg.append(b);
   }
-  right.append(seg, zoomOut, zoomInput, zoomIn, fitBtn); bar.append(right);
+  const avHint = el('span', 'lp-hint av-hint', t('av.hint'));
+  right.append(seg, avHint, zoomOut, zoomInput, zoomIn, fitBtn); bar.append(right);
   dom.zoomInput = zoomInput;
   const body = el('div', 'lp-body'); dom.body = body;
   const content = el('div', 'lp-content'); dom.content = content;
@@ -102,7 +120,9 @@ function build() {
   const tip = el('div', 'lp-tip'); dom.tip = tip; tip.hidden = true;
   content.append(ruler, list, line, snap, drop);
   body.append(content);
-  root.append(bar, body, tip);
+  const audioHost = el('div', 'lp-audio'); dom.audioHost = audioHost; mountAudio(audioHost);
+  root.append(bar, body, audioHost, tip);
+  applyPane();
   list.addEventListener('pointerdown', () => { S.focus = 'layers'; });
 
   // scrub on the ruler
@@ -132,17 +152,18 @@ function build() {
 
 export function startLayerPanel(root) {
   dom.root = root;
+  { const v = lsGet(VIEW_KEY); pane = v === 'audio' ? 'audio' : v === 'tracks' || v === 'layers' ? 'list' : (hasAudioLayer() ? 'audio' : 'list'); }
   build();
   KF.initKeyboard();
   document.addEventListener('kf-selection', () => { if (S.project) redraw(false); });
   return {
-    project: () => { KF.pruneKeySel(); redraw(false); },
-    time: updateTime,
+    project: () => { KF.pruneKeySel(); redraw(false); audioHooks.project(); },
+    time: () => { updateTime(); audioHooks.time(); },
     selection: onSelection,
     media: () => redraw(false),
     settings: () => {},
     lang: () => build(),
-    theme: () => redraw(true),
+    theme: () => { redraw(true); audioHooks.theme(); },
   };
 }
 
