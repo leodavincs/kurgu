@@ -151,9 +151,14 @@ export async function saveAndWait() {
 export const savePending = () => saving || S.saveState === 'dirty';
 
 // ---------- external change polling ----------
+let lastPing = Date.now();
 export function startPolling() {
-  setInterval(() => { if (!document.hidden) checkExternal(); }, 1000);       // nothing to watch while the tab is in the background ...
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkExternal(); });   // ... but look at once when it comes back
+  setInterval(() => {
+    if (!document.hidden) { lastPing = Date.now(); checkExternal(); return; }
+    // a background tab does not poll, but it is still an open editor: one slow ping tells the server not to stop itself for being idle
+    if (Date.now() - lastPing >= (Number(window.__kurguHiddenPingMs) || 60000)) { lastPing = Date.now(); fetch('/api/version', { cache: 'no-store' }).catch(() => {}); }
+  }, 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkExternal(); });   // back in front: look at once
 }
 /** Look for a changed project.json now (the AI panel also calls this when a job ends). Every reload is one undo step. */
 export async function checkExternal() {

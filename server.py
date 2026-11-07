@@ -167,6 +167,73 @@ def reveal_in_os(path):
         pass
 
 
+_children = set()
+_children_lock = threading.Lock()
+
+
+def popen(cmd, **kw):
+    """subprocess.Popen whose process is remembered, so a stopping server can end every ffmpeg it started."""
+    p = subprocess.Popen(cmd, **kw)
+    with _children_lock:
+        _children.add(p)
+    return p
+
+
+def run(cmd, timeout=None, capture_output=False, **kw):
+    """subprocess.run (the parts Kurgu uses) on a tracked process."""
+    if capture_output:
+        kw["stdout"] = kw["stderr"] = subprocess.PIPE
+    p = popen(cmd, **kw)
+    try:
+        out, err = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        p.communicate()
+        raise
+    finally:
+        with _children_lock:
+            _children.discard(p)
+    return subprocess.CompletedProcess(cmd, p.returncode, out, err)
+
+
+def stop_children():
+    """Terminate (then kill) every tracked child that is still running."""
+    with _children_lock:
+        alive = [p for p in _children if p.poll() is None]
+        _children.clear()
+    for p in alive:
+        try:
+            p.terminate()
+        except OSError:
+            pass
+    for p in alive:
+        try:
+            p.wait(3)
+        except subprocess.TimeoutExpired:
+            try:
+                p.kill()
+            except OSError:
+                pass
+
+
+def pid_alive(pid):
+    if os.name == "nt":
+        import ctypes
+        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))      # PROCESS_QUERY_LIMITED_INFORMATION
+        if h:
+            ctypes.windll.kernel32.CloseHandle(h)
+        return bool(h)
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 def low_priority():
     """Popen / run kwargs that make a background ffmpeg yield to the editor and the player (nice on POSIX, below-normal class on Windows)."""
     if os.name == "nt":
@@ -229,6 +296,7 @@ class App:
         self.proxy_state, self.proxy_lock = {}, threading.Lock()
         self.proxy_prog, self.prewarmed = {}, set()
         self._ver = (None, "")
+        self.last_seen = time.time()           # last request that came from a browser tab (the editor's heartbeat)
         self.quick = JobQueue(QUICK_WORKERS, "quick")
         self.proxies = JobQueue(PROXY_WORKERS, "proxy")
         self.frame_locks = {}
@@ -239,6 +307,48 @@ class App:
         self.stt = transcribe.JobRunner()
         self.render_proc, self.render_thread, self.render_cancel_flag = None, None, False
         self.render_t0, self.render_end, self.render_part = None, None, "mp4"
+
+    # ------------------------------------------------------------ lifecycle
+    def idle_seconds(self):
+        """Minutes without an editor tab before the server stops itself (default 10; env KURGU_IDLE_MIN, else `idle_minutes` in .kurgu/config.json;
+        0 = never), in seconds."""
+        v = os.environ.get("KURGU_IDLE_MIN", "").strip()
+        if not v:
+            try:
+                with open(os.path.join(self.kurgu, "config.json"), encoding="utf-8") as f:
+                    v = str(json.load(f).get("idle_minutes", "")).strip()
+            except (OSError, ValueError, AttributeError):
+                v = ""
+        try:
+            m = float(v) if v else 10.0
+        except ValueError:
+            m = 10.0
+        return max(0.0, m) * 60.0
+
+    def busy(self):
+        """True while something the user is waiting for runs: a render, a proxy, a transcription, an AI job, queued thumbnails / waveforms."""
+        if self.render.get("status") == "running":
+            return True
+        with self.proxy_lock:
+            if any(v == "running" for v in self.proxy_state.values()):
+                return True
+        if any(j.get("status") == "running" for j in list(self.stt.jobs.values())) or any(j.get("status") == "running" for j in list(self.ai.jobs.values())):
+            return True
+        return bool(self.quick.pending) or bool(self.proxies.pending)
+
+    def idle_for(self):
+        return time.time() - self.last_seen
+
+    def cleanup_temp(self):
+        """Half-written files of work that was cut short."""
+        shutil.rmtree(os.path.join(self.kurgu, "render_tmp"), ignore_errors=True)
+        d = os.path.join(self.kurgu, "proxies")
+        for name in (os.listdir(d) if os.path.isdir(d) else []):
+            if name.endswith(".part.mp4"):
+                try:
+                    os.remove(os.path.join(d, name))
+                except OSError:
+                    pass
 
     # ------------------------------------------------------------ paths
     def prepare(self):
@@ -530,7 +640,7 @@ class App:
         if hw and not used_hw:
             return None
         errlog = tempfile.TemporaryFile()
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errlog, stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", **low_priority())
+        p = popen(cmd, stdout=subprocess.PIPE, stderr=errlog, stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", **low_priority())
         t0 = time.time()
         for line in p.stdout:
             if line.startswith("out_time_us=") or line.startswith("out_time_ms="):     # (both are microseconds in practice)
@@ -653,7 +763,7 @@ class App:
         if os.path.exists(target):
             with open(target, "rb") as f:
                 return json.load(f)
-        p = subprocess.Popen([media_tools.ffmpeg(), "-v", "error", *media_tools.input_args(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+        p = popen([media_tools.ffmpeg(), "-v", "error", *media_tools.input_args(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, **low_priority())
         peaks, window, rest = [], 80, b""
 
@@ -703,7 +813,7 @@ class App:
         if kind == "image":
             one = os.path.join(folder, names[0])
             cmd = [media_tools.ffmpeg(), "-y", "-v", "error", *media_tools.input_args(path), "-vf", "scale=-2:72", "-frames:v", "1", "-q:v", "5", one]
-            if subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, **low_priority()).returncode != 0:
+            if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, **low_priority()).returncode != 0:
                 raise HttpError(422, "could not read image")
             for x in names[1:]:
                 with open(one, "rb") as src, open(os.path.join(folder, x), "wb") as dst:
@@ -713,7 +823,7 @@ class App:
         cmd = [media_tools.ffmpeg(), "-y", "-v", "error", "-ss", f"{dur / (2 * n):.4f}", *media_tools.input_args(path), "-an",
                "-vf", f"fps={n}/{dur:.6f},scale=-2:72", "-frames:v", str(n), "-q:v", "5",
                os.path.join(folder, "%03d.jpg.tmp.jpg")]
-        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", **low_priority())
+        r = run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", **low_priority())
         made = sorted(x for x in os.listdir(folder) if x.endswith(".tmp.jpg"))
         if r.returncode != 0 and not made:
             raise HttpError(422, (r.stderr.strip().splitlines() or ["thumbnail extraction failed"])[-1])
@@ -1056,7 +1166,7 @@ class App:
             if os.path.exists(png):
                 return png
             tmp = png + ".part.png"
-            r = subprocess.run([sys.executable, os.path.join(ROOT, "render.py"), self.dir, "--frame", f"{t:.3f}",
+            r = run([sys.executable, os.path.join(ROOT, "render.py"), self.dir, "--frame", f"{t:.3f}",
                                 "--output", tmp, "--draft"], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             if r.returncode != 0 or not os.path.exists(tmp):
                 msg = next((s[5:].strip() for s in r.stdout.splitlines() if s.startswith("ERROR")), None)
@@ -1162,6 +1272,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.fail(403, "forbidden origin", close=True)
         if (self.headers.get("Sec-Fetch-Site") or "").lower() in ("cross-site", "same-site"):
             return self.fail(403, "forbidden cross-site request", close=True)
+        if self.headers.get("Sec-Fetch-Site"):                 # a browser tab (curl / MCP / tests send no fetch metadata): the editor is alive
+            self.app.last_seen = time.time()
         streaming = method == "POST" and path == "/api/import"
         if not streaming:
             n = int(self.headers.get("Content-Length") or 0)
@@ -1214,7 +1326,7 @@ class Handler(BaseHTTPRequestHandler):
                 code, data = app.save_project(self.read_json())
                 return self.reply(code, data)
         elif path == "/api/version" and method == "GET":
-            return self.reply(200, {"version": app.version()})
+            return self.reply(200, {"version": app.version(), "app": "kurgu", "dir": app.dir})
         elif path == "/api/state":
             if method == "PUT":
                 return self.reply(200, app.save_state(self.read_json()))
@@ -1484,6 +1596,49 @@ def make_server(project_dir, port=8765, tries=50):
     raise SystemExit(f"no free port found ({last})")
 
 
+def running_server(project_dir):
+    """(port, url) of a live Kurgu server for this project (server.json names a living pid AND that port answers /api/version with the same project
+    folder), else None. A stale server.json (dead pid, nothing answering, another project behind the port) is removed."""
+    from urllib.request import urlopen
+    d = os.path.realpath(project_dir)
+    path = os.path.join(d, ".kurgu", "server.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            info = json.load(f)
+        pid, port = int(info["pid"]), int(info["port"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    ok = False
+    if pid_alive(pid):
+        try:
+            with urlopen(f"http://127.0.0.1:{port}/api/version", timeout=2) as r:
+                j = json.loads(r.read() or b"{}")
+            ok = j.get("app") == "kurgu" and os.path.realpath(str(j.get("dir", ""))) == d
+        except (OSError, ValueError):
+            ok = False
+    if not ok:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        return None
+    return port, f"http://127.0.0.1:{port}/"
+
+
+def watch_idle(srv, stop):
+    """Stop the server when no editor tab has talked to it for the configured time and nothing is running."""
+    app = srv.app
+    limit = app.idle_seconds()
+    if limit <= 0:
+        return
+    poll = max(0.2, min(5.0, limit / 4))
+    while not stop.wait(poll):
+        if app.idle_for() >= limit and not app.busy():
+            print(f"\nno editor open for {limit / 60:g} min: stopping (start it again with `kurgu {app.dir}`)", flush=True)
+            threading.Thread(target=srv.shutdown, daemon=True).start()       # serve_forever returns; main() cleans up
+            return
+
+
 def main(argv=None):
     args = sys.argv[1:] if argv is None else list(argv)
     if args and args[0] == "notes":                        # kurgu notes list|wait|done <project_dir> ...
@@ -1494,10 +1649,22 @@ def main(argv=None):
             _s.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="Kurgu local editor server")
     ap.add_argument("project_dir", nargs="?", default=".")
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--port", type=int, default=None, help="default 8765 (the next free one when it is taken)")
     ap.add_argument("--no-open", action="store_true", help="do not open the browser")
     a = ap.parse_args(argv)
-    srv = make_server(a.project_dir, a.port)
+    # One server per project: a second start finds the first one, says where it is and (unless --no-open) shows it
+    live = running_server(a.project_dir) if os.path.isdir(a.project_dir) else None
+    if live:
+        port, url = live
+        if a.port is not None and a.port != port:
+            print(f"Kurgu is already running for this project at {url} (port {port}); it cannot also run on port {a.port}. "
+                  f"Stop that one first, or leave --port out to use it.", file=sys.stderr, flush=True)
+            sys.exit(1)
+        print(f"Kurgu is already running for this project: {url}", flush=True)
+        if not a.no_open:
+            webbrowser.open(url)
+        sys.exit(0)
+    srv = make_server(a.project_dir, a.port if a.port is not None else 8765)
     fonts.start_system_scan()
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
     print(f"Kurgu: {url}  (project: {srv.app.dir})", flush=True)
@@ -1506,20 +1673,34 @@ def main(argv=None):
     info_path = os.path.join(srv.app.kurgu, "server.json")
     info = {"port": srv.server_address[1], "pid": os.getpid(), "started": datetime.now().replace(microsecond=0).isoformat()}
     write_atomic(info_path, json.dumps(info).encode())
+    stop = threading.Event()
+    threading.Thread(target=watch_idle, args=(srv, stop), daemon=True).start()
 
     def on_term(*_):
         raise KeyboardInterrupt
-    try:
-        signal.signal(signal.SIGTERM, on_term)
-    except (ValueError, OSError, AttributeError):
-        pass
+    for name in ("SIGTERM", "SIGBREAK"):                     # SIGBREAK = Ctrl+Break on Windows
+        try:
+            signal.signal(getattr(signal, name), on_term)
+        except (ValueError, OSError, AttributeError):
+            pass
+    if os.name == "nt":                                      # closing the console window: leave cleanly (Windows gives the handler a few seconds)
+        try:
+            import ctypes
+            handler = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)(lambda ev: (threading.Thread(target=srv.shutdown, daemon=True).start(), time.sleep(4), 1)[2] if ev in (2, 5, 6) else 0)
+            ctypes.windll.kernel32.SetConsoleCtrlHandler(handler, True)
+            srv._ctrl_handler = handler                      # keep a reference
+        except Exception:
+            pass
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\nshutting down")
     finally:
+        stop.set()
         srv.app.ai.shutdown()
-        srv.server_close()
+        srv.server_close()                                   # also cancels a running render
+        stop_children()                                      # every ffmpeg this server started
+        srv.app.cleanup_temp()
         try:
             with open(info_path, encoding="utf-8") as f:
                 mine = json.load(f).get("pid") == os.getpid()

@@ -88,3 +88,11 @@ def test_a_hidden_tab_does_not_poll_the_server(page):
     page.eval("Object.defineProperty(document,'hidden',{configurable:true,get:()=>false}); document.dispatchEvent(new Event('visibilitychange'))")
     time.sleep(1.5)
     assert page.eval("performance.getEntriesByType('resource').filter(r=>r.name.includes('/api/version')).length") >= 1
+
+
+def test_a_hidden_tab_still_sends_a_slow_keep_alive(page):
+    page.eval("window.__kurguHiddenPingMs=700; Object.defineProperty(document,'hidden',{configurable:true,get:()=>true}); performance.clearResourceTimings()")
+    time.sleep(3.2)
+    n = page.eval("performance.getEntriesByType('resource').filter(r=>r.name.includes('/api/version')).length")
+    assert 1 <= n <= 6                                                                 # a few pings (not one per second): the server sees an open editor
+    page.eval("Object.defineProperty(document,'hidden',{configurable:true,get:()=>false})")
