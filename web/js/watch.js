@@ -9,6 +9,7 @@ import { play, pause, togglePlay, setZoom, viewInfo, viewGeom } from './preview.
 import { isReview } from './mode.js';
 import { startDraw, endDraw, takeDraft, draftMarks, markKey, makeToolRow } from './marks.js';
 import { addNote, layersAt } from './notes.js';
+import { dative } from './dative.js';
 
 { const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/web/watch.css'; document.head.append(link); }
 
@@ -19,13 +20,6 @@ const tcShort = v => { const m = Math.floor(v / 60), s = v - m * 60; return `${S
 const unsent = () => S.project.notes.filter(n => n.author === 'user' && !n.sent && !n.done);
 
 // ---------------------------------------------------------------- agent label ("Newton'a gönder")
-/** Turkish dative of a name with an apostrophe: Newton -> Newton'a, Claude -> Claude'a (vowel harmony by the last vowel). */
-export function dative(name) {
-  const vowels = name.toLowerCase().match(/[aeıioöuü]/g);
-  if (!vowels) return name + "'e";
-  const v = vowels[vowels.length - 1], back = 'aıou'.includes(v), endsVowel = /[aeıioöuü]$/i.test(name);
-  return name + "'" + (endsVowel ? 'y' : '') + (back ? 'a' : 'e');
-}
 const who = () => (getLang() === 'tr' ? (agentName ? dative(agentName) : 'ajana') : (agentName || t('send.theAgent')));
 export const sendLabel = () => (agentName ? t('send.named', { name: agentName, dat: dative(agentName) }) : t('send.default'));
 
