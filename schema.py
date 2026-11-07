@@ -789,9 +789,16 @@ def migrate_dir(pdir):
         return False
     v2 = normalize(migrate_v1(_read_json(legacy_path(pdir))))
     tmp = project_path(pdir) + f".{os.urandom(8).hex()}.tmp"
-    with open(tmp, "x", encoding="utf-8") as f:        # exclusive create: never through a planted symlink
-        f.write(dumps(v2))
-    os.replace(tmp, project_path(pdir))
+    try:
+        with open(tmp, "x", encoding="utf-8") as f:        # exclusive create: never through a planted symlink
+            f.write(dumps(v2))
+        os.replace(tmp, project_path(pdir))
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
     return True
 
 

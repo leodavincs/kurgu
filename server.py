@@ -102,19 +102,29 @@ def is_under(path, root):
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
+def _drop(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def write_atomic(path, data):
     tmp = f"{path}.{secrets.token_hex(8)}.tmp"
-    with open(tmp, "xb") as f:                 # exclusive create: never through a planted symlink
-        f.write(data)
-    for attempt in range(20):  # Windows refuses to replace a file another handle is reading: retry briefly
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            if attempt == 19:
-                os.remove(tmp)
-                raise
-            time.sleep(0.025)
+    try:
+        with open(tmp, "xb") as f:                 # exclusive create: never through a planted symlink
+            f.write(data)
+        for attempt in range(20):  # Windows refuses to replace a file another handle is reading: retry briefly
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.025)
+    except BaseException:
+        _drop(tmp)                                 # a random name is never reused: do not leave it behind
+        raise
 
 
 def safe_name(name):
@@ -1111,8 +1121,12 @@ class App:
             tmp = out + f".{secrets.token_hex(8)}.part"
             if marks:                                  # burn the marks in (yellow), so the picture alone says where
                 agent_notes.burn_marks(im, [agent_notes.mark_view(m, *size) for m in marks])
-            im.save(tmp, format="JPEG", quality=82)
-        os.replace(tmp, out)
+            try:
+                im.save(tmp, format="JPEG", quality=82)
+                os.replace(tmp, out)
+            except BaseException:
+                _drop(tmp)
+                raise
         return out
 
     def stale_frames(self, project):
@@ -1226,6 +1240,7 @@ class App:
             r = run([sys.executable, os.path.join(ROOT, "render.py"), self.dir, "--frame", f"{t:.3f}",
                                 "--output", tmp, "--draft"], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             if r.returncode != 0 or not os.path.exists(tmp):
+                _drop(tmp)
                 msg = next((s[5:].strip() for s in r.stdout.splitlines() if s.startswith("ERROR")), None)
                 raise HttpError(500, msg or (r.stderr.strip().splitlines() or ["could not render frame"])[-1])
             os.replace(tmp, png)
@@ -1738,7 +1753,11 @@ def main(argv=None):
         if not a.no_open:
             webbrowser.open(url)
         sys.exit(0)
-    srv = make_server(a.project_dir, a.port if a.port is not None else 8765)
+    try:
+        srv = make_server(a.project_dir, a.port if a.port is not None else 8765)
+    except agent_notes.KurguRefusal as e:              # e.g. a symlinked .kurgu: say so plainly, no traceback
+        print(f"Kurgu: {e}", file=sys.stderr, flush=True)
+        sys.exit(2)
     fonts.start_system_scan()
     url = f"http://127.0.0.1:{srv.server_address[1]}/"
     print(f"Kurgu: {url}  (project: {srv.app.dir})", flush=True)

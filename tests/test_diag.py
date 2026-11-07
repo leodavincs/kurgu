@@ -468,3 +468,27 @@ def test_a_symlinked_kurgu_folder_or_backups_folder_is_refused(tmp_path, project
     finally:
         s.shutdown()
         s.server_close()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need extra rights on Windows")
+def test_a_symlinked_kurgu_folder_stops_the_server_with_a_plain_message(tmp_path, project_dir):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    shutil.rmtree(os.path.join(project_dir, ".kurgu"), ignore_errors=True)
+    os.symlink(elsewhere, os.path.join(project_dir, ".kurgu"))
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "server.py"), project_dir, "--port", "0", "--no-open"],
+                       capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert r.returncode == 2 and "symbolic link" in r.stderr and "Traceback" not in r.stderr
+
+
+@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "getuid") and os.getuid() == 0), reason="needs POSIX permissions and a non-root user")
+def test_a_failed_atomic_write_leaves_no_temp_file(tmp_path):
+    target = tmp_path / "sub" / "x.json"                   # the folder does not exist: the write fails
+    os.makedirs(tmp_path / "sub")
+    os.chmod(tmp_path / "sub", 0o500)
+    try:
+        with pytest.raises(OSError):
+            server.write_atomic(str(target), b"{}")
+    finally:
+        os.chmod(tmp_path / "sub", 0o700)
+    assert os.listdir(tmp_path / "sub") == []
