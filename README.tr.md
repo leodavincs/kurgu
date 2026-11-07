@@ -115,6 +115,18 @@ kurgu-render proje/klasoru --frame 12.3 --output kare.png
 
 Önce taslak, güzel görününce tam kalite. (Klondan çalışıyorsan `python render.py ...` aynı işi yapar.)
 
+## İnceleme: izle, not al, ajanına gönder
+
+Kurgu **İnceleme kipinde** açılır: büyük önizleme, altında kelimeleriyle birlikte okunur tek bir ses dalgası, sağda notların. Yalnız elle kurgu yaparken gereken her şey ☰ menüde (tam editör için `Shift+E`).
+
+1. **İzle.** *İzle + not* ile tam ekrana geç. Yazmaya başlayınca video durur; `Enter` notu o saniyeye ekler, video kaldığı yerden devam eder.
+2. **Göster.** Yeri tarif edemiyor musun? Karenin üstüne çiz: elips, dikdörtgen ya da ok, beş renkte (`Alt+O/B/A`, `Alt+1…5`). Çizim projenin kendi pikseliyle saklanır; ajanın eline "sağ üst bir yer" değil, tam koordinat geçer.
+3. **Gönder.** *Ajana gönder* düğmesine bir tık. Her not saniyesi, altındaki sahne ve katmanlar, çizdiğin işaretler (renk, konum, boyut, altındaki katmanlar) ve işaretlerin işlendiği kare görüntüsüyle gider. Hepsi proje klasöründe `NOTLAR.md` ve `.kurgu/inbox.jsonl` içine yazılır.
+4. **Ajan düzeltir.** Claude Code `kurgu notes wait <proje>` komutunu arka planda çalıştırır, sen gönderince uyanır; Codex `notes_wait` MCP aracını kullanır (bkz. *Diğer ajanlarla kullanım*). İstersen ajanı Kurgu uyandırsın: `kurgu setup-agent --claude --wake` / `--codex --wake` her gönderide ajanı arka planda başlatır, terminale bakman bile gerekmez.
+5. **Cevabı gör.** Düzeltilen not, listede ajanın tek satırlık cevabıyla *düzeltildi* olur. Ajan çalışırken yaptığın yeni gönderi kaybolmaz.
+
+Ajan tarafı: `kurgu notes wait | list | done`, MCP `notes_wait`, `notes_list`, `notes_done`. Ayrıntı `AGENTS.md` ve `SPEC.md` içinde.
+
 ## Diğer ajanlarla kullanım
 
 Kurgu bir MCP sunucusu (`kurgu-mcp`, stdio; `mcp_server.py` ile aynı kod) ile gelir; MCP destekleyen her ajan aynı yetkileri alır: editörü açar, neyi seçtiğini görür, projeyi doğrulanmış toplu değişikliklerle düzenler, işlenmiş kareye bakar, render alır. Repo kökündeki `AGENTS.md`, o dosyayı okuyan ajanlara Kurgu ile nasıl çalışacaklarını anlatır.

@@ -115,6 +115,18 @@ kurgu-render path/to/project --frame 12.3 --output frame.png
 
 Draft first, full when it looks right. (From a clone, `python render.py ...` does the same.)
 
+## Review: watch, note, send to your agent
+
+Kurgu opens in **Review mode**: a big preview, the audio as one readable waveform with the words under it, and your notes on the right. Everything you only need when editing by hand sits in the ☰ menu (or press `Shift+E` for the full editor).
+
+1. **Watch.** Press *Watch + note* for full screen. Start typing and the video pauses; `Enter` adds the note at that second and playback continues.
+2. **Point.** Can't describe where? Draw on the frame: ellipse, rectangle or arrow, in five colours (`Alt+O/B/A`, `Alt+1…5`). Shapes are stored in project pixels, so the agent gets exact coordinates, not "somewhere top right".
+3. **Send.** One click on *Send to agent*. Each note goes out with its timecode, the scene and layers under it, the drawn marks (colour, position, size, the layers beneath) and a JPEG of the frame with the marks burned in. Everything lands in `NOTLAR.md` and `.kurgu/inbox.jsonl` in the project folder.
+4. **The agent fixes it.** Claude Code runs `kurgu notes wait <project>` in the background and wakes up on your send; Codex calls the `notes_wait` MCP tool (see *Use with other agents*). Or let Kurgu wake the agent itself: `kurgu setup-agent --claude --wake` / `--codex --wake` starts it on every send, headless, so you don't have to look at a terminal at all.
+5. **See the reply.** Fixed notes turn into *fixed* with the agent's one-line answer in the notes list. A send made while the agent is still working is never lost.
+
+Agent side: `kurgu notes wait | list | done`, MCP `notes_wait`, `notes_list`, `notes_done`. Details in `AGENTS.md` and `SPEC.md`.
+
 ## Use with other agents
 
 Kurgu ships an MCP server (`kurgu-mcp`, stdio; the same code as `mcp_server.py`), so any MCP-capable agent gets the same powers: open the editor, see what you selected, edit the project in validated batches, look at rendered frames, render. `AGENTS.md` in the repo root tells agents that read that file how to work with Kurgu.
