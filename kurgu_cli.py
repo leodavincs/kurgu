@@ -226,12 +226,62 @@ WAKE_PROMPT = ("Kurgu'dan yeni notlar geldi. `kurgu notes wait {dir} --timeout 0
                "`kurgu notes done {dir} <id> --reply ...` ile kapat.")
 
 
+CLAUDE_TOOLS = "Bash(kurgu notes:*),Bash(ffprobe:*),mcp__kurgu"     # read-only probing (ffprobe) is fine; no general Bash, no ffmpeg (it could write files)
+
+
+def kurgu_launcher():
+    """argv prefix that runs this Kurgu: the installed `kurgu` (absolute path), else this checkout's launcher, else this file under the running Python."""
+    exe = shutil.which("kurgu")
+    if not exe:
+        for n in ("kurgu", "kurgu.exe"):
+            c = os.path.join(os.path.expanduser("~/.local/bin"), n)
+            if os.path.isfile(c):
+                exe = c
+                break
+    if exe:
+        return [os.path.abspath(exe)]
+    here = _checkout_dir()
+    if here:
+        launcher = os.path.join(here, "kurgu.cmd" if os.name == "nt" else "kurgu")
+        if os.path.isfile(launcher):
+            return [launcher]
+    return [sys.executable, os.path.abspath(__file__)]
+
+
 def wake_command(agent):
-    """argv for the on_send hook (Kurgu replaces {dir} at run time). Both run non-interactively in the project folder (the hook's working directory)
-    and continue the most recent session of that folder; neither can stop to ask a question nobody is there to answer."""
-    if agent == "codex":     # `codex exec resume --last`: the newest session of this cwd; workspace-write sandbox, approvals never asked
-        return ["codex", "exec", "resume", "--last", "-c", 'sandbox_mode="workspace-write"', "-c", 'approval_policy="never"', WAKE_PROMPT]
-    return ["claude", "-p", WAKE_PROMPT, "--continue", "--permission-mode", "acceptEdits", "--allowedTools", "Bash(kurgu notes:*),mcp__kurgu"]
+    """The on_send hook: `kurgu wake <agent> {dir} {seq}`. The wrapper picks the right agent command (and falls back when there is no session to resume)."""
+    return kurgu_launcher() + ["wake", agent, "{dir}", "{seq}"]
+
+
+def wake_attempts(agent, d):
+    """[(label, argv)] in the order `kurgu wake` tries them. Both run non-interactively in the project folder, never stop for a question, and print JSON so
+    hook.log records token usage / cost. The first continues the folder's most recent session; the second starts a fresh one (nothing to resume yet)."""
+    prompt = WAKE_PROMPT.replace("{dir}", d)
+    if agent == "codex":
+        cfg = ["-c", 'approval_policy="never"']
+        return [("continue the last session", ["codex", "exec", "resume", "--last", "--json", "-c", 'sandbox_mode="workspace-write"', *cfg, prompt]),
+                ("new session", ["codex", "exec", "-s", "workspace-write", *cfg, "--skip-git-repo-check", "-C", d, "--json", prompt])]
+    common = ["--output-format", "json", "--permission-mode", "acceptEdits", "--allowedTools", CLAUDE_TOOLS]
+    return [("continue the last session", ["claude", "-p", prompt, "--continue", *common]), ("new session", ["claude", "-p", prompt, *common])]
+
+
+def wake_main(argv):
+    """kurgu wake <codex|claude> <project_dir> [seq]: start the agent for the notes that were just sent (called by the on_send hook)."""
+    if len(argv) < 2 or argv[0] not in ("codex", "claude"):
+        print("usage: kurgu wake <codex|claude> <project_dir> [seq]", file=sys.stderr)
+        return 2
+    agent, d = argv[0], os.path.abspath(argv[1])
+    if not shutil.which(agent):
+        print(f"kurgu wake: `{agent}` was not found on PATH", file=sys.stderr)
+        return 127
+    rc = 1
+    for n, (label, cmd) in enumerate(wake_attempts(agent, d)):
+        print(f"kurgu wake: {agent}, {label}" + (f" (send #{argv[2]})" if len(argv) > 2 else ""), flush=True)
+        rc = subprocess.run(cmd, cwd=d, stdin=subprocess.DEVNULL).returncode
+        if rc == 0:
+            return 0
+        print(f"kurgu wake: {agent} ({label}) exited {rc}" + ("; trying a new session" if n == 0 else ""), flush=True)
+    return rc
 
 
 def setup_wake(agent, dry, remove=False):
@@ -256,6 +306,7 @@ def setup_wake(agent, dry, remove=False):
     print(f"  + wake-up (on_send): {'would ' if dry else ''}{'remove from' if remove else 'write to'} {path}")
     if not remove:
         print("    command: " + " ".join(_q(c) if (" " in c or not c) else c for c in cfg["on_send"]))
+        print("    (`kurgu wake` continues the folder's last " + agent + " session, or starts a new one when there is none yet; try it by hand: `kurgu wake " + agent + " <project>`)")
         print("    It runs, detached, in the project folder each time you press Send; output goes to <project>/.kurgu/hook.log. It continues the agent's most recent")
         print("    session there (headless): you see the result in Kurgu as \"düzeltildi\" + the agent's reply. Remove it with: kurgu setup-agent --no-wake")
     if old is not None and not remove:
@@ -312,6 +363,8 @@ def main(argv=None):
         sys.exit(doctor.main(args[1:]))
     if args and args[0] == "setup-agent":
         sys.exit(setup_agent_main(args[1:]))
+    if args and args[0] == "wake":
+        sys.exit(wake_main(args[1:]))
     if args and args[0] == "setup-ffmpeg":
         import ffmpeg_fetch
         sys.exit(ffmpeg_fetch.main(args[1:]))

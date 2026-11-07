@@ -141,19 +141,18 @@ def test_setup_agent_wake_writes_the_user_config_only(tmp_path, monkeypatch, cap
     assert kurgu_cli.setup_agent_main(["--wake"]) == 2                                      # which agent?
     assert kurgu_cli.setup_agent_main(["--codex", "--wake", "--dry-run"]) == 0
     assert not (cdir / "config.json").exists()                                              # dry run writes nothing
-    assert "codex exec resume --last" in capsys.readouterr().out
+    assert "wake codex" in capsys.readouterr().out
     (cdir).mkdir()
     (cdir / "config.json").write_text(json.dumps({"agent_cmd": "keep me"}))
     assert kurgu_cli.setup_agent_main(["--codex", "--wake"]) == 0
     cfg = json.load(open(cdir / "config.json"))
     argv = cfg["on_send"]
-    assert cfg["agent_cmd"] == "keep me" and argv[:4] == ["codex", "exec", "resume", "--last"] and "sandbox_mode=\"workspace-write\"" in argv
-    assert "{dir}" in argv[-1] and "kurgu notes wait" in argv[-1] and "kurgu notes done" in argv[-1]
+    assert cfg["agent_cmd"] == "keep me" and argv[-4:] == ["wake", "codex", "{dir}", "{seq}"] and os.path.isabs(argv[0])      # the wrapper, by absolute path
     assert not os.path.exists(os.path.join(project_dir, ".kurgu", "config.json"))
     monkeypatch.setattr(kurgu_cli.shutil, "which", lambda *_a, **_k: None)                  # never touch a real `claude` install from a test
     assert kurgu_cli.setup_agent_main(["--claude", "--wake"]) == 0
     argv = json.load(open(cdir / "config.json"))["on_send"]
-    assert argv[:2] == ["claude", "-p"] and "--continue" in argv and "--permission-mode" in argv
+    assert argv[-4:] == ["wake", "claude", "{dir}", "{seq}"]
     assert kurgu_cli.setup_agent_main(["--no-wake"]) == 0
     assert "on_send" not in json.load(open(cdir / "config.json")) and json.load(open(cdir / "config.json"))["agent_cmd"] == "keep me"
     assert 'tool_timeout_sec = 3600' in open(tmp_path / ".codex" / "config.toml", encoding="utf-8").read()
@@ -167,3 +166,70 @@ def test_notes_wait_ceiling_is_3500_seconds_over_mcp(project_dir, monkeypatch):
     mcp_server.tool_notes_wait({"project_dir": project_dir}, {"cancel": None})
     mcp_server.tool_notes_wait({"project_dir": project_dir, "timeout": 3000}, {"cancel": None})
     assert seen == [3500.0, 120.0, 3000.0]
+
+
+# ------------------------------------------------------------------ `kurgu wake`: the wrapper the hook runs
+def fake_agent(tmp_path, name, fail_first_calls_with):
+    """A `codex` / `claude` stand-in that logs its argv and exits 1 ("no session") when argv contains `fail_first_calls_with`."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    log = tmp_path / f"{name}.log"
+    f = bin_dir / name
+    f.write_text(f"#!{PY}\nimport sys, json\nopen({str(log)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\nsys.exit(1 if {fail_first_calls_with!r} in sys.argv else 0)\n")
+    f.chmod(0o755)
+    return bin_dir, log
+
+
+def run_wake(agent, project_dir, bin_dir):
+    import subprocess
+    env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"])
+    return subprocess.run([PY, os.path.join(ROOT, "kurgu_cli.py"), "wake", agent, project_dir, "7"], capture_output=True, text=True, env=env, timeout=60)
+
+
+def test_wake_codex_falls_back_to_a_new_session_when_there_is_nothing_to_resume(tmp_path, project_dir):
+    bin_dir, log = fake_agent(tmp_path, "codex", "resume")                      # `codex exec resume --last` fails: no session in this folder yet
+    r = run_wake("codex", project_dir, bin_dir)
+    calls = [json.loads(l) for l in open(log).read().splitlines()]
+    assert r.returncode == 0 and len(calls) == 2 and "new session" in r.stdout
+    first, second = calls
+    assert first[:3] == ["exec", "resume", "--last"] and "--json" in first and 'sandbox_mode="workspace-write"' in first and 'approval_policy="never"' in first
+    assert second[:3] == ["exec", "-s", "workspace-write"] and "--skip-git-repo-check" in second and "-C" in second
+    assert second[second.index("-C") + 1] == os.path.abspath(project_dir) and "--json" in second and "resume" not in second
+    assert "kurgu notes wait " + os.path.abspath(project_dir) in first[-1] and "{dir}" not in first[-1]       # the prompt carries the real folder
+
+
+def test_wake_codex_uses_one_call_when_resume_works(tmp_path, project_dir):
+    bin_dir, log = fake_agent(tmp_path, "codex", "never-matches")
+    assert run_wake("codex", project_dir, bin_dir).returncode == 0
+    assert len(open(log).read().splitlines()) == 1
+
+
+def test_wake_claude_continues_then_falls_back_without_continue_and_allows_only_read_only_probing(tmp_path, project_dir):
+    bin_dir, log = fake_agent(tmp_path, "claude", "--continue")
+    r = run_wake("claude", project_dir, bin_dir)
+    first, second = [json.loads(l) for l in open(log).read().splitlines()]
+    assert r.returncode == 0 and "--continue" in first and "--continue" not in second
+    for call in (first, second):
+        assert call[0] == "-p" and call[call.index("--output-format") + 1] == "json" and call[call.index("--permission-mode") + 1] == "acceptEdits"
+        tools = call[call.index("--allowedTools") + 1]
+        assert "Bash(kurgu notes:*)" in tools and "Bash(ffprobe:*)" in tools and "mcp__kurgu" in tools
+        assert "Bash(*" not in tools and "ffmpeg" not in tools                # no general Bash, nothing that can write files
+
+
+def test_wake_reports_a_missing_agent_and_a_double_failure(tmp_path, project_dir):
+    import subprocess
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    env = dict(os.environ, PATH=str(empty))                                      # neither `codex` nor `claude` on PATH
+    r = subprocess.run([PY, os.path.join(ROOT, "kurgu_cli.py"), "wake", "codex", project_dir], capture_output=True, text=True, env=env, timeout=60)
+    assert r.returncode == 127 and "not found" in r.stderr
+    bin_dir, log = fake_agent(tmp_path, "codex", "exec")                          # every call fails
+    r = run_wake("codex", project_dir, bin_dir)
+    assert r.returncode == 1 and len(open(log).read().splitlines()) == 2
+    assert subprocess.run([PY, os.path.join(ROOT, "kurgu_cli.py"), "wake", "gemini", project_dir], capture_output=True, text=True).returncode == 2
+
+
+def test_the_launchers_route_wake():
+    assert 'if [ "$1" = "wake" ]' in open(os.path.join(ROOT, "kurgu"), encoding="utf-8").read()
+    cmd = open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read()
+    assert 'goto wake' in cmd and 'kurgu_cli.py" wake' in cmd
