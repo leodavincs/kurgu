@@ -158,7 +158,9 @@ def test_sigterm_ends_children_and_removes_temp_files(project_dir):
     try:
         assert p.poll() is None
         graceful(p)
-        assert p.wait(20) == 0
+        rc = p.wait(20)
+        # Windows: CTRL_BREAK can end the process with STATUS_CONTROL_C_EXIT (0xC000013A) before or while our handler runs; the effects below still hold
+        assert rc == 0 or (os.name == "nt" and rc in (0xC000013A, -1073741510))
     finally:
         stop(p)
     assert not os.path.exists(part) and not os.path.exists(os.path.join(project_dir, ".kurgu", "server.json"))
