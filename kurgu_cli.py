@@ -2,6 +2,7 @@
 
 `setup-agent` lives here (not in its own module) so an installed tool needs no new py-module entry."""
 import argparse
+import json
 import os
 import re
 import shutil
@@ -221,6 +222,55 @@ def setup_claude(dry, command, args, runner=subprocess.run):
     return r.returncode
 
 
+WAKE_PROMPT = ("Kurgu'dan yeni notlar geldi. `kurgu notes wait {dir} --timeout 0` ile oku, her notu düzelt, "
+               "`kurgu notes done {dir} <id> --reply ...` ile kapat.")
+
+
+def wake_command(agent):
+    """argv for the on_send hook (Kurgu replaces {dir} at run time). Both run non-interactively in the project folder (the hook's working directory)
+    and continue the most recent session of that folder; neither can stop to ask a question nobody is there to answer."""
+    if agent == "codex":     # `codex exec resume --last`: the newest session of this cwd; workspace-write sandbox, approvals never asked
+        return ["codex", "exec", "resume", "--last", "-c", 'sandbox_mode="workspace-write"', "-c", 'approval_policy="never"', WAKE_PROMPT]
+    return ["claude", "-p", WAKE_PROMPT, "--continue", "--permission-mode", "acceptEdits", "--allowedTools", "Bash(kurgu notes:*),mcp__kurgu"]
+
+
+def setup_wake(agent, dry, remove=False):
+    """Write (or remove) `on_send` in the USER config file. Never in a project folder: a project must not be able to run commands."""
+    import kurgu_paths
+    path = os.path.join(kurgu_paths.config_dir(), "config.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
+        if not isinstance(cfg, dict):
+            cfg = {}
+    except (OSError, ValueError):
+        cfg = {}
+    old = cfg.get("on_send")
+    if remove:
+        cfg.pop("on_send", None)
+    else:
+        cfg["on_send"] = wake_command(agent)
+    if old == cfg.get("on_send"):
+        print(f"  = wake-up: {'no on_send set' if remove else 'on_send already set to this'} ({path})")
+        return 0
+    print(f"  + wake-up (on_send): {'would ' if dry else ''}{'remove from' if remove else 'write to'} {path}")
+    if not remove:
+        print("    command: " + " ".join(_q(c) if (" " in c or not c) else c for c in cfg["on_send"]))
+        print("    It runs, detached, in the project folder each time you press Send; output goes to <project>/.kurgu/hook.log. It continues the agent's most recent")
+        print("    session there (headless): you see the result in Kurgu as \"düzeltildi\" + the agent's reply. Remove it with: kurgu setup-agent --no-wake")
+    if old is not None and not remove:
+        print(f"    (replaces the previous on_send: {old})")
+    if dry:
+        return 0
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".kurgu-tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    os.replace(tmp, path)
+    return 0
+
+
 def setup_agent_main(argv):
     ap = argparse.ArgumentParser(prog="kurgu setup-agent", description="Register Kurgu (MCP server + agent instructions) with your coding agent.")
     g = ap.add_mutually_exclusive_group()
@@ -229,7 +279,15 @@ def setup_agent_main(argv):
     g.add_argument("--all", action="store_true", help="both (the default)")
     ap.add_argument("--project", metavar="DIR", help="also add/update the Kurgu section in DIR/AGENTS.md (Codex reads it)")
     ap.add_argument("--dry-run", action="store_true", help="print what would change, write nothing")
+    ap.add_argument("--wake", action="store_true", help="also set the on_send hook so pressing Send in Kurgu starts the agent (needs --codex or --claude)")
+    ap.add_argument("--no-wake", action="store_true", help="remove the on_send hook")
     a = ap.parse_args(argv)
+    if a.wake and not (a.codex or a.claude):
+        print("--wake needs to know which agent to start: add --codex or --claude", file=sys.stderr)
+        return 2
+    if a.no_wake:
+        print("Dry run: nothing is written." if a.dry_run else "Kurgu wake-up")
+        return setup_wake(None, a.dry_run, remove=True)
     home = os.path.expanduser("~")
     command, args = mcp_command()
     if a.project and not os.path.isdir(a.project):
@@ -242,6 +300,8 @@ def setup_agent_main(argv):
         rc |= setup_codex(home, a.project, a.dry_run, command, args)
     if not a.codex:
         rc |= setup_claude(a.dry_run, command, args)
+    if a.wake:
+        rc |= setup_wake("codex" if a.codex else "claude", a.dry_run)
     return 1 if rc else 0
 
 

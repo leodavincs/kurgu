@@ -632,5 +632,7 @@
   "mark.arrow": "Arrow",
   "mark.undo": "Undo last shape",
   "mark.clear": "Clear drawing",
-  "mark.only": "Here"
+  "mark.only": "Here",
+  "send.woke": "agent woken",
+  "send.wakeFailed": "The notes went out, but the agent could not be started: {error} (see .kurgu/hook.log)"
 }

@@ -1144,7 +1144,11 @@ class App:
             sent_norm = [n for n in proj["notes"] if n["id"] in sent_ids]
             entry = agent_notes.append_inbox(self.dir, proj, sorted(sent_norm, key=lambda n: n["t"]), stamp)
             agent_notes.write_notes_md(self.dir, proj)
-        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "at": stamp, "file": agent_notes.NOTES_MD,
+        try:                                                   # wake the agent (user-level on_send hook): detached, never blocks the answer
+            hook = agent_notes.run_on_send(self.dir, entry["seq"], len(sent_notes))
+        except Exception as e:                                  # a broken hook must not fail a send
+            hook = {"hook": "error", "error": f"{type(e).__name__}: {e}"}
+        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "at": stamp, "file": agent_notes.NOTES_MD,
                 "failed_frames": failed, "inbox": entry, "project": proj, "version": version}
 
     def reveal(self, rel):

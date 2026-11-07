@@ -632,5 +632,7 @@
   "mark.arrow": "Ok",
   "mark.undo": "Son şekli geri al",
   "mark.clear": "Çizimi temizle",
-  "mark.only": "Burası"
+  "mark.only": "Burası",
+  "send.woke": "ajan uyandırıldı",
+  "send.wakeFailed": "Notlar gitti ama ajan başlatılamadı: {error} (bkz. .kurgu/hook.log)"
 }

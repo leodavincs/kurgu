@@ -41,7 +41,9 @@ export async function sendNotes() {
     if (!r.ok) { toast(t('send.failed', { reason: API.errorText(r.status, r.data) }), 'error', 6000); return false; }
     loadExternal(r.data.project, r.data.version);               // the server wrote project.json: one undo step
     watchSent.push(...r.data.ids);
-    toast(t(r.data.sent === 1 && getLang() === 'en' ? 'send.toast1' : 'send.toast', { n: r.data.sent, who: who() }), 'ok', 5000);
+    const woke = r.data.hook === 'started' || r.data.hook === 'queued';     // the user's on_send hook ran: the agent was started for these notes
+    toast(t(r.data.sent === 1 && getLang() === 'en' ? 'send.toast1' : 'send.toast', { n: r.data.sent, who: who() }) + (woke ? ' · ' + t('send.woke') : ''), 'ok', woke ? 6000 : 5000);
+    if (r.data.hook === 'error') toast(t('send.wakeFailed', { error: r.data.hook_error || '' }), 'warn', 9000);
     if (r.data.failed_frames && r.data.failed_frames.length) toast(t('send.noFrames', { n: r.data.failed_frames.length }), 'warn', 7000);
     return true;
   } catch (e) { toast(t('send.failed', { reason: String(e.message || e) }), 'error', 6000); return false; }

@@ -18,6 +18,7 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from datetime import datetime
 
@@ -459,6 +460,146 @@ def render_entries(entries):
     for e in entries:
         out.append(f"Send #{e['seq']} · {e['sent']} from \"{e['project']}\" ({len(e['notes'])} notes):\n" + render_text(e["notes"]))
     return "\n\n".join(out) + (f"\n\n(inbox position {entries[-1]['seq']}; after fixing: kurgu notes done <dir> <id...>, then kurgu notes wait <dir> again)" if entries else "")
+
+
+# ---------------------------------------------------------------- on_send hook: wake the agent when the human presses Send
+# Read ONLY from the user's own configuration (env KURGU_ON_SEND, or `on_send` in the user config file); never from the project's .kurgu/config.json,
+# because a shared project folder must not be able to run commands. The command is an argv list (no shell); {dir} {seq} {count} {file} are replaced.
+HOOK_LOG = os.path.join(".kurgu", "hook.log")
+HOOK_TIMEOUT = 3600.0          # a hook run that lasts longer than this is stopped (user config `on_send_timeout` overrides)
+_runners = {}
+_runners_lock = threading.Lock()
+
+
+def user_config():
+    import kurgu_paths
+    try:
+        with open(os.path.join(kurgu_paths.config_dir(), "config.json"), encoding="utf-8") as f:
+            c = json.load(f)
+        return c if isinstance(c, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def on_send_command():
+    """The configured wake-up command as an argv list, or None. env KURGU_ON_SEND (a JSON array) wins over the user config's `on_send`."""
+    raw = os.environ.get("KURGU_ON_SEND", "").strip()
+    cmd = None
+    if raw:
+        try:
+            cmd = json.loads(raw)
+        except ValueError:
+            cmd = None
+    else:
+        cmd = user_config().get("on_send")
+    if isinstance(cmd, list) and cmd and all(isinstance(x, str) for x in cmd) and cmd[0]:
+        return cmd
+    return None
+
+
+def expand_command(cmd, d, seq, count, file):
+    rep = {"{dir}": d, "{seq}": str(seq), "{count}": str(count), "{file}": file}
+    out = []
+    for a in cmd:
+        for k, v in rep.items():
+            a = a.replace(k, v)
+        out.append(a)
+    return out
+
+
+def _log(d, text):
+    try:
+        os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+        with open(os.path.join(d, HOOK_LOG), "a", encoding="utf-8") as f:
+            f.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] {text}\n")
+    except OSError:
+        pass
+
+
+class _Runner:
+    def __init__(self, d):
+        self.d, self.lock, self.running, self.pending = d, threading.Lock(), False, None
+
+    def _spawn(self, cmd, seq, count):
+        import subprocess
+        file = os.path.join(self.d, NOTES_MD)
+        argv = expand_command(cmd, self.d, seq, count, file)
+        env = dict(os.environ, KURGU_PROJECT_DIR=self.d, KURGU_SEQ=str(seq), KURGU_NOTES_COUNT=str(count), KURGU_NOTES_FILE=file)
+        os.makedirs(os.path.join(self.d, ".kurgu"), exist_ok=True)
+        log = open(os.path.join(self.d, HOOK_LOG), "a", encoding="utf-8")
+        log.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] run (send #{seq}, {count} notes): {' '.join(argv)}\n")
+        log.flush()
+        kw = {"creationflags": 0x00000200} if os.name == "nt" else {"start_new_session": True}      # its own process group: stoppable as a whole
+        try:
+            p = subprocess.Popen(argv, cwd=self.d, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, **kw)
+        except OSError as e:
+            log.write(f"  could not start: {e}\n")
+            log.close()
+            raise
+        threading.Thread(target=self._wait, args=(p, log, cmd), daemon=True).start()
+
+    def _wait(self, p, log, cmd):
+        import subprocess
+        limit = HOOK_TIMEOUT
+        try:
+            v = user_config().get("on_send_timeout")
+            limit = float(v) if v else HOOK_TIMEOUT
+        except (TypeError, ValueError):
+            pass
+        try:
+            rc = p.wait(limit)
+            log.write(f"  finished, exit code {rc}\n")
+        except subprocess.TimeoutExpired:
+            try:
+                if os.name == "nt":
+                    p.kill()
+                else:
+                    import signal
+                    os.killpg(p.pid, signal.SIGTERM)
+            except OSError:
+                pass
+            log.write(f"  stopped: still running after {limit:g} s\n")
+        finally:
+            log.close()
+        with self.lock:
+            nxt, self.pending = self.pending, None
+            if nxt is None:
+                self.running = False
+                return
+        try:                                                  # sends that arrived meanwhile: ONE follow-up run, with the latest numbers
+            self._spawn(cmd, *nxt)
+        except OSError:
+            with self.lock:
+                self.running = False
+            return
+        # (stays `running` until that run ends)
+
+    def trigger(self, cmd, seq, count):
+        with self.lock:
+            if self.running:
+                self.pending = (seq, count)
+                return {"hook": "queued"}
+            self.running = True
+        try:
+            self._spawn(cmd, seq, count)
+        except OSError as e:
+            with self.lock:
+                self.running = False
+            return {"hook": "error", "error": str(e)}
+        return {"hook": "started"}
+
+
+def run_on_send(d, seq, count):
+    """Fire the user's on_send hook after a send: detached, never blocks. Returns {} (no hook configured) or {"hook": "started" | "queued" | "error", ...}."""
+    cmd = on_send_command()
+    if not cmd:
+        return {}
+    with _runners_lock:
+        r = _runners.setdefault(d, _Runner(d))
+    res = r.trigger(cmd, seq, count)
+    if res.get("hook") == "error":
+        _log(d, f"hook failed to start: {res['error']}")
+    return res
 
 
 # ---------------------------------------------------------------- CLI
