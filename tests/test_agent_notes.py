@@ -68,7 +68,8 @@ def test_send_marks_notes_writes_notlar_frames_and_inbox(srv, monkeypatch):
     # nothing left to send; explicit ids re-send; bad input is a 400
     assert c.req("POST", "/api/notes/send", {})[0] == 400
     assert c.req("POST", "/api/notes/send", {"ids": "n_a"})[0] == 400
-    assert c.req("POST", "/api/notes/send", {"ids": ["n_a"]})[1]["sent"] == 1
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_a"]})[0] == 409                  # already out: not announced twice ...
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_a"], "resend": True})[1]["sent"] == 1   # ... unless the caller says resend
     assert c.req("GET", "/api/notes/info")[1]["inbox"] == 2
 
 
@@ -297,7 +298,7 @@ def test_seq_never_goes_backwards_when_the_inbox_is_deleted(srv):
     got = agent_notes.wait_for_send(d, timeout=0)
     assert got and got[0]["seq"] == 2 and [n["id"] for n in got[0]["notes"]] == ["n_b"]
     os.remove(os.path.join(d, ".kurgu", "inbox.jsonl")); os.remove(os.path.join(d, ".kurgu", "inbox.seq"))      # everything gone, cursor still 2
-    c.req("POST", "/api/notes/send", {"ids": ["n_a"]})
+    c.req("POST", "/api/notes/send", {"ids": ["n_a"], "resend": True})
     got = agent_notes.wait_for_send(d, timeout=0)
     assert got and [n["id"] for n in got[0]["notes"]] == ["n_a"]             # a cursor above the highest seq is reset: new sends still arrive
 
@@ -396,3 +397,25 @@ def test_launcher_prefers_a_python_310_and_cmd_keeps_long_argument_lists(tmp_pat
     assert "python3.10" in text and "sys.version_info >= (3, 10)" in text and "needs Python 3.10" in text
     cmd = open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read()
     assert "NARGS" in cmd and "%1 %2" not in cmd and "sys.version_info >= (3, 10)" in cmd and "nopython" in cmd
+
+
+def test_explicit_resend_needs_the_flag_and_does_not_wake_the_agent_twice(srv):
+    c, d = srv
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_x_missing"]})[0] == 400
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_a"]})[0] == 200
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_a"]})[0] == 409
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_a", "n_b"]})[1]["ids"] == ["n_b"]       # only the not-yet-sent one goes
+    assert len(open(os.path.join(d, ".kurgu", "inbox.jsonl"), encoding="utf-8").read().splitlines()) == 2
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_a"], "resend": True})[0] == 200
+    assert agent_notes.inbox_len(d) == 3
+
+
+def test_marks_without_layers_get_them_from_the_server(project_dir):
+    # a mark injected into project.json (agent / pipeline / older client) has no `layers`: the server hit-tests the layers active at the note time
+    seed(project_dir, [dict(NOTES[0], t=3.0, sent="2026-11-07T10:05:00", marks=[{"type": "ellipse", "x": 860, "y": 440, "w": 200, "h": 200}])])
+    mk = json.loads(cli("list", project_dir, "--json").stdout)["notes"][0]["marks"][0]
+    assert mk["layers"][-1] == "A clip" and "Big title" in mk["layers"]            # the full-frame clip is under the mark, the title in front of it
+    assert not {"Music", "Logo", "Frozen frame", "Black gap"} & set(mk["layers"])   # audio, off-frame and inactive layers are left out
+    assert "altındaki katmanlar (üstten alta): " in mk["hint"] and mk["hint"].endswith("A clip")
+    a = agent_notes.layers_under_mark({"width": 1920, "height": 1080, "layers": [{"id": "v", "name": "Scene", "type": "video", "start": 0, "end": 5}]}, 1.0, [(10, 10)])
+    assert a == ["Scene"]                                                           # a full-frame video without any box counts as covering the frame

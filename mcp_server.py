@@ -658,7 +658,7 @@ def _note_view(n, proj):
         if n.get(k):
             out[k] = n[k]
     if n.get("marks"):
-        out["marks"] = [agent_notes.mark_view(m, proj.get("width", 1920), proj.get("height", 1080)) for m in n["marks"]]
+        out["marks"] = [agent_notes.mark_view(m, proj.get("width", 1920), proj.get("height", 1080), proj, n["t"]) for m in n["marks"]]
     return out
 
 

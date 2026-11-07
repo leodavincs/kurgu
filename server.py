@@ -873,7 +873,7 @@ class App:
                 pass
 
     def notes_send(self, body):
-        """POST /api/notes/send {ids?}: hand notes to the agent. Without ids: every note of the human that is neither sent nor done.
+        """POST /api/notes/send {ids?, resend?}: hand notes to the agent. Without ids: every note of the human that is neither sent nor done.
         Stamps `sent` in project.json (one write, one changes.md line, the editor takes it as one undo step), saves a frame
         JPEG per note, rewrites NOTLAR.md and appends one line to .kurgu/inbox.jsonl (what `kurgu notes wait` listens for)."""
         ids = body.get("ids")
@@ -884,9 +884,14 @@ class App:
         except ValueError as e:
             raise HttpError(500, f"project.json is not valid JSON: {e}")
         notes = [schema.normalize_note(n, i) for i, n in enumerate(raw.get("notes") or []) if isinstance(n, dict)]
+        resend = body.get("resend") is True
         want = [n for n in notes if (n["id"] in ids if ids is not None else n["author"] == "user" and not n["sent"] and not n["done"])]
         if not want:
             raise HttpError(400, "no notes to send")
+        if ids is not None and not resend:        # explicit ids of notes that are already out are not announced twice, unless `resend: true`
+            want = [n for n in want if not n["sent"] or n["done"]]
+            if not want:
+                raise HttpError(409, "those notes were already sent (pass resend: true to send them again)")
         failed = []
         from concurrent.futures import ThreadPoolExecutor
 

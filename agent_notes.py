@@ -126,7 +126,38 @@ def _region(cx, cy):
     return f'{"sol" if cx < 0.5 else "sağ"} {"üst" if cy < 0.5 else "alt"} çeyrek'
 
 
-def mark_view(m, W, H):
+def _box_of(l, W, H):
+    """Approximate axis-aligned box (x0, y0, x1, y1) of a visual layer in project pixels, from its static x / y / scale props (keyframes, rotation
+    and anchors are ignored). Video / image without a known box cover the frame size; text is estimated from its size and longest line."""
+    cx, cy = float(l.get("x", W / 2)), float(l.get("y", H / 2))
+    k = float(l.get("scale", 1) or 1)
+    sx, sy = k * float(l.get("scale_x", 1) or 1), k * float(l.get("scale_y", 1) or 1)
+    if l.get("type") == "text":
+        size = float(l.get("size", 48) or 48)
+        lines = str(l.get("text", "")).split("\n") or [""]
+        w, h = max(len(x) for x in lines) * size * 0.55, len(lines) * size * 1.25
+    else:
+        w, h = W, H
+    w, h = abs(w * sx), abs(h * sy)
+    return cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2
+
+
+def layers_under_mark(proj, t, pts):
+    """Names of the visual layers active at `t` whose box contains one of `pts` (project pixels), front-most first; layers hit by the first point
+    (the shape's centre / an arrow's tip) come before the others. Colour and audio layers are left out."""
+    W, H = float(proj.get("width", 1920)), float(proj.get("height", 1080))
+    hits = []
+    for i, l in enumerate(proj.get("layers", [])):
+        if l.get("type") not in ("video", "image", "text") or l.get("hidden") or not (l.get("start", 0) <= t < l.get("end", 0)):
+            continue
+        x0, y0, x1, y1 = _box_of(l, W, H)
+        idx = next((j for j, (px, py) in enumerate(pts) if x0 <= px <= x1 and y0 <= py <= y1), None)
+        if idx is not None:
+            hits.append((0 if idx == 0 else 1, i, l.get("name") or l.get("id")))
+    return [n for _f, _i, n in sorted(hits)]
+
+
+def mark_view(m, W, H, proj=None, t=0.0):
     """One mark for agents: pixel + normalised coordinates (project space W x H), a plain-language hint and the layers under it (topmost first)."""
     typ = m.get("type")
     W, H = max(1.0, float(W)), max(1.0, float(H))
@@ -147,6 +178,12 @@ def mark_view(m, W, H):
         name = "elips" if typ == "ellipse" else "dikdörtgen"
         out["hint"] = f"işaret: {name}, merkez ({_r(cx)}, {_r(cy)}), {_r(w)}x{_r(h)} px — {_region(cx / W, cy / H)}"
     lays = [l.get("name") or l.get("id") for l in (m.get("layers") or []) if isinstance(l, dict)]
+    if not lays and proj is not None:     # the mark came without the editor's hit test (agent / pipeline / older client): work it out here
+        if typ == "arrow":
+            pts = [(x2, y2), ((x1 + x2) / 2, (y1 + y2) / 2)]
+        else:
+            pts = [(cx, cy), (x + w * .25, y + h * .25), (x + w * .75, y + h * .25), (x + w * .25, y + h * .75), (x + w * .75, y + h * .75)]
+        lays = layers_under_mark(proj, t, pts)
     out["layers"] = lays
     if lays:
         out["hint"] += " — altındaki katmanlar (üstten alta): " + ", ".join(lays)
@@ -188,7 +225,7 @@ def note_view(d, n, proj):
     out = {"id": n["id"], "t": n["t"], "timecode": tc(n["t"]), "text": n["text"], "status": status_of(n),
            "layers": layers_under(proj, n["t"])}
     if n.get("marks"):
-        out["marks"] = [mark_view(m, proj.get("width", 1920), proj.get("height", 1080)) for m in n["marks"]]
+        out["marks"] = [mark_view(m, proj.get("width", 1920), proj.get("height", 1080), proj, n["t"]) for m in n["marks"]]
     for k in ("sent", "reply", "resolved_at", "created"):
         if n.get(k):
             out[k] = n[k]
