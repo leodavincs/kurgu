@@ -9,6 +9,7 @@ import json
 import os
 import platform
 import re
+import stat
 import sys
 import threading
 import time
@@ -117,6 +118,19 @@ def refusal(d, err):
     event(d, "refusal", str(err), "warn", code=getattr(err, "code", None), ctx=getattr(err, "params", None))
 
 
+def open_regular(path):
+    """Open a project-side file for reading as UTF-8 text, only if it is a regular file (a FIFO or device would block or never end).
+    Symlinks are refused where O_NOFOLLOW exists."""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError(f"not a regular file: {os.path.basename(path)}")
+        return os.fdopen(fd, encoding="utf-8", errors="replace")
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def kurgu_is_link(d):
     return os.path.islink(os.path.join(d, ".kurgu"))
 
@@ -130,7 +144,7 @@ def read_events(d, n=200):
         try:
             if os.path.islink(p):
                 continue
-            with open(p, encoding="utf-8", errors="replace") as f:
+            with open_regular(p) as f:
                 for line in f:
                     try:
                         out.append(json.loads(line))
@@ -181,8 +195,36 @@ def _chrome():
     return "not found"
 
 
-_OWN_LINE = re.compile(r"^(\[\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\] run \(send #\d+, \d+ notes\): "
-                       r"|  (finished, exit code -?\d+$|stopped: still running after [\d.]+ s$|could not start: \[(Errno|WinError) -?\d+\] ))")
+_RUN = re.compile(r"\[(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)\] run \(send #(\d+), (\d+) notes\): (.*)", re.ASCII)
+_DONE = re.compile(r"  (finished, exit code -?\d+|stopped: still running after \d+(\.\d+)? s)", re.ASCII)
+_NOSTART = re.compile(r"  could not start: \[(Errno|WinError) (-?\d+)\].*", re.ASCII)
+_ERR_CLASS = re.compile(r"(Uncaught )?([A-Za-z_][A-Za-z0-9_.]{0,60})(?=:|$)", re.ASCII)
+
+
+def own_line(line):
+    """A hook.log line rebuilt from Kurgu's own fixed shapes and numbers only, else None.
+    Nothing free-form is copied: agent output (also a legacy unprefixed line shaped like Kurgu's) may quote the user's notes."""
+    m = _RUN.fullmatch(line)
+    if m:
+        shown = m.group(4)
+        what = next((f"kurgu wake {a}" for a in ("claude", "codex") if f" wake {a} " in f" {shown} "), None)
+        what = what or ("custom on_send" if shown.endswith(" arguments)") and "(custom on_send, " in shown else "(command not shown)")
+        return f"[{m.group(1)}] run (send #{m.group(2)}, {m.group(3)} notes): {what}"
+    m = _DONE.fullmatch(line)
+    if m:
+        return line
+    m = _NOSTART.fullmatch(line)
+    if m:
+        return f"  could not start: [{m.group(1)} {m.group(2)}]"
+    return None
+
+
+def _event_for_report(e, include_agent_output):
+    """Browser and server error messages are free text; the default report keeps only the error's class name."""
+    if include_agent_output or not isinstance(e, dict) or e.get("kind") not in ("frontend", "error"):
+        return e
+    m = _ERR_CLASS.match(str(e.get("msg") or ""))
+    return {**e, "msg": m.group(2) if m else "(message left out)"}
 
 
 def build_report(d, include_agent_output=False):
@@ -217,16 +259,16 @@ def build_report(d, include_agent_output=False):
     if kurgu_is_link(d):
         L.append("(refused: .kurgu is a symbolic link)")
     else:
-        L += [json.dumps(e, ensure_ascii=False) for e in read_events(d, 200)] or ["(none)"]
+        L += [json.dumps(_event_for_report(e, include_agent_output), ensure_ascii=False) for e in read_events(d, 200)] or ["(none)"]
     L += ["", "hook.log (last 50 lines" + (", with the agent's output" if include_agent_output else ", agent output left out") + ")", "-" * 30]
     try:
         p = os.path.join(d, agent_notes.HOOK_LOG)
         if kurgu_is_link(d) or os.path.islink(p):
             raise OSError("symbolic link")
-        with open(p, encoding="utf-8", errors="replace") as f:
+        with open_regular(p) as f:
             lines = [l.rstrip("\n") for l in f.readlines()]
         if not include_agent_output:
-            lines = [l for l in lines if _OWN_LINE.match(l)]               # allowlist: Kurgu's own line shapes only (agent output, also unprefixed legacy output, may quote notes)
+            lines = [o for o in map(own_line, lines) if o is not None]     # allowlist, rebuilt from fixed shapes + numbers (agent output, also legacy unprefixed output, may quote notes)
         L += lines[-50:] or ["(empty)"]
     except OSError as e:
         L.append("(refused: hook.log is a symbolic link)" if os.path.islink(os.path.join(d, ".kurgu")) or "symbolic" in str(e) else "(no hook.log)")

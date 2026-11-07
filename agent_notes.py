@@ -51,7 +51,7 @@ def open_nofollow(path, mode="w"):
     parent = os.path.dirname(path)
     if os.path.basename(parent) == ".kurgu" and os.path.islink(parent):
         raise KurguRefusal("symlink", f"refusing to write: {parent} is a symbolic link", path=".kurgu")
-    flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == "a" else os.O_TRUNC) | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == "a" else os.O_TRUNC) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)   # a shipped FIFO fails (ENXIO) instead of blocking
     if not hasattr(os, "O_NOFOLLOW") and os.path.islink(path):
         raise KurguRefusal("symlink", f"refusing to write: {path} is a symbolic link", path=_rel(path))
     try:
@@ -60,6 +60,10 @@ def open_nofollow(path, mode="w"):
         if os.path.islink(path):
             raise KurguRefusal("symlink", f"refusing to write: {path} is a symbolic link", path=_rel(path)) from e
         raise
+    import stat
+    if not stat.S_ISREG(os.fstat(fd).st_mode):                 # a FIFO with a reader, a device, ...: not a log file
+        os.close(fd)
+        raise OSError(f"refusing to write: {os.path.basename(path)} is not a regular file")
     return os.fdopen(fd, mode, encoding="utf-8")
 
 
@@ -467,7 +471,8 @@ _listen_count = {}    # (dir, pid) -> waits of this process in flight (MCP can s
 
 def _read_listeners(d):
     try:
-        with open(os.path.join(d, LISTENING), encoding="utf-8") as f:
+        import diag
+        with diag.open_regular(os.path.join(d, LISTENING)) as f:     # a FIFO here would block notes wait forever
             v = json.load(f)
         return v if isinstance(v, dict) else {}
     except (OSError, ValueError, RecursionError):      # a project may ship any file here (deep nesting, junk)

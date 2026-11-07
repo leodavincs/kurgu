@@ -333,3 +333,49 @@ def test_huge_numbers_and_deep_nesting_in_a_shipped_listening_json_cannot_crash_
         assert agent_notes.is_listening(project_dir) is False
         agent_notes._beat(project_dir, time.time(), None)                                              # does not raise
         assert agent_notes.is_listening(project_dir) is True
+
+
+def test_default_report_rebuilds_kurgu_lines_from_numbers_so_free_text_after_a_kurgu_prefix_is_dropped(project_dir):
+    os.makedirs(os.path.join(project_dir, ".kurgu"), exist_ok=True)
+    note = "SECRETNOTE make title red"
+    open(os.path.join(project_dir, ".kurgu", "hook.log"), "w", encoding="utf-8").write(
+        f"[2026-11-07T10:00:01] run (send #1, 2 notes): {note}\n"
+        f"  could not start: [Errno 2] {note}\n"
+        f"[٢٠٢٦-11-07T10:00:01] run (send #1, 2 notes): {note}\n"
+        "[2026-11-07T10:00:02] run (send #3, 1 notes): /opt/My Tools/kurgu wake codex /p/My Film 3\n"
+        "[2026-11-07T10:00:03] run (send #4, 1 notes): my-hook (custom on_send, 2 arguments)\n"
+        "  stopped: still running after 600 s\n")
+    default = diag.build_report(project_dir)
+    assert "SECRETNOTE" not in default and "My Tools" not in default and "My Film" not in default
+    for want in ("[2026-11-07T10:00:01] run (send #1, 2 notes): (command not shown)", "  could not start: [Errno 2]",
+                 "run (send #3, 1 notes): kurgu wake codex", "run (send #4, 1 notes): custom on_send", "  stopped: still running after 600 s"):
+        assert want in default
+    assert "SECRETNOTE" in diag.build_report(project_dir, include_agent_output=True)
+
+
+def test_browser_and_server_error_messages_keep_only_the_error_class_by_default(project_dir):
+    diag.event(project_dir, "frontend", "TypeError: note 'SECRETNOTE' is undefined", "error")
+    diag.event(project_dir, "error", "KeyError: 'SECRETNOTE'", "error")
+    diag.event(project_dir, "frontend", "SECRETNOTE without a class", "error")
+    default = diag.build_report(project_dir)
+    assert "SECRETNOTE" not in default and '"TypeError"' in default and '"KeyError"' in default
+    assert "SECRETNOTE" in diag.build_report(project_dir, include_agent_output=True)
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on this platform")
+def test_a_fifo_in_place_of_project_side_files_cannot_hang_the_heartbeat_or_the_report(project_dir):
+    k = os.path.join(project_dir, ".kurgu")
+    os.makedirs(k, exist_ok=True)
+    for name in ("listening.json", "listening.lock", "hook.log", "log.jsonl"):
+        os.mkfifo(os.path.join(k, name))
+    done = []
+    def run():
+        agent_notes.is_listening(project_dir)
+        agent_notes._beat(project_dir, time.time(), None)
+        diag.event(project_dir, "test", "x")
+        diag.build_report(project_dir)
+        done.append(True)
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(20)
+    assert done == [True]
