@@ -456,8 +456,8 @@ class App:
         if last != today:
             text += f"\n## {today}\n\n"
         stamp = now.strftime("%H:%M:%S")
-        text += "".join(f"- {stamp} {str(s).strip()}\n" for s in summary)
-        with open(path, "a", encoding="utf-8") as f:
+        text += "".join(f"- {stamp} {' '.join(str(s).split())}\n" for s in summary)   # one line each: names come from the project
+        with agent_notes.open_nofollow(path, "a") as f:        # a project may ship changes.md as a symlink (e.g. to a shell profile)
             f.write(text)
 
     def backup(self, old_bytes):
@@ -495,7 +495,7 @@ class App:
                     except OSError:
                         pass
             if text:
-                with open(path, "w", encoding="utf-8") as f:
+                with agent_notes.open_nofollow(path, "w") as f:    # never through a shipped symlink
                     f.write(text + "\n")
             elif os.path.exists(path):
                 os.remove(path)
@@ -1096,6 +1096,8 @@ class App:
         """Render the timeline frame at `t` (same machinery as /api/frame, draft size) and store it as .kurgu/notes/<id>.jpg."""
         from PIL import Image
         png = self.frame(t)
+        nid = agent_notes.safe_nid(nid)
+        agent_notes.notes_dir(self.dir)                          # refuses a symlinked .kurgu/notes before anything is created
         out = os.path.join(self.sub("notes"), nid + ".jpg")
         with Image.open(png) as im:
             im = im.convert("RGB")
@@ -1127,7 +1129,7 @@ class App:
         for n, proj in stale:
             try:
                 self.note_frame_jpeg(n["id"], n["t"], n.get("marks"), (proj.get("width") or 1920, proj.get("height") or 1080))
-                with open(agent_notes.sig_path(self.dir, n["id"]), "w", encoding="utf-8") as f:
+                with agent_notes.open_nofollow(agent_notes.sig_path(self.dir, n["id"]), "w") as f:
                     f.write(agent_notes.note_sig(n, proj))
             except Exception:
                 pass
@@ -1159,7 +1161,7 @@ class App:
         def one(n):
             try:
                 self.note_frame_jpeg(n["id"], n["t"], n.get("marks"), (raw.get("width") or 1920, raw.get("height") or 1080))
-                with open(agent_notes.sig_path(self.dir, n["id"]), "w", encoding="utf-8") as f:
+                with agent_notes.open_nofollow(agent_notes.sig_path(self.dir, n["id"]), "w") as f:
                     f.write(agent_notes.note_sig(n, raw))
             except Exception as e:                      # a frame that cannot be drawn must not block the note
                 failed.append(f'{n["id"]}: {e}')

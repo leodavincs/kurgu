@@ -19,6 +19,7 @@ import collections
 import json
 import math
 import os
+import re
 import sys
 import threading
 import time
@@ -329,8 +330,28 @@ def note_sig(n, proj):
     return hashlib.sha1(json.dumps([n.get("t"), n.get("marks") or [], proj.get("width"), proj.get("height")], sort_keys=True).encode()).hexdigest()[:16]
 
 
+_NOTE_ID = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def safe_nid(nid):
+    """A note id as a file-name stem. Ids come from project.json (untrusted): `../../x` must not become a path."""
+    if not isinstance(nid, str) or not _NOTE_ID.fullmatch(nid):
+        raise ValueError(f"refusing a note id that is not a plain name: {str(nid)[:40]!r}")
+    return nid
+
+
+def notes_dir(d):
+    """.kurgu/notes, refused when it (or .kurgu) is a symbolic link: the note pictures and signatures are written there."""
+    k = os.path.join(d, ".kurgu")
+    p = os.path.join(d, FRAMES)
+    for x in (k, p):
+        if os.path.islink(x):
+            raise KurguRefusal("symlink", f"refusing to write: {x} is a symbolic link", path=_rel(x))
+    return p
+
+
 def sig_path(d, nid):
-    return os.path.join(d, FRAMES, nid + ".sig")
+    return os.path.join(notes_dir(d), safe_nid(nid) + ".sig")
 
 
 def load_notes(d):

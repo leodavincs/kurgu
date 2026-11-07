@@ -380,3 +380,47 @@ def test_a_fifo_in_place_of_project_side_files_cannot_hang_the_heartbeat_or_the_
     t.start()
     t.join(20)
     assert done == [True]
+
+
+# ---------------------------------------------------------------- shipped symlinks and ids (a downloaded project is untrusted)
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need extra rights on Windows")
+def test_changes_md_brief_md_and_note_signatures_never_write_through_a_shipped_symlink(srv, tmp_path):
+    c, d, _ = srv
+    profile = tmp_path / "zshrc"
+    profile.write_text("export SAFE=1\n")
+    precious = tmp_path / "precious.txt"
+    precious.write_text("keep\n")
+    os.symlink(profile, os.path.join(d, "changes.md"))
+    os.symlink(precious, os.path.join(d, "brief.md"))
+    st, data = c.req("GET", "/api/project")
+    proj, v0 = data["project"], data["version"]
+    st, res = c.req("PUT", "/api/project", {"project": proj, "summary": ['"a"; touch /tmp/x; "b"\nsecond line: x 1 -> 2'], "base_version": v0})
+    c.req("PUT", "/api/brief", {"text": "new brief"})
+    c.req("POST", "/api/notes/send", {})
+    assert profile.read_text() == "export SAFE=1\n" and precious.read_text() == "keep\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need extra rights on Windows")
+def test_a_symlinked_notes_folder_is_refused_and_signatures_stay_inside(srv, tmp_path):
+    c, d, _ = srv
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    os.symlink(elsewhere, os.path.join(d, ".kurgu", "notes"))
+    c.req("POST", "/api/notes/send", {})
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_a_note_id_cannot_become_a_path():
+    for bad in ("../../x/photo", "a/b", "..", "", "a" * 65, None, 5):
+        with pytest.raises(ValueError):
+            agent_notes.safe_nid(bad)
+    assert agent_notes.safe_nid("n_1a2B-3") == "n_1a2B-3"
+
+
+def test_change_summary_lines_stay_one_line_each(srv):
+    c, d, _ = srv
+    st, data = c.req("GET", "/api/project")
+    c.req("PUT", "/api/project", {"project": data["project"], "summary": ['"a\nb\r\nc": x 1 -> 2'], "base_version": data["version"]})
+    text = open(os.path.join(d, "changes.md"), encoding="utf-8").read()
+    assert '"a b c": x 1 -> 2' in text and "\nb\n" not in text
