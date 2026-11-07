@@ -66,6 +66,9 @@ export const exportPlan = body => sendJson('/api/render/plan', 'POST', body);
 export const exportReveal = path => sendJson('/api/exports/reveal', 'POST', { path });
 export async function exportPresets() { const r = await json('/api/export-presets'); return r.ok ? r.data : null; }
 export async function exportsList() { const r = await json('/api/exports'); return r.ok && Array.isArray(r.data) ? r.data : []; }
+// watch + note (web/js/watch.js)
+export async function notesInfo() { try { const r = await json('/api/notes/info'); return r.ok ? r.data : null; } catch (e) { return null; } }
+export const sendNotes = ids => sendJson('/api/notes/send', 'POST', { ids });
 export const frameUrl = time => '/api/frame?t=' + time.toFixed(3) + '&v=' + encodeURIComponent(S.version || '');
 
 /** Upload one file (raw body) with progress callback (0-1). Resolves to {ok, status, data}. */

@@ -141,7 +141,7 @@ export function normalizeProject(p) {
     const done = n.done === true;
     return { ...n, id: n.id || 'n_' + Math.random().toString(36).slice(2, 6), t: num(n.t, 0), text: String(n.text ?? ''), created: n.created || '',
       done, author: n.author === 'agent' ? 'agent' : 'user', resolved_at: done && typeof n.resolved_at === 'string' ? n.resolved_at : '',
-      layer_ids: Array.isArray(n.layer_ids) ? n.layer_ids.filter(x => typeof x === 'string') : [], reply: typeof n.reply === 'string' ? n.reply : '' };
+      layer_ids: Array.isArray(n.layer_ids) ? n.layer_ids.filter(x => typeof x === 'string') : [], reply: typeof n.reply === 'string' ? n.reply : '', sent: typeof n.sent === 'string' ? n.sent : '' };
   });
   const lastEnd = p.layers.reduce((m, l) => Math.max(m, l.end || 0), 0);
   p.duration = num(p.duration, 0) > 0 ? num(p.duration, 0) : Math.max(lastEnd, 1);

@@ -80,7 +80,7 @@ def test_loads_without_errors(chrome, server, lang):
 
 # ------------------------------------------------------------------------------------------ top bar
 def test_topbar_controls_exist(page):
-    for sel in ["#b-panel", "#project-name", "#b-seq", "#b-undo", "#b-redo", "#b-add", "#b-note", "#b-snap", "#b-frame",
+    for sel in ["#b-panel", "#project-name", "#b-seq", "#b-undo", "#b-redo", "#b-add", "#nb-input", "#b-send", "#b-snap", "#b-watch",
                 "#lang button[data-lang=en]", "#lang button[data-lang=tr]", "#b-export", "#b-play", "#b-start", "#b-end", "#timecode",
                 "#zoom-select", "#b-guides", "#canvas", "#overlay-canvas", "#inspector", "#layers", "#media-panel", "#splitter"]:
         assert page.center(sel) is not None, "control missing or invisible: " + sel
@@ -143,14 +143,14 @@ def test_media_panel_toggle_and_list(page):
 
 
 def test_language_switch(page):
-    en = page.eval("document.getElementById('b-note').textContent")
+    en = page.eval("document.getElementById('b-watch').textContent")
     page.click_sel("#lang button[data-lang=tr]")
     page.wait_for("document.documentElement.lang==='tr'")
-    tr = page.eval("document.getElementById('b-note').textContent")
+    tr = page.eval("document.getElementById('b-watch').textContent")
     assert tr != en
     page.click_sel("#lang button[data-lang=en]")
     page.wait_for("document.documentElement.lang==='en'")
-    assert page.eval("document.getElementById('b-note').textContent") == en
+    assert page.eval("document.getElementById('b-watch').textContent") == en
     assert page.eval("document.querySelector('#lang button[data-lang=en]').classList.contains('on')")
 
 
@@ -183,10 +183,10 @@ def test_snap_and_note_toggles(page):
     page.click_sel("#b-snap")
     assert page.eval("document.getElementById('b-snap').classList.contains('on')") != was
     page.click_sel("#b-snap")
-    page.click_sel("#b-note")
-    page.wait_for("!document.getElementById('note-box').hidden")
+    page.key("n")                                           # N jumps into the top-bar note box
+    page.wait_for("document.activeElement && document.activeElement.id==='nb-input'")
     page.key("Escape")
-    page.wait_for("document.getElementById('note-box').hidden")
+    page.wait_for("document.activeElement.id!=='nb-input'")
 
 
 # ------------------------------------------------------------------------------------------ selection / inspector
@@ -223,12 +223,6 @@ def test_ask_ai_box_runs_the_agent_and_can_be_undone(page):
         page.screenshot(os.path.join(SHOTS, "ask-ai-done.png"))
     page.key("z", modifiers=4 if sys.platform == "darwin" else 2)
     page.wait_for("__kurgu.S.project.layers.find(l=>l.id==='k_buyuk').opacity===%s" % o0, 10)
-
-
-def test_command_field_focuses_the_ask_box(page):
-    _sel(page, ["k_a"])
-    page.click_sel("#b-ask")
-    page.wait_for("document.activeElement && document.activeElement.classList.contains('ai-input')")
 
 
 def test_font_picker_opens(page):
@@ -371,8 +365,8 @@ def test_add_text_layer_from_menu_and_note(page):
     _undo_all(page)
     page.wait_for("__kurgu.S.project.layers.length===%d" % n0)
     nn = page.eval("__kurgu.S.project.notes.length")
-    page.click_sel("#b-note")
-    page.wait_for("!document.getElementById('note-box').hidden")
+    page.click_sel("#nb-input")
+    page.wait_for("document.activeElement.id==='nb-input'")
     page.send("Input.insertText", text="hello")
     page.key("Enter")
     page.wait_for("__kurgu.S.project.notes.length===%d" % (nn + 1))
@@ -397,11 +391,10 @@ def test_zoom_buttons_and_guides_menu(page):
 
 
 def test_real_frame_toggle(page):
-    page.click_sel("#b-frame")
+    page.key("r")                                           # R: compare with a real render frame (also in the guides menu)
     page.wait_for("__kurgu.S.realFrame===true")
-    assert page.eval("document.getElementById('b-frame').classList.contains('on')")
     time.sleep(1.2)
-    page.click_sel("#b-frame")
+    page.key("r")
     page.wait_for("__kurgu.S.realFrame===false")
 
 

@@ -99,22 +99,16 @@ input:disabled, textarea:disabled, select:disabled { opacity: .5; }
 @keyframes pulse { 50% { opacity: .35; } }
 #seq-label { font-weight: 500; }
 .tb-center { flex: 0 1 380px; min-width: 120px; display: flex; align-items: center; gap: var(--s-3); }
-/* the assistant field: a plain command line, not a glowing chat pill */
-.ask { position: relative; overflow: hidden; flex: 1; min-width: 0; height: var(--h-lg); border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line2); display: flex; align-items: center; gap: 9px; padding: 0 12px; color: var(--t3); text-align: left; transition: background var(--dur-1), color var(--dur-1), box-shadow var(--dur-1); }
-.ask:hover { color: var(--t2); box-shadow: inset 0 0 0 1px var(--t3); } .ask .ic { color: var(--t2); }
-.ask span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ask.busy::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(var(--acc), var(--acc)) 0 0 / 30% 100% no-repeat; animation: shimmer 1.4s linear infinite; }
-@keyframes shimmer { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 #progress, #upload { position: relative; flex: 1; min-width: 0; height: var(--h-md); border-radius: var(--r-md); background: var(--hover); box-shadow: inset 0 0 0 1px var(--line); overflow: hidden; cursor: default; }
 #progress i, #upload i { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--acc-soft); border-right: 2px solid var(--acc); transition: width var(--dur-3) var(--ease-out); }
 #upload i { background: color-mix(in srgb, var(--ok) 18%, transparent); border-right-color: var(--ok); }
 #progress span, #upload span { position: relative; display: block; text-align: center; line-height: 26px; font-size: var(--fs-cap); font-weight: 600; padding: 0 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #b-cancel { color: var(--err); width: var(--h-md); height: var(--h-md); }
 #render-open { display: inline-flex; align-items: center; gap: 4px; color: var(--acc); text-decoration: none; font-weight: 600; white-space: nowrap; padding: 0 6px; } #render-open:hover { text-decoration: underline; }
-.tb-center:has(#progress:not([hidden])) #b-ask, .tb-center:has(#upload:not([hidden])) #b-ask { display: none; }
+.tb-center:has(#progress:not([hidden])) #note-bar, .tb-center:has(#upload:not([hidden])) #note-bar { display: none; }
 @media (max-width: 1720px) { #b-split span, #b-note span, #b-snap span { display: none; } #b-split, #b-note, #b-snap { width: var(--h-md); padding: 0; } }
 @media (max-width: 1320px) { .seg .tb span { display: none; } .seg .tb { width: var(--h-md); padding: 0; } .tb-center { flex-basis: 260px; } }
-@media (max-width: 1100px) { .ask span { display: none; } .ask { flex: none; width: var(--h-lg); padding: 0; justify-content: center; border-radius: var(--r-md); } .tb-center { flex-basis: auto; min-width: 0; } #seq-label { display: none; } }
+@media (max-width: 1100px) { .tb-center { flex-basis: auto; min-width: 0; } #seq-label { display: none; } }
 
 /* ================================================================== main grid */
 #main { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--mp-w) minmax(0, 1fr) var(--insp-w); grid-template-rows: minmax(0, 1fr) var(--gap) var(--lp-h); column-gap: var(--gap); }
@@ -217,9 +211,6 @@ input:disabled, textarea:disabled, select:disabled { opacity: .5; }
 .tz .ib { width: 28px; height: 28px; }
 #zoom-select { background-image: none; padding: 0 6px; width: auto; min-width: 84px; text-align: center; text-align-last: center; color: var(--t2); background-color: transparent; font-size: var(--fs-cap); }
 #zoom-select:hover { background-color: var(--hover); color: var(--t1); }
-#note-box { position: absolute; left: 50%; bottom: 72px; transform: translateX(-50%); z-index: 20; display: flex; align-items: center; gap: var(--s-4); border-radius: var(--r-xl); padding: 6px 8px 6px 14px; animation: pop-in var(--dur-3) var(--ease-out); }
-#note-time { color: var(--note); font-family: var(--mono); font-weight: 600; white-space: nowrap; }
-#note-input { width: min(320px, 40vw); }
 #preview-section.mp-drop::after { content: attr(data-drop); position: absolute; inset: 8px; border: 2px dashed var(--acc); border-radius: var(--r-xl); background: var(--acc-soft); display: flex; align-items: center; justify-content: center; color: var(--acc); font-weight: 600; pointer-events: none; z-index: 15; }
 
 /* ================================================================== 6. inspector */
@@ -419,7 +410,6 @@ textarea.text-input { width: 100%; font-size: var(--fs-body); }
 /* ================================================================== 12. motion & accessibility */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
-  .ask.busy::after { animation: none; background-position: 50% 0; }
 }
 
 /* ==== keyframes (wp-kf): inspector stopwatch + nav, timeline lanes, easing popover, animate menu ==== */

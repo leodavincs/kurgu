@@ -1,4 +1,4 @@
-// main.js — boot, top bar, transport, shortcuts, add-layer menu, notes, render progress, language switch.
+// main.js — boot, top bar, transport, shortcuts, add-layer menu, notes, render progress, language switch. (watch + note: watch.js)
 import * as LK from './links.js';
 import { S, aspectLabel, onChange, emit, change, select, setTime, layer, selectedLayers, undo, redo, addLayer, removeLayers, duplicateLayers, splitLayers, canSplit, rippleDelete, copyPayload, parsePayload, pasteLayers, newLayer, newId, loadExternal, timecode, clamp, VISUAL, basename } from './state.js';
 import * as API from './api.js';
@@ -12,7 +12,8 @@ import { writeProp, valueAt } from './keyframes.js';
 import { startImport } from './import.js';
 import { startExport } from './export.js';
 import { startMediaPanel, togglePanel, openPanel } from './mediapanel.js';
-import { startNotes, toggleNotes, jumpNote, addNote } from './notes.js';
+import { startNotes, toggleNotes, jumpNote } from './notes.js';
+import { startWatch, focusNote, watchOpen, openWatch } from './watch.js';
 import { $, el, icon, setIcon, copyText } from './dom.js';
 import { isMod, IS_MAC } from './platform.js';
 import { openFilePicker } from './import.js';
@@ -43,7 +44,8 @@ async function boot() {
   const preview = startPreview({ stage: $('stage'), frame: $('frame'), canvas: $('canvas'), overlay: $('overlay-canvas'), mediaHost });
   const panel = startMediaPanel($('media-panel'), toast);
   const notesPanel = startNotes({ toast });
-  const modules = [preview, layers, inspector, panel, notesPanel];
+  const watch = startWatch({ toast });
+  const modules = [preview, layers, inspector, panel, notesPanel, watch];
   onChange(kind => {
     for (const m of modules) { try { if (m[kind]) m[kind](); } catch (e) { console.error(kind, e); } }
     if (kind === 'project') { updateTop(); renderScrubNotes(); updateTransport(); updateSequenceUi(); updateSplit(); }
@@ -52,7 +54,6 @@ async function boot() {
     if (kind === 'time') { updateTransport(); updateSplit(); }
     if (kind === 'playing') { setIcon($('b-play'), S.playing ? 'pause' : 'play', S.playing ? '' : 'nudge'); updateRate(); }
     if (kind === 'save') updateSaveStatus();
-    if (kind === 'settings') { $('b-frame').classList.toggle('on', S.realFrame); $('b-frame').setAttribute('aria-pressed', String(S.realFrame)); }
     if (kind === 'lang') { applyStatic(); buildEmpty(); updateTop(); updateSequenceUi(); updateZoomUi(); updateSaveStatus(); renderScrubNotes(); }
   });
   for (const id of ['inspector', 'topbar', 'transport', 'media-panel']) $(id).addEventListener('pointerdown', () => { S.focus = 'general'; }, true);
@@ -77,14 +78,11 @@ async function boot() {
 // ---------------------------------------------------------------- top bar
 function bindTop() {
   $('b-panel').addEventListener('click', togglePanel);
-  $('b-ask').addEventListener('click', focusAsk);
   $('b-theme').addEventListener('click', toggleTheme);
   $('b-undo').addEventListener('click', undo);
   $('b-redo').addEventListener('click', redo);
-  $('b-note').addEventListener('click', openNote);
   $('b-split').addEventListener('click', doSplit);
   $('b-snap').addEventListener('click', toggleSnap);
-  $('b-frame').addEventListener('click', () => setRealFrame(!S.realFrame));
   $('b-seq').addEventListener('click', openSequence);
   const name = $('project-name');
   name.addEventListener('change', () => change(p => { p.name = name.value.trim() || p.name; }, { key: 'project-name' }));
@@ -94,16 +92,10 @@ function bindTop() {
 }
 /** Toggle buttons keep their look in the `on` class; screen readers get it as aria-pressed. */
 function mirrorPressed() {
-  for (const b of document.querySelectorAll('#b-snap, #b-frame, #b-guides, #b-panel')) {
+  for (const b of document.querySelectorAll('#b-snap, #b-guides, #b-panel')) {
     const sync = () => b.setAttribute('aria-pressed', String(b.classList.contains('on')));
     new MutationObserver(sync).observe(b, { attributes: true, attributeFilter: ['class'] }); sync();
   }
-}
-/** The toolbar's command field opens the Ask-AI box of the inspector (selection scope, or the frame at the playhead) and focuses it. */
-function focusAsk() {
-  const box = document.querySelector('#inspector .ai-box'); if (!box) return;
-  const sec = box.closest('.section'); if (sec) sec.classList.remove('collapsed');
-  const ta = box.querySelector('textarea'); box.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); if (ta && !ta.disabled) ta.focus();
 }
 function bindLang() {
   const sync = () => { for (const b of document.querySelectorAll('#lang button')) b.classList.toggle('on', b.dataset.lang === getLang()); };
@@ -209,25 +201,10 @@ function bindView() {
     item(t('guides.safe'), S.view.safe, () => setGuides({ safe: !S.view.safe }));
     item(t('guides.social'), S.view.social, () => setGuides({ social: !S.view.social }), !portrait);
     if (!portrait) m.append(el('div', 'menu-note', t('guides.socialOnly')));
+    m.append(el('div', 'menu-sep'));
+    item(t('guides.realFrame'), S.realFrame, () => setRealFrame(!S.realFrame));
     const r = $('b-guides').getBoundingClientRect(); m.style.left = Math.max(4, r.right - 240) + 'px'; m.style.top = 'auto'; m.style.bottom = (window.innerHeight - r.top + 4) + 'px'; m.hidden = false;
   });
-}
-
-// ---------------------------------------------------------------- notes
-function openNote() {
-  const box = $('note-box'), input = $('note-input'); box.hidden = false; input.value = '';
-  const at = S.t; $('note-time').textContent = fmt(at, 1) + ' ' + t('unit.s');
-  input.focus();
-  const close = () => { input.blur(); box.hidden = true; input.removeEventListener('keydown', onKey); input.removeEventListener('blur', close); };
-  const onKey = e => {
-    e.stopPropagation();
-    if (e.key === 'Enter') {
-      const text = input.value.trim();
-      if (text) addNote(text, at);
-      close();
-    } else if (e.key === 'Escape') close();
-  };
-  input.addEventListener('keydown', onKey); input.addEventListener('blur', close);
 }
 
 // ---------------------------------------------------------------- shortcuts
@@ -298,7 +275,7 @@ function bindKeys() {
   window.addEventListener('keydown', e => {
     const cmd = isMod(e), typing = isTyping(e.target);
     if (cmd && e.key.toLowerCase() === 's') { e.preventDefault(); API.save(); return; }
-    if (typing || sequenceOpen()) return;
+    if (typing || sequenceOpen() || watchOpen()) return;
     if (cmd) {
       const k = e.key.toLowerCase();
       if (k === '+' || k === '=') { e.preventDefault(); zoomStep(1, viewAnchor()); return; }
@@ -331,8 +308,10 @@ function bindKeys() {
       case 'Home': e.preventDefault(); setTime(0); break;
       case 'End': e.preventDefault(); setTime(S.project.duration); break;
       case '\\': e.preventDefault(); togglePanel(); break;
-      case 'n': case 'N': e.preventDefault(); if (e.shiftKey) toggleNotes(); else openNote(); break;
+      case 'n': case 'N': e.preventDefault(); if (e.shiftKey) toggleNotes(); else focusNote(); break;
       case 's': case 'S': e.preventDefault(); toggleSnap(); break;
+      case 'w': case 'W': e.preventDefault(); openWatch(); break;
+      case 'r': case 'R': e.preventDefault(); setRealFrame(!S.realFrame); break;
       case 'Delete': case 'Backspace': if (S.selection.length) { e.preventDefault(); if (e.shiftKey) doRipple(); else removeLayers(S.selection); } break;
       case 'Escape': if (!$('modal').hidden) $('modal').hidden = true; else if (!$('menu').hidden) $('menu').hidden = true; else select([]); break;
       case '[': setTime(S.t - 1 / fps); break;

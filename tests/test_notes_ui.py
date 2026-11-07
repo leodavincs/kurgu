@@ -133,7 +133,7 @@ def test_notes_panel_flow(env):
     assert pg.js("document.querySelector('.np-count').textContent") == "4 open · 1 done"
     pg.key("N", "KeyN", 78, mods=8, text="N")                      # Shift+N closes
     assert pg.js("getComputedStyle(document.querySelector('#notes-panel')).display") == "none"
-    assert pg.js("document.querySelector('#note-box').hidden")     # ...and did not open the note box
+    assert pg.js("document.activeElement.id !== 'nb-input'")        # ...and did not jump into the note box
     pg.key("N", "KeyN", 78, mods=8, text="N")                      # and opens again
     assert pg.js("localStorage.getItem('kurgu.np.open')") == "1"
     order = pg.js("[...document.querySelectorAll('.np-row')].map(r => r.dataset.id).join()")

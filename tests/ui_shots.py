@@ -63,7 +63,7 @@ def tour(p, out, prefix, lang, theme):
     p.screenshot(name("menu"))
     p.key("Escape")
     # note popover
-    p.click_sel("#b-note")
+    p.click_sel("#nb-input")
     time.sleep(0.3)
     p.screenshot(name("note"))
     p.key("Escape")

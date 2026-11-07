@@ -126,7 +126,7 @@ function iconBtn(cls, name, glyph, tip, fn) {
   const b = el('button', 'np-ib ' + cls); b.type = 'button'; b.title = tip; b.setAttribute('aria-label', tip); b.append(ic(name, glyph));
   b.addEventListener('click', e => { e.stopPropagation(); fn(e); }); return b;
 }
-function rowSig(n) { return JSON.stringify([n.t, n.text, n.done, n.author, n.reply, layersAt(S.project, n.t).map(l => l.id + l.name + l.type), getLang(), st.editing === n.id]); }
+function rowSig(n) { return JSON.stringify([n.t, n.text, n.done, n.author, n.reply, n.sent, layersAt(S.project, n.t).map(l => l.id + l.name + l.type), getLang(), st.editing === n.id]); }
 function fillRow(r, n) {
   const e = r.el; e.className = 'np-row' + (n.done ? ' done' : '') + (n.author === 'agent' ? ' agent' : '') + (st.current === n.id ? ' current' : '');
   e.dataset.id = n.id; e.dataset.t = n.t; r.thumb.tm = n.t; r.thumb.wrap.querySelector('.np-tc').textContent = tc(n.t);
@@ -150,7 +150,8 @@ function fillRow(r, n) {
   top.append(chk, body); main.append(top);
   const meta = el('div', 'np-meta');
   meta.append(el('span', 'np-badge ' + n.author, t(n.author === 'agent' ? 'np.agent' : 'np.you')));
-  if (n.done) meta.append(el('span', 'np-state', t('np.done')));
+  if (n.done) meta.append(el('span', 'np-state', t(n.sent ? 'np.fixed' : 'np.done')));
+  else if (n.sent) meta.append(el('span', 'np-state sent', t('np.sent')));
   main.append(meta, layerChips(n));
   if (n.reply) { const rp = el('div', 'np-reply'); rp.append(ic('clapperboard', '›'), el('span', '', n.reply)); main.append(rp); }
   const acts = el('div', 'np-acts');
