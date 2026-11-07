@@ -104,6 +104,7 @@ def test_shift_e_toggles_and_the_choice_is_remembered(page):
     page.wait_for("document.body.dataset.mode==='edit'")
     page.send("Page.reload")
     page.wait_for(READY, 20)
+    page.wait_for("document.body.dataset.mode==='edit'")                                       # mode is applied right after READY; do not race it
     assert page.eval("document.body.dataset.mode") == "edit"
     page.key("E", code="KeyE", modifiers=8, text="E")
     page.wait_for("document.body.dataset.mode==='review'")
