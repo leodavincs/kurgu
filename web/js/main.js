@@ -3,7 +3,7 @@ import * as LK from './links.js';
 import { S, aspectLabel, onChange, emit, change, select, setTime, layer, selectedLayers, undo, redo, addLayer, removeLayers, duplicateLayers, splitLayers, canSplit, rippleDelete, copyPayload, parsePayload, pasteLayers, newLayer, newId, loadExternal, timecode, clamp, VISUAL, basename } from './state.js';
 import * as API from './api.js';
 import { initI18n, t, fmt, getLang, setLang, onLang, applyStatic } from './i18n.js';
-import { refreshFonts, ensureFont } from './fonts.js';
+import { refreshFonts } from './fonts.js';
 import { viewGeom, startPreview, togglePlay, play, pause, startAudio, setRealFrame, debugInfo, setZoom, zoomStep, viewAnchor, viewInfo, setGuides, handKey, shuttle, ZOOMS, layerBox } from './preview.js';
 import { openSequence, sequenceOpen } from './sequence.js';
 import { startLayerPanel } from './layers.js';
@@ -36,11 +36,10 @@ async function boot() {
   initTheme();
   await initI18n();
   let data;
-  try { await refreshFonts(); data = await API.loadProject(); const info = await API.notesInfo(); initMode(info && info.default_mode); }
+  try { refreshFonts().catch(() => {}); data = await API.loadProject(); const info = await API.notesInfo(); initMode(info && info.default_mode); }   // the font list is not needed for the first paint
   catch (e) { document.body.innerHTML = `<div class="fatal"><h2>${t('fatal.title')}</h2><p>${String(e.message || e)}</p><p>${t('fatal.hint')} <code>kurgu &lt;project_dir&gt;</code></p></div>`; return; }
   try { S.snap = localStorage.getItem('kurgu.snap') !== '0'; } catch (e) { /* ignore */ }
   loadExternal(data.project, data.version);
-  for (const l of S.project.layers) if (l.type === 'text') ensureFont(l.font);
   const inspector = startInspector($('inspector'));
   const layers = startLayerPanel($('layers'));
   const mediaHost = el('div', 'media-host'); document.body.append(mediaHost);

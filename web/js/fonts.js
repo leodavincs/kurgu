@@ -25,6 +25,7 @@ export function ensureFont(id) {
   const face = S.fontMap.get(id);
   if (!face) return;
   status.set(id, 'loading');
+  if (id !== FALLBACK_ID) ensureFont(FALLBACK_ID);   // the fallback comes with the first font that is really needed, not at start-up
   const ff = new FontFace(familyName(id), `url(${face.url})`);
   ff.load().then(f => {
     document.fonts.add(f); status.set(id, 'ok'); epoch++;
@@ -36,7 +37,6 @@ export function ensureFont(id) {
 export async function refreshFonts() {
   const list = await fetchFonts();
   S.fonts = list; S.fontMap = new Map(list.map(f => [f.id, f]));
-  ensureFont(FALLBACK_ID);
   emit('fonts');
   if (list.scanning && !rescan) rescan = setTimeout(() => { rescan = null; refreshFonts().catch(() => {}); }, 1500);
   return list;
