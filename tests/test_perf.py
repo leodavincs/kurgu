@@ -230,10 +230,11 @@ def test_threaded_frames_equal_serial_frames(project_dir):
 def test_encoder_option_resolution():
     import exports
     p = {"width": 1920, "height": 1080}
-    assert exports.resolve_options({"preset": "youtube"}, p)["encoder"] == "software"
+    assert exports.resolve_options({"preset": "youtube"}, p)["encoder"] == "auto"           # hardware when a working one exists is the default now
     o = exports.resolve_options({"preset": "fast"}, p)
     assert o["encoder"] == "auto" and "--encoder" in exports.cli_args(o, p, "/x.mp4")
-    assert "--encoder" not in exports.cli_args(exports.resolve_options({"preset": "youtube"}, p), p, "/x.mp4")
+    sw = exports.resolve_options({"preset": "youtube", "options": {"encoder": "software"}}, p)   # the explicit "reproducible" choice
+    assert sw["encoder"] == "software" and "--encoder" not in exports.cli_args(sw, p, "/x.mp4")
     assert exports.resolve_options({"preset": "prores", "options": {"encoder": "hardware"}}, p)["encoder"] == "software"
     with pytest.raises(exports.OptionError):
         exports.resolve_options({"options": {"encoder": "gpu"}}, p)
@@ -252,3 +253,85 @@ def test_hardware_export_decodes(project_dir, tmp_path):
     j = media_tools.probe_json(out, "-show_streams")
     v = next(s for s in j["streams"] if s["codec_type"] == "video")
     assert v["codec_name"] == "h264" and v["pix_fmt"] == "yuv420p" and abs(float(j["format"]["duration"]) - 2) < 0.2
+
+
+# ------------------------------------------------------------ proxies only when they pay; background queue; numpy peaks
+def _mk(tmp_path, name, size, extra=(), secs=2):
+    (tmp_path / "media").mkdir(exist_ok=True)
+    out = tmp_path / "media" / name
+    sh("-f", "lavfi", "-i", f"testsrc2=size={size}:rate=30:duration={secs}", *extra, "-pix_fmt", "yuv420p", str(out))
+    (tmp_path / "project.json").write_text('{"version":2,"name":"p","width":1920,"height":1080,"fps":30,"duration":3,"layers":[]}')
+    return os.path.realpath(str(out))
+
+
+def test_light_1080p_h264_gets_no_proxy_heavy_one_does(tmp_path, monkeypatch):
+    monkeypatch.delenv("KURGU_PROXY", raising=False)
+    app = server.App(str(tmp_path))
+    light = _mk(tmp_path, "light.mp4", "1920x1080", ("-c:v", "libx264", "-b:v", "1500k"))
+    heavy = _mk(tmp_path, "heavy.mp4", "1920x1080", ("-c:v", "libx264", "-b:v", "30M", "-minrate", "30M", "-maxrate", "30M", "-bufsize", "30M"))
+    big = _mk(tmp_path, "uhd.mp4", "3840x2160", ("-c:v", "libx264", "-b:v", "1500k"))
+    assert app.media_info(light)["proxy"] is None                       # lighter than its own proxy would be
+    assert app.media_info(heavy)["proxy"] is not None and app.media_info(big)["proxy"] is not None
+    monkeypatch.setenv("KURGU_PROXY", "always")
+    assert app.media_info(light)["proxy"] is not None
+    monkeypatch.setenv("KURGU_PROXY", "never")
+    assert app.media_info(heavy)["proxy"] is None
+    monkeypatch.delenv("KURGU_PROXY")
+    os.makedirs(tmp_path / ".kurgu", exist_ok=True)
+    (tmp_path / ".kurgu" / "config.json").write_text('{"proxy": "always"}')
+    assert app.media_info(light)["proxy"] is not None                   # the setting can also live in .kurgu/config.json
+
+
+def test_job_queue_serves_visible_work_first_and_shares_equal_keys():
+    q = server.JobQueue(1, "t")
+    gate, order = threading.Event(), []
+    blocker = q.submit("block", 0, lambda: gate.wait(10))
+    low = q.submit("low", 1, lambda: order.append("low"))
+    high = q.submit("high", 0, lambda: order.append("high"))
+    assert q.submit("low", 0, lambda: order.append("dup")) is low          # the same key is one job
+    gate.set()
+    blocker.result(10); low.result(10); high.result(10)
+    assert order == ["high", "low"]
+
+
+def test_no_audio_waveform_does_not_wait_for_the_queue_and_numpy_peaks_match(tmp_path):
+    app = server.App(str(tmp_path))
+    silent = _mk(tmp_path, "silent.mp4", "320x180")
+    gate = threading.Event()
+    for i in range(server.QUICK_WORKERS):                               # every worker busy: a request that needs no work must still be answered
+        app.quick.submit(("busy", i), 0, lambda: gate.wait(10))
+    t0 = time.time()
+    assert app.waveform(silent) == {"rate": 100, "peaks": []} and time.time() - t0 < 3
+    gate.set()
+    wav = str(tmp_path / "media" / "tone.wav")
+    sh("-f", "lavfi", "-i", "sine=frequency=440:duration=2.5", "-ar", "8000", "-ac", "1", wav)
+    got = app.waveform(os.path.realpath(wav))["peaks"]
+    raw = subprocess.run([media_tools.ffmpeg(), "-v", "error", "-i", wav, "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"], capture_output=True).stdout
+    arr = array.array("h"); arr.frombytes(raw[:len(raw) // 2 * 2])
+    ref = [round(max(abs(x) for x in arr[i:i + 80]) / 32768, 4) for i in range(0, len(arr), 80)]
+    assert got == ref and len(got) == len(arr) // 80 + (1 if len(arr) % 80 else 0)
+
+
+def test_default_render_uses_auto_encoder_and_x264_faster(project_dir):
+    import argparse
+    assert "faster" in open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "render.py"), encoding="utf-8").read()
+    o = argparse.Namespace(codec="h264", preset=None, crf=None, bitrate=None, encoder="software", audio_bitrate=None)
+    v, _a = render.encoder_args(o, "mp4")
+    assert v[:4] == ["-c:v", "libx264", "-preset", "faster"]                                  # software default preset
+    assert render.hardware_encoder(argparse.Namespace(codec="h264", encoder=None)) == media_tools.hw_encoders()["h264"]   # unset = auto
+
+
+def test_a_failing_hardware_encoder_falls_back_to_software(project_dir, tmp_path, monkeypatch):
+    import argparse
+    calls = []
+
+    def fake(pdir, project, o, output):
+        calls.append(o.encoder)
+        if o.encoder != "software":
+            raise render.RenderError("ffmpeg encoder failed: videotoolbox says no")
+        return "software ran"
+    monkeypatch.setattr(render, "_render_full", fake)
+    monkeypatch.setattr(render, "hardware_encoder", lambda o: None if o.encoder == "software" else "h264_videotoolbox")
+    o = argparse.Namespace(codec="h264", preset=None, crf=None, bitrate=None, encoder="auto")
+    assert render.render_full(project_dir, None, o, str(tmp_path / "x.mp4")) == "software ran"
+    assert calls == ["auto", "software"]

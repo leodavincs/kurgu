@@ -31,6 +31,7 @@ Notes / decisions where the spec is silent:
 import argparse
 import json
 import math
+import copy
 import os
 import shutil
 import signal
@@ -1068,9 +1069,9 @@ AUDIO_ONLY = ('wav', 'mp3')
 
 
 def hardware_encoder(o):
-    """Name of the hardware encoder to use for this export, or None (software libx264/libx265). `encoder` is software
-    (default: bit-exact, reproducible), auto (hardware when a working one exists) or hardware (same, but warns when none)."""
-    mode = getattr(o, 'encoder', None) or 'software'
+    """Name of the hardware encoder to use for this export, or None (software libx264/libx265). `encoder` is auto (default: hardware when a working
+    one exists, software otherwise or when the hardware attempt fails), software (bit-exact, reproducible) or hardware (same as auto, but warns when none)."""
+    mode = getattr(o, 'encoder', None) or 'auto'
     if mode == 'software' or o.codec not in ('h264', 'h265'):
         return None
     name = media_tools.hw_encoders().get(o.codec)
@@ -1079,15 +1080,19 @@ def hardware_encoder(o):
     return name
 
 
+# Hardware encoders spend more bits than x264 at the same nominal quality; this bias on the crf-like knob keeps the file about as big as the software one.
+HW_CRF_BIAS = 2
+
+
 def encoder_args(o, dst_ext):
     """(video codec args, audio codec args) for the chosen codec."""
     preset = o.preset
     hw = hardware_encoder(o)
     if hw:
-        crf = o.crf if o.crf is not None else (18 if o.codec == 'h264' else 22)
+        crf = (o.crf if o.crf is not None else (18 if o.codec == 'h264' else 22)) + (HW_CRF_BIAS if o.bitrate is None else 0)
         v = media_tools.hw_video_args(hw, crf=crf, bitrate=o.bitrate) + ['-pix_fmt', 'yuv420p']
     elif o.codec == 'h264':
-        v = ['-c:v', 'libx264', '-preset', preset or 'medium', '-pix_fmt', 'yuv420p']
+        v = ['-c:v', 'libx264', '-preset', preset or 'faster', '-pix_fmt', 'yuv420p']
         v += ['-b:v', o.bitrate] if o.bitrate else ['-crf', str(o.crf if o.crf is not None else 18)]
     elif o.codec == 'h265':
         v = ['-c:v', 'libx265', '-preset', preset or 'medium', '-pix_fmt', 'yuv420p', '-tag:v', 'hvc1', '-x265-params', 'log-level=error']
@@ -1111,6 +1116,19 @@ def encoder_args(o, dst_ext):
 
 
 def render_full(pdir, project, o, output):
+    """Full render. A hardware encoder that fails at run time is not an error: the render starts over with the software encoder."""
+    try:
+        return _render_full(pdir, project, o, output)
+    except RenderError as e:
+        if not str(e).startswith('ffmpeg encoder failed') or hardware_encoder(o) is None:
+            raise
+        out('WARN hardware encoder failed, rendering again with the software encoder')
+        o2 = copy.copy(o)
+        o2.encoder = 'software'
+        return _render_full(pdir, project, o2, output)
+
+
+def _render_full(pdir, project, o, output):
     ext = os.path.splitext(output)[1].lstrip('.').lower()
     audio_only = o.codec in AUDIO_ONLY
     ctx = setup(pdir, project, o.draft, o.scale, o.size, o.fps)
@@ -1246,8 +1264,8 @@ def main(argv=None):
     ap.add_argument('--crf', type=int, help='constant quality (h264/h265/vp9)')
     ap.add_argument('--bitrate', help='target video bitrate, e.g. 8000k or 8M (instead of --crf)')
     ap.add_argument('--preset', help='x264/x265 speed preset')
-    ap.add_argument('--encoder', choices=('software', 'auto', 'hardware'), default='software',
-                    help='software = libx264/libx265 (default, reproducible); auto/hardware = VideoToolbox / NVENC / QSV / AMF when available')
+    ap.add_argument('--encoder', choices=('software', 'auto', 'hardware'), default='auto',
+                    help='auto = VideoToolbox / NVENC / QSV / AMF when a working one exists, else libx264/libx265 (default); software = libx264/libx265, reproducible')
     ap.add_argument('--scale', type=float, help='scale factor of the sequence size, e.g. 0.5')
     ap.add_argument('--size', type=parse_size, help='exact output size WxH')
     ap.add_argument('--fps', type=float, help='override the sequence frame rate')

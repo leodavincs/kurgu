@@ -126,7 +126,7 @@ def resolve_options(body, project):
         opts["bitrate"] = _kbps(opts["bitrate"], "bitrate")
     if opts.get("speed") and opts["speed"] not in SPEEDS:
         raise OptionError("unknown speed preset")
-    opts["encoder"] = opts.get("encoder") or "software"
+    opts["encoder"] = opts.get("encoder") or "auto"
     if opts["encoder"] not in ENCODERS:
         raise OptionError("encoder must be software, auto or hardware")
     if codec not in ("h264", "h265"):
