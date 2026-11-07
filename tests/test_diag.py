@@ -117,7 +117,7 @@ def test_server_start_and_stop_are_logged(project_dir):
     port = __import__("cdp").free_port()
     p = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py"), project_dir, "--port", str(port), "--no-open"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
-        wait_for(lambda: any(e["msg"] == "server started" for e in events(project_dir)))
+        wait_for(lambda: any(e["msg"] == "server started" for e in events(project_dir)), __import__("cdp").STARTUP_WAIT)   # 60 s on CI: the macOS runners are slow
         assert next(e for e in events(project_dir) if e["msg"] == "server started")["ctx"]["version"]
     finally:
         p.terminate()
