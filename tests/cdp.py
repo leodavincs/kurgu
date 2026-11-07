@@ -220,13 +220,15 @@ class Page:
         raise TimeoutError("condition never true: " + js)
 
     # -- navigation
-    def open(self, url, lang=None, theme=None, view="layers", ready="window.__kurgu && __kurgu.S.project && document.querySelector('.row')"):
+    def open(self, url, lang=None, theme=None, view="layers", mode="edit", ready="window.__kurgu && __kurgu.S.project && document.querySelector('.row')"):
         self.send("Page.navigate", url=url)
         time.sleep(0.2)
         # set persisted prefs, then reload so that boot() sees them
         pre = []
         if view:   # the product default is the track view; the older tests were written for one row per layer
             pre.append("localStorage.setItem('kurgu.layerView','%s')" % view)
+        if mode:   # the product default is Review mode; the older tests drive the full editor
+            pre.append("localStorage.setItem('kurgu.mode','%s')" % mode)
         if lang:
             pre.append("localStorage.setItem('kurgu.lang','%s')" % lang)
         if theme:

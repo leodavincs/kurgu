@@ -121,7 +121,7 @@ def saved_notes(proj):
 def test_notes_panel_flow(env):
     pg = Page(f"http://127.0.0.1:{PORT}/")
     pg.wait("!!(window.__kurgu && window.__kurgu.S.project)")
-    pg.js("localStorage.clear(); localStorage.setItem('kurgu.lang', 'en')")
+    pg.js("localStorage.clear(); localStorage.setItem('kurgu.lang', 'en'); localStorage.setItem('kurgu.mode', 'edit')")
     pg.send("Page.navigate", url=f"http://127.0.0.1:{PORT}/")
     pg.wait("!!(window.__kurgu && window.__kurgu.S.project && document.querySelector('#b-notes'))")
     S = "window.__kurgu.S"

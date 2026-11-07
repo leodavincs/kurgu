@@ -12,8 +12,10 @@ import { writeProp, valueAt } from './keyframes.js';
 import { startImport } from './import.js';
 import { startExport } from './export.js';
 import { startMediaPanel, togglePanel, openPanel } from './mediapanel.js';
-import { startNotes, toggleNotes, jumpNote } from './notes.js';
-import { startWatch, focusNote, watchOpen, openWatch } from './watch.js';
+import { startNotes, toggleNotes, jumpNote, notesOpen } from './notes.js';
+import { startWatch, focusNote, watchOpen, openWatch, toggleReviewNotes, reviewNotesShown } from './watch.js';
+import { initMode, getMode, setMode, isReview, toggleMode } from './mode.js';
+import { initMenu, menuOpen, closeMenu } from './menu.js';
 import { $, el, icon, setIcon, copyText } from './dom.js';
 import { isMod, IS_MAC } from './platform.js';
 import { openFilePicker } from './import.js';
@@ -33,7 +35,7 @@ async function boot() {
   initTheme();
   await initI18n();
   let data;
-  try { await refreshFonts(); data = await API.loadProject(); }
+  try { await refreshFonts(); data = await API.loadProject(); const info = await API.notesInfo(); initMode(info && info.default_mode); }
   catch (e) { document.body.innerHTML = `<div class="fatal"><h2>${t('fatal.title')}</h2><p>${String(e.message || e)}</p><p>${t('fatal.hint')} <code>kurgu &lt;project_dir&gt;</code></p></div>`; return; }
   try { S.snap = localStorage.getItem('kurgu.snap') !== '0'; } catch (e) { /* ignore */ }
   loadExternal(data.project, data.version);
@@ -51,13 +53,14 @@ async function boot() {
     if (kind === 'project') { updateTop(); renderScrubNotes(); updateTransport(); updateSequenceUi(); updateSplit(); }
     if (kind === 'selection') updateSplit();
     if (kind === 'view') updateZoomUi();
+    if (kind === 'mode') { if (isReview()) { setZoom('fit'); closeMenu(); } }
     if (kind === 'time') { updateTransport(); updateSplit(); }
     if (kind === 'playing') { setIcon($('b-play'), S.playing ? 'pause' : 'play', S.playing ? '' : 'nudge'); updateRate(); }
     if (kind === 'save') updateSaveStatus();
     if (kind === 'lang') { applyStatic(); buildEmpty(); updateTop(); updateSequenceUi(); updateZoomUi(); updateSaveStatus(); renderScrubNotes(); }
   });
   for (const id of ['inspector', 'topbar', 'transport', 'media-panel']) $(id).addEventListener('pointerdown', () => { S.focus = 'general'; }, true);
-  buildEmpty(); bindClipboard(); bindTop(); bindTransport(); bindView(); bindKeys(); bindSplitter(); bindMenu(); bindLang();
+  buildEmpty(); bindClipboard(); bindTop(); bindTransport(); bindView(); bindKeys(); bindSplitter(); bindMenu(); bindLang(); bindHamburger();
   mirrorPressed();
   startImport(toast);
   updateTop(); updateSaveStatus(); renderScrubNotes(); updateTransport(); updateSequenceUi(); updateZoomUi();
@@ -147,6 +150,22 @@ function renderScrubNotes() {
   }
 }
 
+// ---------------------------------------------------------------- hamburger menu (web/js/menu.js)
+function bindHamburger() {
+  const zooms = () => { const v = viewInfo(), cur = v.zoom === 'fit' ? 'fit' : Math.round(v.z * 100); return [['fit', `${t('view.fit')} (${Math.round(v.fit * 100)} %)`], [50, '50 %'], [100, '100 %'], [200, '200 %']].map(([k, label]) => ({ label: t('menu.zoom') + ': ' + label, on: cur === k, fn: () => setZoom(k === 'fit' ? 'fit' : k / 100) })); };
+  initMenu($('b-menu'), {
+    mode: getMode, setMode, modeKey: '{shift}E',
+    openSequence, seqLabel: () => `${S.project.width}×${S.project.height}`,
+    addText, addColor, fromFile: openFilePicker, split: doSplit, splitKey: '{mod}K', snap: () => S.snap, toggleSnap,
+    safe: () => S.view.safe, toggleSafe: () => setGuides({ safe: !S.view.safe }),
+    social: () => S.view.social, toggleSocial: () => setGuides({ social: !S.view.social }), portrait: () => S.project.height / S.project.width >= 1.6,
+    realFrame: () => S.realFrame, toggleRealFrame: () => setRealFrame(!S.realFrame), zooms,
+    notesLabel: () => t(isReview() ? 'menu.reviewNotes' : 'np.button'), notesOn: () => (isReview() ? reviewNotesShown() : notesOpen()),
+    toggleNotes: () => (isReview() ? toggleReviewNotes() : toggleNotes()), notesKey: isReview() ? '' : '{shift}N',
+    theme: () => document.documentElement.dataset.theme, toggleTheme, lang: getLang, setLang, exportVideo: () => $('b-export').click(),
+  });
+}
+
 // ---------------------------------------------------------------- sequence + viewer zoom
 function updateSequenceUi() {
   const P = S.project; $('seq-label').textContent = `${P.width}×${P.height}`;
@@ -227,7 +246,7 @@ function doRipple() {
 }
 /** Copy / cut / paste of layers through the real clipboard events: the payload is JSON tagged for Kurgu, so it also pastes into another project.
  *  Some browsers (Safari) send no copy / paste event when nothing is selected in the page: then the key itself triggers the async clipboard API. */
-function clipBlocked(e) { return (e && isTyping(e.target)) || sequenceOpen() || !$('modal').hidden || !!document.querySelector('.xp-overlay:not([hidden])'); }
+function clipBlocked(e) { return isReview() || (e && isTyping(e.target)) || sequenceOpen() || !$('modal').hidden || !!document.querySelector('.xp-overlay:not([hidden])'); }
 function clipCopy(cut, put) {
   if (!S.selection.length || String(window.getSelection() || '')) return false;
   const ids = cut ? S.selection.filter(id => { const l = layer(id); return l && !l.locked; }) : S.selection;
@@ -275,7 +294,9 @@ function bindKeys() {
   window.addEventListener('keydown', e => {
     const cmd = isMod(e), typing = isTyping(e.target);
     if (cmd && e.key.toLowerCase() === 's') { e.preventDefault(); API.save(); return; }
-    if (typing || sequenceOpen() || watchOpen()) return;
+    if (typing || sequenceOpen() || watchOpen() || menuOpen()) return;
+    if (e.shiftKey && !cmd && !e.altKey && (e.key === 'E' || e.key === 'e')) { e.preventDefault(); toggleMode(); return; }
+    if (isReview() && (cmd ? ['d', 'k', 'a', 'x', 'v'].includes(e.key.toLowerCase()) : ['Delete', 'Backspace', 's', 'S', '[', ']'].includes(e.key))) return;   // Review mode never edits the timeline by key
     if (cmd) {
       const k = e.key.toLowerCase();
       if (k === '+' || k === '=') { e.preventDefault(); zoomStep(1, viewAnchor()); return; }

@@ -9,6 +9,7 @@ import { mediaStatus } from './preview.js';
 import { el, icon, setIcon } from './dom.js';
 import { t, fmt } from './i18n.js';
 import { cv as tok, themeKey } from './theme.js';
+import { isReview } from './mode.js';
 import { mountAudio, setAudioActive, audioHooks, hasAudioLayer } from './audioview.js';
 import * as KF from './keyframes.js';
 import { sections, layout, place, collides } from './trackpack.js';
@@ -59,7 +60,9 @@ export function setZoom(z, centerT) {
 }
 
 function applyPane() {
-  const audio = pane === 'audio';
+  const forced = isReview() && hasAudioLayer();   // Review mode: the Audio pane only, without the view switch
+  const audio = pane === 'audio' || forced;
+  dom.root.classList.toggle('rv-audio', forced);
   dom.root.classList.toggle('pane-audio', audio);
   if (dom.body) dom.body.hidden = audio;
   if (dom.audioHost) dom.audioHost.hidden = !audio;
@@ -157,13 +160,14 @@ export function startLayerPanel(root) {
   KF.initKeyboard();
   document.addEventListener('kf-selection', () => { if (S.project) redraw(false); });
   return {
-    project: () => { KF.pruneKeySel(); redraw(false); audioHooks.project(); },
+    project: () => { KF.pruneKeySel(); redraw(false); audioHooks.project(); if (isReview()) applyPane(); },
     time: () => { updateTime(); audioHooks.time(); },
     selection: onSelection,
     media: () => redraw(false),
     settings: () => {},
     lang: () => build(),
     theme: () => { redraw(true); audioHooks.theme(); },
+    mode: () => { applyPane(); if (pane !== 'audio' && !(isReview() && hasAudioLayer())) redraw(true); },
   };
 }
 

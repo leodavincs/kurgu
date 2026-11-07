@@ -563,6 +563,8 @@ textarea.text-input { width: 100%; font-size: var(--fs-body); }
 .av-wave, .av-top { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .av-top { pointer-events: none; }
 .av-tip { position: absolute; top: 24px; max-width: 230px; padding: 4px 8px; border-radius: var(--r-md); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line2), var(--shadow); color: var(--t1); font-size: var(--fs-cap); pointer-events: none; z-index: 2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.av-scenes { flex: none; width: 100%; height: 26px; display: block; cursor: pointer; border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line); }
+.av-scenes[hidden] { display: none; }
 .av-words { flex: none; width: 100%; height: 30px; border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line); display: block; cursor: pointer; }
 .av-words[hidden] { display: none; }
 .av-hint { display: none; }

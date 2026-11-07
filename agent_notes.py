@@ -47,6 +47,19 @@ def agent_name(d):
         return ""
 
 
+def default_mode(d):
+    """Editor mode on a first visit: $KURGU_MODE, else `default_mode` in .kurgu/config.json, else "review" (the calm view for watching and noting;
+    "edit" is the full editor)."""
+    v = os.environ.get("KURGU_MODE", "").strip().lower()
+    if v not in ("review", "edit"):
+        try:
+            with open(os.path.join(d, ".kurgu", "config.json"), encoding="utf-8") as f:
+                v = str(json.load(f).get("default_mode", "")).strip().lower()
+        except (OSError, ValueError, AttributeError):
+            v = ""
+    return v if v in ("review", "edit") else "review"
+
+
 def inbox_path(d):
     return os.path.join(d, INBOX)
 

@@ -1,7 +1,7 @@
 // watch.js — "watch + note": the top-bar note box, the Send button and the full-screen watch mode.
 // Notes are the ones of notes.js (project.notes, addNote); sending goes through POST /api/notes/send, which stamps `sent`,
 // writes NOTLAR.md + a frame JPEG per note and wakes the agent (`kurgu notes wait`). Styling: web/watch.css.
-import { S, change, setTime, clamp, loadExternal, timecode } from './state.js';
+import { S, change, setTime, clamp, loadExternal, timecode, sceneName } from './state.js';
 import * as API from './api.js';
 import { t, getLang } from './i18n.js';
 import { $, el, icon } from './dom.js';
@@ -43,14 +43,14 @@ export async function sendNotes() {
     if (r.data.failed_frames && r.data.failed_frames.length) toast(t('send.noFrames', { n: r.data.failed_frames.length }), 'warn', 7000);
     return true;
   } catch (e) { toast(t('send.failed', { reason: String(e.message || e) }), 'error', 6000); return false; }
-  finally { sending = false; refreshSend(); renderList(); }
+  finally { sending = false; refreshSend(); renderLists(); }
 }
 function refreshSend() {
   const n = S.project ? unsent().length : 0;
-  for (const id of ['b-send', 'wl-send']) {
+  for (const id of ['b-send', 'wl-send', 'rv-send']) {
     const b = $(id); if (!b) continue;
     b.disabled = n === 0 || sending; b.classList.toggle('busy', sending);
-    const lab = b.querySelector('.send-label'); if (lab) lab.textContent = id === 'wl-send' && n ? t(n === 1 && getLang() === 'en' ? 'watch.sendN1' : 'watch.sendN', { label: sendLabel(), n }) : sendLabel();
+    const lab = b.querySelector('.send-label'); if (lab) lab.textContent = sendLabel();   // the count lives in the badge only
     const bd = b.querySelector('.send-badge'); if (bd) { bd.textContent = n; bd.hidden = n === 0; }
     b.title = n ? t('send.tip') : t('send.none');
   }
@@ -79,15 +79,15 @@ function bindNoteBar() {
 export function focusNote() { if (nbInput) { nbInput.focus(); nbInput.select(); } }
 
 // ---------------------------------------------------------------- watch mode
-let root, stageHost, stageHome, stageNext, seekEl, fillEl, headEl, marksEl, playBtn, tcNow, tcDur, wInput, wChip, wTime, wPaused, listEl, countEl, sceneEl;
-let isOpen = false, usedFullscreen = false, savedZoom = 'fit', noteAt = null, resumeAfter = false, editing = null;
+let root, stageHost, stageHome, stageNext, seekEl, fillEl, headEl, marksEl, playBtn, tcNow, tcDur, wInput, wChip, wTime, wPaused, countEl, sceneEl;
+let isOpen = false, usedFullscreen = false, savedZoom = 'fit', noteAt = null, resumeAfter = false;
 let watchSent = [];                                   // ids sent while this mode was open (kept in the list as "sent")
 export const watchOpen = () => isOpen;
 
 const sceneAt = time => {
   const ls = layersAt(S.project, time);
   const main = ls.find(l => l.type === 'video') || ls.find(l => l.type === 'image') || ls[0];
-  return main ? (main.name || main.type) : t('watch.noScene');
+  return main ? sceneName(main) : t('watch.noScene');
 };
 
 function build() {
@@ -122,13 +122,13 @@ function build() {
   const main = el('div', 'w-main'); main.append(stageHost, top, wPaused, bottom);
   // side list
   const head = el('header', 'w-lhead'); const title = el('b'); countEl = el('small'); head.append(title, countEl); head.title = '';
-  listEl = el('div', 'w-list'); listEl.setAttribute('role', 'list');
+  watchList = makeList(watchVisible);
   const foot = el('footer', 'w-lfoot');
   const send = el('button', 'btn primary send w-send'); send.id = 'wl-send'; send.type = 'button';
   send.append(icon('send'), el('span', 'send-label'), el('b', 'send-badge')); send.addEventListener('click', sendNotes);
   const hint = el('small', 'w-hint'); const keys = el('small', 'w-keys');
   foot.append(send, hint, keys);
-  const side = el('aside', 'w-side'); side.append(head, listEl, foot);
+  const side = el('aside', 'w-side'); side.append(head, watchList.host, foot);
   root.append(main, side);
   document.body.append(root);
   root._t = { badge: badge.lastChild, exitL: exit.querySelector('.w-exit-l'), title, hint, keys, enter, paused: wPaused.lastChild };
@@ -158,8 +158,8 @@ export async function openWatch() {
   root.hidden = false;
   setZoom('fit');
   try { if (root.requestFullscreen) { await root.requestFullscreen(); usedFullscreen = true; if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {}); } } catch (e) { usedFullscreen = false; }
-  noteAt = null; resumeAfter = false; editing = null;
-  applyText(); renderMarks(); renderList(); updateTime(); updatePlay(); refreshSend();
+  noteAt = null; resumeAfter = false;
+  applyText(); renderMarks(); renderLists(); updateTime(); updatePlay(); refreshSend();
   wInput.blur();
   window.dispatchEvent(new Event('resize'));
 }
@@ -218,10 +218,11 @@ function onKey(e) {
 }
 
 // ---- rendering
-function visibleNotes() {
+function watchVisible() {   // this round: not sent yet, or sent while this mode was open
   const keep = new Set(watchSent);
   return S.project.notes.filter(n => n.author === 'user' && ((!n.sent && !n.done) || keep.has(n.id))).sort((a, b) => a.t - b.t);
 }
+const reviewVisible = () => S.project.notes.filter(n => n.author === 'user').sort((a, b) => a.t - b.t);
 function renderMarks() {
   if (!root || !S.project) return;
   const d = S.project.duration || 1;
@@ -230,37 +231,54 @@ function renderMarks() {
     m.addEventListener('click', e => { e.stopPropagation(); setTime(n.t); }); return m;
   }));
 }
-function renderList() {
-  if (!root || !S.project) return;
-  const list = visibleNotes(), u = unsent().length;
-  countEl.textContent = !list.length ? '' : u ? t('watch.status', { n: list.length, u }) : t('watch.allSent', { n: list.length });
-  if (!list.length) { listEl.replaceChildren(el('div', 'w-empty', t('watch.empty'))); return; }
-  listEl.replaceChildren(...list.map(n => {
-    const row = el('div', 'w-note' + (n.done ? ' done' : n.sent ? ' sent' : '') + (Math.abs(S.t - n.t) < 0.3 ? ' near' : '')); row.dataset.id = n.id; row.setAttribute('role', 'listitem');
-    row.append(el('span', 'w-ntc', tcShort(n.t)));
-    const body = el('div', 'w-nbody');
-    if (editing === n.id) {
-      const inp = el('input', 'w-edit'); inp.value = n.text; inp.spellcheck = false;
-      inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { const v = inp.value.trim(); editing = null; if (v) change(p => { const x = p.notes.find(q => q.id === n.id); if (x) x.text = v; }); else renderList(); } else if (e.key === 'Escape') { editing = null; renderList(); } });
-      body.append(inp); setTimeout(() => inp.focus(), 0);
-    } else body.append(el('p', '', n.text));
-    const meta = el('small', 'w-nmeta', sceneAtNote(n));
-    if (n.done) meta.append(el('span', 'w-state fixed', ' · ' + t('watch.fixed') + ' ✓'));
-    else if (n.sent) meta.append(el('span', 'w-state', ' · ' + t('watch.sentMark')));
-    body.append(meta);
-    if (n.reply) body.append(el('small', 'w-reply', n.reply));
-    row.append(body);
-    if (!n.sent && !n.done) {
-      const acts = el('div', 'w-acts');
-      const eb = el('button', 'w-ib'); eb.type = 'button'; eb.title = t('watch.edit'); eb.append(icon('pencil')); eb.addEventListener('click', e => { e.stopPropagation(); editing = n.id; renderList(); });
-      const db = el('button', 'w-ib del'); db.type = 'button'; db.title = t('watch.delete'); db.append(icon('trash-2')); db.addEventListener('click', e => { e.stopPropagation(); change(p => { p.notes = p.notes.filter(q => q.id !== n.id); }); });
-      acts.append(eb, db); row.append(acts);
-    }
-    row.addEventListener('click', () => { if (S.playing) pause(); setTime(n.t); });
-    return row;
-  }));
+/** A list of notes (timecode chip, text, scene, sent / fixed state, reply; click = seek, hover = edit / delete). `visible()` says which notes. */
+function makeList(visible) {
+  const host = el('div', 'w-list'); host.setAttribute('role', 'list');
+  let editing = null;
+  const L = {
+    host,
+    get editing() { return editing; },
+    notes: visible,
+    render() {
+      if (!S.project) return;
+      const list = visible();
+      if (!list.length) { host.replaceChildren(el('div', 'w-empty', t('watch.empty'))); return; }
+      host.replaceChildren(...list.map(n => {
+        const row = el('div', 'w-note' + (n.done ? ' done' : n.sent ? ' sent' : '') + (Math.abs(S.t - n.t) < 0.3 ? ' near' : '')); row.dataset.id = n.id; row.setAttribute('role', 'listitem');
+        row.append(el('span', 'w-ntc', tcShort(n.t)));
+        const body = el('div', 'w-nbody');
+        if (editing === n.id) {
+          const inp = el('input', 'w-edit'); inp.value = n.text; inp.spellcheck = false;
+          inp.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter') { const v = inp.value.trim(); editing = null; if (v) change(p => { const x = p.notes.find(q => q.id === n.id); if (x) x.text = v; }); else L.render(); } else if (e.key === 'Escape') { editing = null; L.render(); } });
+          body.append(inp); setTimeout(() => inp.focus(), 0);
+        } else body.append(el('p', '', n.text));
+        const meta = el('small', 'w-nmeta', sceneAt(n.t));
+        if (n.done) meta.append(el('span', 'w-state fixed', ' · ' + t('watch.fixed') + ' ✓'));
+        else if (n.sent) meta.append(el('span', 'w-state', ' · ' + t('watch.sentMark')));
+        body.append(meta);
+        if (n.reply) body.append(el('small', 'w-reply', n.reply));
+        row.append(body);
+        if (!n.sent && !n.done) {
+          const acts = el('div', 'w-acts');
+          const eb = el('button', 'w-ib'); eb.type = 'button'; eb.title = t('watch.edit'); eb.append(icon('pencil')); eb.addEventListener('click', e => { e.stopPropagation(); editing = n.id; L.render(); });
+          const db = el('button', 'w-ib del'); db.type = 'button'; db.title = t('watch.delete'); db.append(icon('trash-2')); db.addEventListener('click', e => { e.stopPropagation(); change(p => { p.notes = p.notes.filter(q => q.id !== n.id); }); });
+          acts.append(eb, db); row.append(acts);
+        }
+        row.addEventListener('click', () => { if (S.playing) pause(); setTime(n.t); });
+        return row;
+      }));
+    },
+    near() { for (const row of host.children) if (row.dataset && row.dataset.id) { const n = S.project.notes.find(q => q.id === row.dataset.id); if (n) row.classList.toggle('near', Math.abs(S.t - n.t) < 0.3); } },
+  };
+  return L;
 }
-const sceneAtNote = n => sceneAt(n.t);
+const countText = list => { const u = unsent().length; return !list.length ? '' : u ? t('watch.status', { n: list.length, u }) : t('watch.allSent', { n: list.length }); };
+let watchList = null, reviewList = null, reviewCount = null;
+function renderLists() {
+  if (watchList && isOpen) { watchList.render(); countEl.textContent = countText(watchList.notes()); }
+  if (reviewList) { reviewList.render(); reviewCount.textContent = countText(reviewList.notes()); }
+}
+const renderList = renderLists;
 function updateTime() {
   if (!root || !isOpen) return;
   const d = S.project.duration || 1, f = clamp(S.t / d, 0, 1) * 100;
@@ -268,7 +286,7 @@ function updateTime() {
   tcNow.textContent = timecode(S.t); tcDur.textContent = '/ ' + timecode(S.project.duration);
   sceneEl.textContent = `${S.project.name} · ${sceneAt(S.t)}`;
   if (noteAt === null && wTime) wTime.textContent = tcShort(S.t);
-  for (const row of listEl.children) if (row.dataset && row.dataset.id) { const n = S.project.notes.find(q => q.id === row.dataset.id); if (n) row.classList.toggle('near', Math.abs(S.t - n.t) < 0.3); }
+  watchList.near();
 }
 function updatePlay() {
   if (!playBtn) return;
@@ -276,18 +294,46 @@ function updatePlay() {
   playBtn.classList.toggle('playing', S.playing);
 }
 
+// ---------------------------------------------------------------- review panel (right side of Review mode: the notes of this round + Send)
+let reviewHead, reviewHint;
+const RV_KEY = 'kurgu.rv.notes';
+function buildReview() {
+  const side = el('aside'); side.id = 'review-panel'; side.className = 'w-side panel';
+  const head = el('header', 'w-lhead'); reviewHead = el('b'); reviewCount = el('small'); head.append(reviewHead, reviewCount);
+  reviewList = makeList(reviewVisible);
+  const foot = el('footer', 'w-lfoot');
+  const send = el('button', 'btn primary send w-send'); send.id = 'rv-send'; send.type = 'button';
+  send.append(icon('send'), el('span', 'send-label'), el('b', 'send-badge')); send.addEventListener('click', sendNotes);
+  reviewHint = el('small', 'w-hint');
+  foot.append(send, reviewHint);
+  side.append(head, reviewList.host, foot);
+  $('main').append(side);
+  applyReviewText();
+  let off = false; try { off = localStorage.getItem(RV_KEY) === '0'; } catch (e) { /* ignore */ }
+  document.body.classList.toggle('rv-notes-off', off);
+}
+function applyReviewText() { if (!reviewHead) return; reviewHead.textContent = t('review.notes'); reviewHint.textContent = t('watch.sendHint'); }
+export const reviewNotesShown = () => !document.body.classList.contains('rv-notes-off');
+export function toggleReviewNotes() {
+  const off = reviewNotesShown();
+  document.body.classList.toggle('rv-notes-off', off);
+  try { localStorage.setItem(RV_KEY, off ? '0' : '1'); } catch (e) { /* ignore */ }
+  window.dispatchEvent(new Event('resize'));
+}
+
 // ---------------------------------------------------------------- module (main.js calls these through its change hooks)
 export function startWatch({ toast: toastFn } = {}) {
   if (toastFn) toast = toastFn;
   bindNoteBar();
+  buildReview();
   $('b-watch').addEventListener('click', openWatch);
-  const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; refreshSend(); renderList(); });
+  const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; refreshSend(); renderLists(); });
   info();
-  refreshSend();
+  refreshSend(); renderLists();
   return {
-    project() { refreshSend(); if (isOpen) { renderMarks(); if (editing === null) renderList(); updateTime(); } },
-    time() { if (nbInput && nbAt === null) nbTime.textContent = tcShort(S.t); if (isOpen) updateTime(); },
+    project() { refreshSend(); if (isOpen) renderMarks(); if (!(watchList && watchList.editing) && !(reviewList && reviewList.editing)) renderLists(); if (isOpen) updateTime(); },
+    time() { if (nbInput && nbAt === null) nbTime.textContent = tcShort(S.t); if (isOpen) updateTime(); if (reviewList) reviewList.near(); },
     playing() { updatePlay(); },
-    lang() { refreshSend(); if (isOpen) { applyText(); renderList(); updateTime(); } },
+    lang() { refreshSend(); applyReviewText(); if (isOpen) { applyText(); updateTime(); } renderLists(); },
   };
 }

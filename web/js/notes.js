@@ -68,6 +68,7 @@ export function jumpNote(dir) {
   const n = dir > 0 ? list.find(x => x.t > S.t + eps) : [...list].reverse().find(x => x.t < S.t - eps);
   if (n) goTo(n); else toast(t(dir > 0 ? 'np.noNext' : 'np.noPrev'), 'info', 1400);
 }
+export const notesOpen = () => st.open;
 export function toggleNotes(force) {
   st.open = force === undefined ? !st.open : !!force; store.set('open', st.open ? '1' : '0'); applyLayout();
   if (st.open) { build(); markActive(); const cur = rows.get(st.current) || activeRows()[0]; if (cur) cur.el.scrollIntoView({ block: 'nearest' }); }

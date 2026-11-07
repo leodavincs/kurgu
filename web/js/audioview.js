@@ -4,7 +4,7 @@
 //   3. word strip: caption / text layers split evenly over their time (Kurgu stores no word timings in the project)
 // Click = seek · drag = scroll · Ctrl/Cmd + wheel or + / - = zoom · two-finger scroll = pan. View + navigate only (no cutting).
 // Peaks come from /api/waveform (100 per second of source, cached by the server and in api.js); the project mix is built once per layer signature.
-import { S, setTime, clamp, HAS_AUDIO } from './state.js';
+import { S, setTime, clamp, HAS_AUDIO, sceneName } from './state.js';
 import { waveform } from './api.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
@@ -15,11 +15,11 @@ const RULER_H = 22, MIN_SPAN = 1.5;
 const CAPTION_RE = /altyaz|caption|subtitle|\bsubs?\b|\bcc\b/i;
 const st = { v0: 0, span: 12, active: false, drag: null };
 const dom = {};
-let keyBound = false, mix = null, mixSig = '', words = [], wordSig = '', raf = 0, loading = new Map();
+let sceneDirty = true, wordDirty = true, scenes = [], sceneSig = '', lastSceneKey = '', keyBound = false, mix = null, mixSig = '', words = [], wordSig = '', raf = 0, loading = new Map();
 const dpr = () => Math.min(2, window.devicePixelRatio || 1);
 const dur = () => Math.max(0.1, S.project.duration);
 const db = v => Math.max(0, Math.min(1, (20 * Math.log10(v + 1e-9) + 46) / 46));   // -46 dB .. 0 dB: room tone is a hairline, speech fills the height
-const label = tt => { const m = Math.floor(tt / 60), s = tt - m * 60; return `${m}:${s < 10 ? '0' : ''}${s.toFixed(s % 1 ? 1 : 0)}`; };
+const label = tt => { const r = Math.round(tt * 10) / 10, m = Math.floor(r / 60), sec = Math.round((r - m * 60) * 10) / 10; return `${m}:${sec < 10 ? '0' : ''}${sec % 1 ? sec.toFixed(1) : sec}`; };
 
 // ---------------------------------------------------------------- data
 function audioLayers() {
@@ -45,6 +45,8 @@ function buildMix() {
   return mix;
 }
 function buildWords() {
+  if (!wordDirty) return words;
+  wordDirty = false;
   const all = S.project.layers.filter(l => l.type === 'text' && l.text && String(l.text).trim());   // hidden caption layers still hold the words
   const caps = all.filter(l => CAPTION_RE.test(l.group || '') || /^cap_/.test(l.id));
   const src = (caps.length ? caps : all).sort((a, b) => a.start - b.start);
@@ -56,6 +58,38 @@ function buildWords() {
     ws.forEach((w, i) => words.push({ w, a: l.start + i * d, b: l.start + (i + 1) * d }));
   }
   return words;
+}
+/** One row of named blocks: what is on screen over time (video layers of every group merged; the front-most layer wins where they overlap). */
+function buildScenes() {
+  if (!sceneDirty) return scenes;
+  sceneDirty = false;
+  const vs = S.project.layers.filter(l => l.type === 'video' && !l.hidden && l.end > l.start);
+  const sig = JSON.stringify(vs.map(l => [l.id, l.start, l.end, l.name, l.group]));
+  if (sig === sceneSig) return scenes;
+  sceneSig = sig; scenes = [];
+  const cuts = [...new Set(vs.flatMap(l => [l.start, l.end]))].sort((a, b) => a - b);
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const a = cuts[i], b = cuts[i + 1], l = vs.find(q => q.start <= a && q.end >= b); if (!l) continue;
+    const last = scenes[scenes.length - 1];
+    if (last && last.l === l && Math.abs(last.b - a) < 1e-6) last.b = b; else scenes.push({ l, a, b, name: sceneName(l) });
+  }
+  return scenes;
+}
+function drawScenes() {
+  const sc = buildScenes();
+  dom.scenes.hidden = !sc.length;
+  if (!sc.length) return;
+  const [x, w, h] = size(dom.scenes); x.clearRect(0, 0, w, h);
+  x.font = '500 11.5px ' + cv('--font'); x.textBaseline = 'middle';
+  const cur = sc.findIndex(q => S.t >= q.a && S.t < q.b);
+  lastSceneKey = st.v0 + '|' + st.span + '|' + cur + '|' + sceneSig.length;
+  sc.forEach((q, i) => {
+    const a = tx(q.a, w), b = tx(q.b, w); if (b < 0 || a > w) return;
+    const bw = Math.max(1, b - a - 1);
+    x.fillStyle = i === cur ? cv('--acc-soft') : (i % 2 ? cv('--hover') : cv('--press')); x.fillRect(a, 2, bw, h - 4);
+    if (i === cur) { x.strokeStyle = cv('--acc-line'); x.lineWidth = 1; x.strokeRect(a + 0.5, 2.5, bw - 1, h - 5); }
+    if (bw > 22) { x.save(); x.beginPath(); x.rect(a + 1, 0, bw - 2, h); x.clip(); x.fillStyle = i === cur ? cv('--t1') : cv('--t2'); x.fillText(q.name, Math.max(a, 0) + 6, h / 2 + 0.5); x.restore(); }
+  });
 }
 const noteAt = x => { const r = geom(); return S.project.notes.find(n => Math.abs(tx(n.t, r.w) - x) <= 6); };
 
@@ -155,12 +189,12 @@ function drawWords() {
     if (bw > 14) { x.save(); x.beginPath(); x.rect(a + 1, 0, bw, h); x.clip(); x.fillStyle = i === cur ? cv('--t1') : cv('--t2'); x.fillText(q.w, a + 6, h / 2 + 0.5); x.restore(); }
   });
 }
-function drawAll() { drawWave(); drawTop(); drawOver(); drawWords(); }
+function drawAll() { drawScenes(); drawWave(); drawTop(); drawOver(); drawWords(); }
 function schedule(full) {
   if (!st.active || !dom.root) return;
   if (full) schedule.full = true;
   if (raf) return;
-  raf = requestAnimationFrame(() => { raf = 0; if (!st.active) return; if (schedule.full) { schedule.full = false; drawAll(); } else { drawTop(); drawOver(); const k = st.v0 + '|' + st.span + '|' + words.findIndex(q => S.t >= q.a && S.t < q.b) + '|' + wordSig.length; if (k !== lastWordKey) drawWords(); } });
+  raf = requestAnimationFrame(() => { raf = 0; if (!st.active) return; if (schedule.full) { schedule.full = false; drawAll(); } else { drawTop(); drawOver(); if (buildScenes().findIndex(q => S.t >= q.a && S.t < q.b) !== +lastSceneKey.split('|')[2]) drawScenes(); const k = st.v0 + '|' + st.span + '|' + words.findIndex(q => S.t >= q.a && S.t < q.b) + '|' + wordSig.length; if (k !== lastWordKey) drawWords(); } });
 }
 
 // ---------------------------------------------------------------- interaction
@@ -228,11 +262,13 @@ export function mountAudio(host) {
   dom.over = el('canvas', 'av-over'); dom.over.title = t('av.overTip');
   dom.main = el('div', 'av-main'); dom.wave = el('canvas', 'av-wave'); dom.top = el('canvas', 'av-top'); dom.tip = el('div', 'av-tip'); dom.tip.hidden = true;
   dom.main.append(dom.wave, dom.top, dom.tip);
+  dom.scenes = el('canvas', 'av-scenes'); dom.scenes.title = t('av.scenesTip');
   dom.words = el('canvas', 'av-words'); dom.words.title = t('av.wordsTip');
-  host.append(dom.over, dom.main, dom.words);
+  host.append(dom.over, dom.scenes, dom.main, dom.words);
+  dom.scenes.addEventListener('pointerdown', e => { const r = dom.scenes.getBoundingClientRect(), tt = xt(e.clientX - r.left, r.width), q = buildScenes().find(z => tt >= z.a && tt < z.b); setTime(clamp(q ? q.a : tt, 0, dur())); });
   bind();
   new ResizeObserver(() => schedule(true)).observe(host);
-  mixSig = ''; wordSig = '';
+  mixSig = ''; wordSig = ''; sceneSig = ''; sceneDirty = wordDirty = true;
 }
 export function setAudioActive(on) {
   st.active = !!on; if (!on) return;
@@ -242,7 +278,7 @@ export function setAudioActive(on) {
 export const audioActive = () => st.active;
 export const hasAudioLayer = () => !!(S.project && S.project.layers.some(l => l.type === 'audio'));
 export const audioHooks = {
-  project() { if (!st.active) return; clampView(); schedule(true); },
+  project() { sceneDirty = wordDirty = true; if (!st.active) return; clampView(); schedule(true); },
   time() { if (!st.active) return; if (S.playing || !st.drag) reveal(!S.playing); schedule(false); },
   theme() { schedule(true); },
 };

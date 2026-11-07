@@ -1,0 +1,37 @@
+/* review.css — Review ("İnceleme") vs Edit ("Düzen") mode, switched by body[data-mode] (web/js/mode.js). Review hides the editing chrome
+   ([data-edit]), swaps the right panel for the round's notes and gives the viewer the freed room. Nothing is removed: Edit shows it all. */
+body[data-mode=review] [data-edit] { display: none !important; }
+body[data-mode=review] #notes-panel { display: none !important; }
+#review-panel { display: none; }
+body[data-mode=review] #main, body[data-mode=review] #main.np-open, body[data-mode=review] #main.mp-collapsed { grid-template-columns: minmax(0, 1fr) 340px; }
+body[data-mode=review] #preview-section { grid-column: 1; }
+body[data-mode=review] #review-panel { display: flex; grid-column: 2; grid-row: 1; }
+body[data-mode=review] #splitter, body[data-mode=review] #layers { grid-column: 1 / -1; }
+body.rv-notes-off[data-mode=review] #main { grid-template-columns: minmax(0, 1fr); }
+body.rv-notes-off[data-mode=review] #review-panel { display: none; }
+body[data-mode=review] #overlay-canvas { pointer-events: none; }   /* the viewer is for watching; layers are not dragged in Review */
+body[data-mode=review] { --lp-h: 300px; }   /* the timeline is the Audio pane: a little less height, the viewer gets the rest */
+body[data-mode=review] .tb-center { max-width: 680px; }
+body[data-mode=review] #stage { padding: 0; }
+
+/* the right panel: same list as in the watch mode, as a regular panel */
+#review-panel.w-side { border-left: 0; background: var(--panel); border-radius: var(--r-xl); overflow: hidden; }
+
+/* bottom panel in Review: just the Audio pane (no view switch, no layer-name column) */
+#layers.rv-audio .lp-seg, #layers.rv-audio .lp-title { display: none; }
+#layers.rv-audio .lp-bar { justify-content: flex-end; height: 30px; }
+
+/* hamburger menu */
+#b-menu { margin-left: var(--s-2); }
+#b-menu[aria-expanded=true] { background: var(--press); color: var(--t1); }
+#main-menu { position: fixed; z-index: 300; min-width: 260px; max-width: 340px; overflow-y: auto; padding: 6px; border-radius: var(--r-xl); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line2), var(--shadow-dialog); }
+.mm-head { padding: 9px 10px 4px; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--t3); }
+.mm-head:first-child { padding-top: 4px; }
+.mm-item { width: 100%; height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 6px; border-radius: var(--r-md); color: var(--t1); text-align: left; font-size: var(--fs-body); }
+.mm-item:hover:not(:disabled), .mm-item:focus-visible { background: var(--hover); outline: 0; box-shadow: inset 0 0 0 1px var(--line2); }
+.mm-item:disabled { opacity: .4; cursor: default; }
+.mm-check { width: 16px; flex: none; display: inline-flex; justify-content: center; color: var(--acc); }
+.mm-check .ic { width: 14px; height: 14px; }
+.mm-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-hint { color: var(--t3); font-family: var(--mono); font-size: var(--fs-cap); }
+.mm-item kbd { font-family: var(--mono); font-size: 10.5px; color: var(--t3); border: 1px solid var(--line2); border-radius: 3px; padding: 0 4px; }

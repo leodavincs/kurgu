@@ -100,7 +100,7 @@ body.watching #frame { box-shadow: none; }
 .w-lfoot { padding: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 7px; }
 .w-send { width: 100%; height: 36px; font-size: var(--fs-md); }
 .w-hint, .w-keys { display: block; color: var(--t3); text-align: center; font-size: 11px; line-height: 1.4; }
-.w-keys { font-family: var(--mono); font-size: 10.5px; }
+.w-keys { font-size: 10.5px; white-space: nowrap; letter-spacing: -.01em; }
 
 @media (max-width: 900px) { #watch { grid-template-columns: 1fr; } .w-side { display: none; } }
 #watch #toasts { position: absolute; left: calc(50% - 160px); top: 64px; bottom: auto; z-index: 10; }

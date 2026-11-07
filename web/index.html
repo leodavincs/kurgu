@@ -87,18 +87,19 @@ try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'd
 <!-- icons:end -->
 <!-- custom icons (not Lucide; survive scripts/build_icons.mjs) -->
 <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
 <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></symbol>
 <symbol id="i-watch" viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M10 9l5 3-5 3z"/></symbol>
 </svg>
 <header id="topbar" class="glass">
   <div class="tb-left">
     <svg class="brand-mark" viewBox="0 0 16 16" aria-label="Kurgu" role="img"><path d="M3 3H6V13H3Z" fill="var(--tally, #ff5446)"/><path d="M7 8 10.633 3H13.433L9.8 8 13.433 13H10.633Z" fill="currentColor"/></svg>
-    <button id="b-panel" class="ib" data-i18n-title="mp.toggleTip"><svg class="ic" aria-hidden="true"><use href="#i-panel-left"/></svg></button>
+    <button data-edit id="b-panel" class="ib" data-i18n-title="mp.toggleTip"><svg class="ic" aria-hidden="true"><use href="#i-panel-left"/></svg></button>
     <div class="tb-name">
       <input id="project-name" spellcheck="false" data-i18n-title="top.projectName">
       <span id="save-status" class="status"><i></i><b></b></span>
     </div>
-    <button id="b-seq" class="btn ghost" data-i18n-title="seq.topTip"><svg class="ic" aria-hidden="true"><use href="#i-settings-2"/></svg><span id="seq-label"></span></button>
+    <button data-edit id="b-seq" class="btn ghost" data-i18n-title="seq.topTip"><svg class="ic" aria-hidden="true"><use href="#i-settings-2"/></svg><span id="seq-label"></span></button>
   </div>
   <div class="tb-center">
     <label id="note-bar" data-i18n-title="nb.tip"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg><span id="nb-time">00:00.0</span><input id="nb-input" data-i18n-placeholder="nb.placeholder" spellcheck="false" autocomplete="off" aria-label="Note"><kbd>Enter</kbd></label>
@@ -112,23 +113,24 @@ try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'd
       <button id="b-undo" class="ib" data-i18n-title="top.undo"><svg class="ic" aria-hidden="true"><use href="#i-undo-2"/></svg></button>
       <button id="b-redo" class="ib" data-i18n-title="top.redo"><svg class="ic" aria-hidden="true"><use href="#i-redo-2"/></svg></button>
     </div>
-    <div class="seg" role="group">
+    <div class="seg" role="group" data-edit>
       <button id="b-add" class="tb" data-i18n-title="top.addLayerTip"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg><span data-i18n="top.addLayer"></span></button>
       <button id="b-split" class="tb" data-i18n-title="top.splitTip"><svg class="ic" aria-hidden="true"><use href="#i-scissors"/></svg><span data-i18n="top.split"></span></button>
       <button id="b-notes" class="tb" data-i18n-title="np.tip" aria-pressed="false"><span data-i18n="np.button"></span></button>
       <button id="b-snap" class="tb on" data-i18n-title="top.snapTip"><svg class="ic" aria-hidden="true"><use href="#i-magnet"/></svg><span data-i18n="top.snap"></span></button>
     </div>
-    <button id="b-theme" class="ib" data-i18n-title="theme.tip" aria-label="Theme"><svg class="ic ic-sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="ic ic-moon" aria-hidden="true"><use href="#i-moon"/></svg></button>
-    <div id="lang" class="seg sm" role="group" aria-label="Language"><button data-lang="en">EN</button><button data-lang="tr">TR</button></div>
+    <button data-edit id="b-theme" class="ib" data-i18n-title="theme.tip" aria-label="Theme"><svg class="ic ic-sun" aria-hidden="true"><use href="#i-sun"/></svg><svg class="ic ic-moon" aria-hidden="true"><use href="#i-moon"/></svg></button>
+    <div data-edit id="lang" class="seg sm" role="group" aria-label="Language"><button data-lang="en">EN</button><button data-lang="tr">TR</button></div>
     <button id="b-send" class="btn primary send" disabled><svg class="ic" aria-hidden="true"><use href="#i-send"/></svg><span class="send-label"></span><b class="send-badge" hidden></b></button>
-    <button id="b-export" class="btn" data-i18n-title="top.exportTip"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span data-i18n="top.export"></span></button>
+    <button data-edit id="b-export" class="btn" data-i18n-title="top.exportTip"><svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span data-i18n="top.export"></span></button>
+    <button id="b-menu" class="ib" aria-haspopup="menu" aria-expanded="false" data-i18n-title="menu.tip"><svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg></button>
   </div>
 </header>
 <main id="main">
-  <aside id="media-panel" class="panel"></aside>
+  <aside data-edit id="media-panel" class="panel"></aside>
   <section id="preview-section" class="panel">
     <div id="stage"><div id="frame"><canvas id="canvas"></canvas></div><canvas id="overlay-canvas"></canvas><div id="empty-state" hidden></div></div>
-    <div id="scrub"><div class="fill"></div><div id="scrub-notes"></div><div class="head"></div></div>
+    <div data-edit id="scrub"><div class="fill"></div><div id="scrub-notes"></div><div class="head"></div></div>
     <div id="transport" class="glass">
       <span id="timecode"><b id="tc-now">00:00.00</b><span id="tc-dur">/ 00:00.00</span><span id="tc-rate" hidden></span></span>
       <div class="tp">
@@ -137,16 +139,16 @@ try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'd
         <button id="b-end" class="ib" data-i18n-title="transport.end"><svg class="ic" aria-hidden="true"><use href="#i-skip-forward"/></svg></button>
       </div>
       <div class="tz">
-        <button id="b-zoom-out" class="ib" data-i18n-title="view.zoomOut"><svg class="ic" aria-hidden="true"><use href="#i-zoom-out"/></svg></button>
-        <select id="zoom-select" data-i18n-title="view.zoomTip"></select>
-        <button id="b-zoom-in" class="ib" data-i18n-title="view.zoomIn"><svg class="ic" aria-hidden="true"><use href="#i-zoom-in"/></svg></button>
+        <button data-edit id="b-zoom-out" class="ib" data-i18n-title="view.zoomOut"><svg class="ic" aria-hidden="true"><use href="#i-zoom-out"/></svg></button>
+        <select data-edit id="zoom-select" data-i18n-title="view.zoomTip"></select>
+        <button data-edit id="b-zoom-in" class="ib" data-i18n-title="view.zoomIn"><svg class="ic" aria-hidden="true"><use href="#i-zoom-in"/></svg></button>
         <button id="b-watch" class="watch" data-i18n-title="watch.tip"><svg class="ic" aria-hidden="true"><use href="#i-watch"/></svg><span data-i18n="watch.button"></span></button>
-        <button id="b-guides" class="ib" data-i18n-title="guides.tip"><svg class="ic" aria-hidden="true"><use href="#i-grid-3x3"/></svg></button>
+        <button data-edit id="b-guides" class="ib" data-i18n-title="guides.tip"><svg class="ic" aria-hidden="true"><use href="#i-grid-3x3"/></svg></button>
       </div>
     </div>
   </section>
-  <aside id="inspector" class="panel"></aside>
-  <div id="splitter" data-i18n-title="top.splitterTip"></div>
+  <aside data-edit id="inspector" class="panel"></aside>
+  <div data-edit id="splitter" data-i18n-title="top.splitterTip"></div>
   <section id="layers" class="panel"></section>
 </main>
 <div id="menu" hidden></div>

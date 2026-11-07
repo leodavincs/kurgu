@@ -816,7 +816,7 @@ class App:
 
     # ------------------------------------------------------------ watch + note: send notes to the agent
     def notes_info(self):
-        return {"agent_name": agent_notes.agent_name(self.dir), "inbox": agent_notes.inbox_len(self.dir)}
+        return {"agent_name": agent_notes.agent_name(self.dir), "inbox": agent_notes.inbox_len(self.dir), "default_mode": agent_notes.default_mode(self.dir)}
 
     def note_frame_jpeg(self, nid, t):
         """Render the timeline frame at `t` (same machinery as /api/frame, draft size) and store it as .kurgu/notes/<id>.jpg."""

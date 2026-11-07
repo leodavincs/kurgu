@@ -74,6 +74,15 @@ export const TYPES = ['video', 'image', 'text', 'color', 'audio'];
 export const TYPE_ICON = { video: 'video', image: 'image', text: 'type', color: 'square', audio: 'music' };
 export const typeName = type => t('type.' + type);
 export const basename = p => String(p || '').split('/').pop();
+const FILEISH = /\.[a-z0-9]{2,5}$/i;
+/** Human name of a layer for scene labels: never a raw file name (the part before " · " when the rest is a file, else the group, else the type). */
+export function sceneName(l) {
+  const n = String(l.name || '').trim();
+  if (n && !FILEISH.test(n)) return n;
+  const head = n.split(' · ')[0].trim();
+  if (head && !FILEISH.test(head) && head !== n) return head;
+  return l.group || typeName(l.type);
+}
 
 // ---------- normalisation ----------
 export function normalizeLayer(l, P) {

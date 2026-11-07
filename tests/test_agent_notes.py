@@ -154,3 +154,15 @@ def test_mcp_notes_tools(project_dir):
         assert "fixed" in open(os.path.join(project_dir, "NOTLAR.md"), encoding="utf-8").read()
     finally:
         m.close()
+
+
+def test_default_mode_from_env_and_config(project_dir, monkeypatch):
+    monkeypatch.delenv("KURGU_MODE", raising=False)
+    assert agent_notes.default_mode(project_dir) == "review"
+    os.makedirs(os.path.join(project_dir, ".kurgu"), exist_ok=True)
+    json.dump({"default_mode": "edit"}, open(os.path.join(project_dir, ".kurgu", "config.json"), "w"))
+    assert agent_notes.default_mode(project_dir) == "edit"
+    monkeypatch.setenv("KURGU_MODE", "review")
+    assert agent_notes.default_mode(project_dir) == "review"
+    monkeypatch.setenv("KURGU_MODE", "nonsense")
+    assert agent_notes.default_mode(project_dir) == "edit"

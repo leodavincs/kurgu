@@ -49,7 +49,7 @@ def notes(page):
 
 def test_1_top_bar_note_box_adds_a_note_and_send_badge_counts(page):
     assert page.eval("!document.getElementById('b-ask')")                       # the assistant command box is gone from the top bar
-    assert page.eval("document.getElementById('nb-input').placeholder") == "Add a note… (Enter)"
+    assert page.eval("document.getElementById('nb-input').placeholder") == "Add a note…"
     assert page.eval("document.getElementById('b-send').disabled")              # nothing to send yet
     page.eval("__kurgu.S.t=2; __kurgu.emit('time')")
     page.click_sel("#nb-input")
@@ -84,8 +84,9 @@ def test_2_watch_mode_typing_pauses_enter_adds_and_resumes(page):
     assert 1.0 <= n["t"] <= 1.6, n                                              # pinned to where typing started, not where playback went on
     page.key(" ", code="Space", text=" ")
     page.wait_for("__kurgu.S.playing===false")
-    assert page.eval("document.querySelectorAll('.w-note').length") == 2
-    assert page.eval("document.getElementById('wl-send').textContent").strip().startswith("Send to agent (2 notes)")
+    assert page.eval("document.querySelectorAll('#watch .w-note').length") == 2
+    assert page.eval("document.querySelector('#wl-send .send-label').textContent") == "Send to agent"          # the count is in the badge only
+    assert page.eval("document.querySelector('#wl-send .send-badge').textContent") == "2"
     page.eval("document.getElementById('w-input').focus()")                     # Esc in the box clears it, a second Esc leaves the mode
     page.send("Input.insertText", text="draft")
     page.key("Escape", code="Escape")
