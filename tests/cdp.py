@@ -26,6 +26,7 @@ CHROME_CANDIDATES = [
     "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable", "/usr/bin/chromium", "/usr/bin/chromium-browser",
 ] + WIN_CHROME
 CI = bool(os.environ.get("CI"))
+LIVE_SERVERS = []      # every Server started by this process: a page timeout prints their log tails (CI diagnosis)
 STARTUP_WAIT = 60 if CI else 20      # seconds a spawned server / Chrome gets to come up
 
 
@@ -93,6 +94,7 @@ class Server:
             import shlex
             env["KURGU_AGENT_CMD"] = "%s %s" % (shlex.quote(sys.executable), shlex.quote(os.path.join(ROOT, "tests", "fake_agent.py")))
         self.log = os.path.join(self.tmp, "server.log")
+        LIVE_SERVERS.append(self)
         with open(self.log, "wb") as lf:
             self.proc = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py"), self.dir, "--port", str(self.port), "--no-open"],
                                          cwd=ROOT, env=env, stdout=lf, stderr=subprocess.STDOUT)
@@ -197,7 +199,7 @@ class Page:
                 e = p["entry"]
                 self.errors.append("log: " + e.get("text", "") + " " + e.get("url", ""))
 
-    def send(self, method, **params):
+    def send(self, method, _timeout=60, **params):
         with self.lock:
             self.n += 1
             i = self.n
@@ -205,7 +207,7 @@ class Page:
             self.pending[i] = slot
         with self.send_lock:
             self.ws.send(json.dumps({"id": i, "method": method, "params": params}))
-        if not slot["ev"].wait(60):
+        if not slot["ev"].wait(_timeout):
             raise TimeoutError(method)
         r = slot["res"]
         if "error" in r:
@@ -241,7 +243,28 @@ class Page:
             if v:
                 return v
             time.sleep(interval)
-        raise TimeoutError("condition never true: " + js)
+        raise TimeoutError("condition never true: " + js + "\n" + self.diagnose())
+
+    def diagnose(self):
+        """What the page and the servers looked like when a wait timed out (printed in the CI log)."""
+        out = []
+        try:
+            r = self.send("Runtime.evaluate", _timeout=5, returnByValue=True, expression=(
+                "JSON.stringify({href: location.href, ready: document.readyState, kurgu: !!window.__kurgu, "
+                "project: !!(window.__kurgu && __kurgu.S && __kurgu.S.project), rows: document.querySelectorAll('.row').length, "
+                "text: (document.body && document.body.innerText || '').slice(0, 300)})"))
+            out.append("page: " + str(r.get("result", {}).get("value")))
+        except Exception as e:
+            out.append("page: no answer (%s)" % type(e).__name__)
+        out.append("dialogs: %s" % self.dialogs[-3:])
+        out.append("errors: %s" % self.errors[-8:])
+        for srv in LIVE_SERVERS[-2:]:
+            try:
+                tail = open(srv.log, encoding="utf-8", errors="replace").read()[-800:]
+            except OSError:
+                tail = "(no log)"
+            out.append("server %s (exit %s): %s" % (srv.port, srv.proc.poll(), tail))
+        return "\n".join(out)
 
     # -- navigation
     def open(self, url, lang=None, theme=None, view="layers", mode="edit", ready="window.__kurgu && __kurgu.S.project && document.querySelector('.row')"):
