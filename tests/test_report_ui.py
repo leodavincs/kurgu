@@ -143,3 +143,19 @@ def test_report_window_agent_output_checkbox_is_off_by_default(chrome, monkeypat
         p.close()
     finally:
         s.close()
+
+
+def test_a_beforeunload_prompt_never_blocks_the_test_browser(chrome, monkeypatch, tmp_path):
+    """Windows CI: a reload while the editor's save was pending opened the 'leave site?' prompt; nobody answers it in headless Chrome, so
+    every later Page.navigate / evaluate on that page timed out. cdp.Page answers dialogs itself."""
+    s = new_server(monkeypatch, tmp_path)
+    try:
+        p = chrome.new_page()
+        p.open(s.url("/"), lang="en")
+        p.eval("window.addEventListener('beforeunload', e => { e.preventDefault(); e.returnValue = ''; })")
+        p.click(5, 5)                                           # sticky user activation: Chrome only prompts after a gesture
+        p.reload_and_wait("window.__kurgu && __kurgu.S.project && document.querySelector('.row')", cdp.STARTUP_WAIT)
+        assert any(d.startswith("beforeunload") for d in p.dialogs)
+        p.close()
+    finally:
+        s.close()

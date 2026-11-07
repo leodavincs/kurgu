@@ -152,6 +152,8 @@ class Page:
         self.ws = websocket.create_connection(ws_url, timeout=30, suppress_origin=True)
         self.n = 0
         self.lock = threading.Lock()
+        self.send_lock = threading.Lock()   # the reader thread also sends (dialog answers)
+        self.dialogs = []     # JS dialogs answered automatically (see _reader)
         self.errors = []      # console errors / exceptions / failed requests
         self.pending = {}
         self.dead = False
@@ -178,6 +180,14 @@ class Page:
                     slot["ev"].set()
                 continue
             meth, p = m.get("method"), m.get("params", {})
+            if meth == "Page.javascriptDialogOpening":
+                # A dialog (the editor's beforeunload prompt while a save is pending, on a slow runner) blocks the page and every later
+                # Page.navigate / reload / evaluate until it is answered; nobody clicks in headless Chrome, so answer it here. Fire and forget:
+                # this thread is the one that would read the reply.
+                self.dialogs.append(p.get("type", "") + ": " + p.get("message", ""))
+                with self.send_lock:
+                    self.ws.send(json.dumps({"id": 10 ** 9 + len(self.dialogs), "method": "Page.handleJavaScriptDialog", "params": {"accept": True}}))
+                continue
             if meth == "Runtime.consoleAPICalled" and p.get("type") in ("error", "assert"):
                 self.errors.append("console." + p["type"] + ": " + " ".join(str(a.get("value", a.get("description", ""))) for a in p.get("args", [])))
             elif meth == "Runtime.exceptionThrown":
@@ -193,7 +203,8 @@ class Page:
             i = self.n
             slot = {"ev": threading.Event(), "res": None}
             self.pending[i] = slot
-        self.ws.send(json.dumps({"id": i, "method": method, "params": params}))
+        with self.send_lock:
+            self.ws.send(json.dumps({"id": i, "method": method, "params": params}))
         if not slot["ev"].wait(60):
             raise TimeoutError(method)
         r = slot["res"]
