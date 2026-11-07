@@ -56,6 +56,8 @@ HW_PROXY_CODECS = ("hevc", "vp9", "av1")
 BIG_SOURCE = 1 << 30          # videos above this get their proxy on first sight
 IMPORT_CHUNK = 1024 * 1024
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+PROXY_WIDTH = 960             # edit proxies are this wide (the preview never shows more than ~1000 px of a clip)
+LIGHT_BITRATE = 4_000_000     # an H.264 file up to 1080p below this plays smoothly as it is: a proxy would only be bigger
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
 FONT_EXT = {".ttf", ".otf", ".ttc", ".otc"}
@@ -421,16 +423,16 @@ class App:
         return os.path.join(self.kurgu, "proxies", self.key_of(path) + ".mp4")
 
     def proxy_cmd(self, path, tmp, hw):
-        """ffmpeg command for a 1280-wide, keyframe-every-15 preview proxy; hw = hardware attempt (decode + encode)."""
+        """ffmpeg command for a 960-wide, keyframe-every-15 preview proxy; hw = hardware attempt (decode + encode)."""
         cmd = [media_tools.ffmpeg(), "-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"]
         venc = media_tools.hw_encoders()["h264"] if hw else None
         if venc:
             cmd += media_tools.hw_decode_args()
-        cmd += media_tools.input_args(path) + ["-vf", "scale=1280:-2"]
+        cmd += media_tools.input_args(path) + ["-vf", f"scale={PROXY_WIDTH}:-2"]
         if venc:
             cmd += media_tools.hw_video_args(venc, crf=23, gop=15)
         else:
-            cmd += ["-c:v", "libx264", "-crf", "23", "-preset", "veryfast", "-g", "15"]
+            cmd += ["-c:v", "libx264", "-crf", "24", "-preset", "ultrafast", "-g", "15"]
         return cmd + ["-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", tmp], bool(venc)
 
     def run_proxy(self, path, tmp, key, duration, hw):
@@ -481,6 +483,32 @@ class App:
         with self.proxy_lock:
             if os.path.exists(target):
                 self.proxy_state[key] = "ready"
+    def proxy_mode(self):
+        """"auto" (default: only when a proxy pays), "always" or "never": env KURGU_PROXY, else `proxy` in .kurgu/config.json."""
+        v = os.environ.get("KURGU_PROXY", "").strip().lower()
+        if v not in ("auto", "always", "never"):
+            try:
+                with open(os.path.join(self.kurgu, "config.json"), encoding="utf-8") as f:
+                    v = str(json.load(f).get("proxy", "")).strip().lower()
+            except (OSError, ValueError, AttributeError):
+                v = ""
+        return v if v in ("auto", "always", "never") else "auto"
+
+    def wants_proxy(self, path, base):
+        """A proxy pays for sources that are wide AND heavy to play (4K, high bitrate, codecs browsers decode slowly or not at all). A 1080p H.264
+        screen recording of a few Mbps is lighter than its own proxy: skip it."""
+        if kind_of(path) != "video" or base["width"] <= 1280:
+            return False
+        mode = self.proxy_mode()
+        if mode != "auto":
+            return mode == "always"
+        try:
+            size = os.path.getsize(path)
+        except OSError:
+            size = 0
+        light = base["height"] <= 1080 and base.get("codec") == "h264" and ((base.get("bitrate") and base["bitrate"] < LIGHT_BITRATE) or (not base.get("bitrate") and size < 24 << 20))
+        return not light
+
                 return
             if self.proxy_state.get(key) in ("running", "error"):
                 return
@@ -521,13 +549,17 @@ class App:
                 duration = float(data.get("format", {}).get("duration") or 0)
             except ValueError:
                 duration = 0.0
-            base = {"duration": duration, "width": int(v["width"]) if v else 0, "height": int(v["height"]) if v else 0,
+            try:
+                bitrate = int((v or {}).get("bit_rate") or data.get("format", {}).get("bit_rate") or 0)
+            except ValueError:
+                bitrate = 0
+            base = {"duration": duration, "width": int(v["width"]) if v else 0, "height": int(v["height"]) if v else 0, "bitrate": bitrate,
                     "has_audio": any(s.get("codec_type") == "audio" for s in streams),
                     "codec": (v or {}).get("codec_name", "")}
             with self.info_lock:
                 self.info_cache[key] = base
         info = dict(base, proxy=None, proxy_ready=False, proxy_progress=None, proxy_eta=None)
-        if kind_of(path) == "video" and base["width"] > 1280:
+        if self.wants_proxy(path, base):
             target = self.proxy_path(path)
             self.start_proxy(path, target, base["duration"], base.get("codec", ""))
             info["proxy_ready"] = os.path.exists(target)

@@ -155,7 +155,8 @@ def test_input_args_whitelist():
 
 
 # ------------------------------------------------------------ proxy progress + hardware
-def test_media_info_proxy_progress(tmp_path):
+def test_media_info_proxy_progress(tmp_path, monkeypatch):
+    monkeypatch.setenv("KURGU_PROXY", "always")      # this test is about the progress report, not the policy
     (tmp_path / "media").mkdir()
     sh("-f", "lavfi", "-i", "testsrc2=size=1920x1080:rate=30:duration=3", "-pix_fmt", "yuv420p", str(tmp_path / "media" / "v.mp4"))
     (tmp_path / "project.json").write_text('{"version":2,"name":"p","width":1920,"height":1080,"fps":30,"duration":3,"layers":[]}')

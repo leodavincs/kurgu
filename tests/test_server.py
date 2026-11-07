@@ -190,7 +190,8 @@ def test_import_woff_rejected(srv):
     assert st == 415 and "woff" in res["error"]
 
 
-def test_media_info_waveform_thumbs(srv):
+def test_media_info_waveform_thumbs(srv, monkeypatch):
+    monkeypatch.setenv("KURGU_PROXY", "always")      # the example clip is light (a proxy would not pay); this test is about the proxy mechanics
     c, d = srv
     st, info = c.req("GET", "/api/media-info?path=media/a.mp4")
     assert st == 200 and info["width"] > 0 and info["duration"] > 1 and info["has_audio"] is True
