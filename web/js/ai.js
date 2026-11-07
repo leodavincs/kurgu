@@ -60,7 +60,7 @@ async function generateBrief() {
 async function cancelBrief() { try { await post('/api/brief/generate/cancel'); } catch (e) { /* the poll reports it */ } }
 const briefErrText = () => t('ai.brief.err.' + (['no_session', 'unsupported', 'no_agent', 'timeout', 'login', 'limit', 'empty', 'busy'].includes(B.code) ? B.code : 'failed'));
 
-function renderAll() { const ask = document.getElementById('b-ask'); if (ask) ask.classList.toggle('busy', R.status === 'running'); for (const v of [...views]) { if (!v.root.isConnected) views.delete(v); else v.render(); } }
+function renderAll() { for (const v of [...views]) { if (!v.root.isConnected) views.delete(v); else v.render(); } }
 onLang(() => renderAll());
 setInterval(() => { phIndex = (phIndex + 1) % PLACEHOLDERS; for (const v of views) if (v.root.isConnected) v.placeholder(); }, 4000);
 

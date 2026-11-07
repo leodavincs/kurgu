@@ -106,7 +106,7 @@ input:disabled, textarea:disabled, select:disabled { opacity: .5; }
 #b-cancel { color: var(--err); width: var(--h-md); height: var(--h-md); }
 #render-open { display: inline-flex; align-items: center; gap: 4px; color: var(--acc); text-decoration: none; font-weight: 600; white-space: nowrap; padding: 0 6px; } #render-open:hover { text-decoration: underline; }
 .tb-center:has(#progress:not([hidden])) #note-bar, .tb-center:has(#upload:not([hidden])) #note-bar { display: none; }
-@media (max-width: 1720px) { #b-split span, #b-note span, #b-snap span { display: none; } #b-split, #b-note, #b-snap { width: var(--h-md); padding: 0; } }
+@media (max-width: 1720px) { #b-split span, #b-snap span { display: none; } #b-split, #b-snap { width: var(--h-md); padding: 0; } }
 @media (max-width: 1320px) { .seg .tb span { display: none; } .seg .tb { width: var(--h-md); padding: 0; } .tb-center { flex-basis: 260px; } }
 @media (max-width: 1100px) { .tb-center { flex-basis: auto; min-width: 0; } #seq-label { display: none; } }
 

@@ -125,3 +125,17 @@ def test_4_agent_marks_note_done_ui_shows_fixed_with_reply(page, server):
     page.wait_for("!!document.querySelector('.np-row .np-reply')")
     assert page.eval("document.querySelector('.np-row.done .np-state').textContent") == "fixed"
     assert page.eval("document.querySelector('.np-row .np-reply').textContent") == "Moved the title 0.8 s earlier"
+
+
+def test_5_a_letter_typed_in_another_field_does_not_start_a_note(page):
+    page.click_sel("#b-watch")
+    page.wait_for("!document.getElementById('watch').hidden")
+    page.eval("(()=>{const i=document.createElement('input');i.id='other-field';document.getElementById('watch').append(i);i.focus()})()")
+    page.key("q", code="KeyQ", text="q")
+    assert page.eval("document.getElementById('w-input').value") == "" and page.eval("document.activeElement.id") == "other-field"
+    page.eval("document.getElementById('other-field').remove(); document.activeElement.blur()")
+    page.key("q", code="KeyQ", text="q")                                          # with the focus on the page itself a letter still starts a note
+    page.wait_for("document.activeElement.id==='w-input'")
+    page.key("Escape", code="Escape")
+    page.key("Escape", code="Escape")
+    page.wait_for("document.getElementById('watch').hidden")

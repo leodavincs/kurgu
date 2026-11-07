@@ -24,6 +24,7 @@ Homepage = "https://github.com/leodavincs/kurgu"
 kurgu = "server:main"
 kurgu-render = "render:main"
 kurgu-mcp = "mcp_server:main"
+kurgu-notes = "agent_notes:main"
 
 [tool.setuptools]
 py-modules = ["media_tools", "server", "render", "schema", "fonts", "anim", "presets", "ai", "exports", "transcribe", "captions", "mcp_server", "kurgu_paths", "agent_notes"]

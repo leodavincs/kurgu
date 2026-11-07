@@ -788,20 +788,22 @@ def tool_notes_list(a, ctx):
 
 
 def tool_notes_wait(a, ctx):
-    """Block until the human clicks Send in the editor (a new line in .kurgu/inbox.jsonl), then return those notes."""
+    """Return the sends the agent has not consumed yet (saved cursor), blocking until the human clicks Send. timeout: default 120 s, 0 = look
+    once, max 600 (the CLI waits forever when --timeout is omitted). A cancelled call stops polling."""
     d = project_dir(a)
     require_project(d)
     timeout = a.get("timeout", 120)
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout < 0:
-        raise ToolError("timeout must be a number of seconds >= 0.")
-    timeout = min(float(timeout) or 120.0, 600.0)
+        raise ToolError("timeout must be a number of seconds >= 0 (0 = look once).")
+    timeout = min(float(timeout), 600.0)
     since = a.get("since")
-    entries = agent_notes.wait_for_send(d, since if isinstance(since, int) and not isinstance(since, bool) else None, timeout)
+    since = since if isinstance(since, int) and not isinstance(since, bool) else None
+    entries = agent_notes.wait_for_send(d, since, timeout, cancel=ctx.get("cancel"))
     if entries is None:
         return [text(json.dumps({"timeout": True, "inbox": agent_notes.inbox_len(d),
-                                 "hint": "Nothing was sent yet. Call notes_wait again (pass `since` = this inbox value to miss nothing)."}))]
+                                 "hint": "Nothing new was sent. Call notes_wait again (the cursor remembers what you already got)."}))]
     return [text(jdump({"sent": entries, "inbox": agent_notes.inbox_len(d), "file": agent_notes.NOTES_MD,
-                        "hint": "Fix each note, then call notes_done with the ids and a one-line reply."}))]
+                        "hint": "Fix each note, call notes_done with the ids and a one-line reply, then call notes_wait again: a send made while you worked is delivered then."}))]
 
 
 def tool_notes_done(a, ctx):
@@ -1145,10 +1147,11 @@ TOOLS = [
      tool_notes_list, {"readOnlyHint": True}),
     ("notes_wait", "Wait until the user sends notes",
      "Blocks (up to timeout, default 120 s, max 600) until the user clicks the send button in the editor, then returns the notes of that "
-     "send. Call it in a loop to be woken the moment the user is done watching; on timeout call again with `since` = the returned inbox.",
-     schema_of({"timeout": {"type": "number", "description": "Seconds to wait (default 120, max 600)."},
-                "since": {"type": "integer", "description": "Inbox length from a previous call; returns sends after it (default: now)."}}),
-     tool_notes_wait, {"readOnlyHint": True}),
+     "send. Loop: notes_wait -> fix -> notes_done -> notes_wait. A saved cursor (.kurgu/inbox.cursor) remembers what you already got, so a send made "
+     "while you were fixing is returned by the next call. On timeout just call again.",
+     schema_of({"timeout": {"type": "number", "description": "Seconds to wait (default 120, max 600); 0 = look once without waiting."},
+                "since": {"type": "integer", "description": "Return sends with seq above this instead of using the saved cursor (the cursor is then not moved)."}}),
+     tool_notes_wait, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
     ("notes_done", "Mark sent notes as fixed",
      "Mark notes done after fixing them, with a one-line reply the user sees under the note (\"fixed\" in the editor), e.g. "
      "\"Score order swapped, home team first\". Updates NOTLAR.md too. Resolve, do not delete.",

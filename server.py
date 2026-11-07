@@ -347,7 +347,18 @@ class App:
         new = schema.dumps(project).encode()
         write_atomic(self.project_path, new)
         self.write_changes(summary if isinstance(summary, list) else [summary])
+        self.refresh_notes_md(old, project)
         return sha1(new)
+
+    def refresh_notes_md(self, old_bytes, project):
+        """Keep NOTLAR.md in step with the notes: rewritten whenever the notes of project.json change and the file exists or any note was sent."""
+        try:
+            before = json.loads(old_bytes).get("notes") or []
+            after = project.get("notes") or []
+            if before != after and (os.path.exists(os.path.join(self.dir, agent_notes.NOTES_MD)) or any(isinstance(n, dict) and n.get("sent") for n in after)):
+                agent_notes.write_notes_md(self.dir, schema.normalize(json.loads(json.dumps(project))))
+        except Exception:                                  # a derived file must never fail a save
+            pass
 
     def apply_preset(self, body):
         """POST /api/presets/apply {layer_id, preset, at?, dur?, params?}: bake one motion preset into the layer's keys/mods and save."""
@@ -827,7 +838,7 @@ class App:
             im = im.convert("RGB")
             if im.width > 640:
                 im = im.resize((640, max(1, round(im.height * 640 / im.width))), Image.LANCZOS)
-            tmp = out + ".part"
+            tmp = out + f".{os.getpid()}.{threading.get_ident()}.part"
             if marks:                                  # burn the marks in (yellow), so the picture alone says where
                 agent_notes.burn_marks(im, [agent_notes.mark_view(m, *size) for m in marks])
             im.save(tmp, format="JPEG", quality=82)
@@ -860,18 +871,19 @@ class App:
         with ThreadPoolExecutor(3) as ex:
             list(ex.map(one, want))
         stamp = agent_notes.now_iso()
+        snapshot = {n["id"]: n["sent"] for n in want}
         with self.write_lock:
             old = self.project_bytes()
             cur = json.loads(old)
             cur_notes = [schema.normalize_note(n, i) for i, n in enumerate(cur.get("notes") or []) if isinstance(n, dict)]
-            sent_ids = {n["id"] for n in want}
             sent_notes = []
-            for n in cur_notes:
-                if n["id"] in sent_ids:
+            for n in cur_notes:   # decided INSIDE the lock: a note another send stamped / the user finished meanwhile is not sent twice
+                if n["id"] in snapshot and n["sent"] == snapshot[n["id"]] and (ids is not None or not n["done"]):
                     n["sent"] = stamp
                     sent_notes.append(n)
             if not sent_notes:
-                raise HttpError(409, "the notes are gone from project.json")
+                raise HttpError(409, "those notes were already sent")
+            sent_ids = {n["id"] for n in sent_notes}
             cur["notes"] = cur_notes
             name = agent_notes.agent_name(self.dir) or "agent"
             version = self._write_project(cur, [f"{len(sent_notes)} note(s) sent to {name}: " + "; ".join(

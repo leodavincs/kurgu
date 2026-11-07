@@ -227,7 +227,7 @@ function onKey(e) {
   else if (k === 'n' || k === 'N') { eat(); focusInput(); }
   else if (k === 'ArrowLeft' || k === 'ArrowRight') { eat(); setTime(S.t + (k === 'ArrowRight' ? 1 : -1)); }
   else if (k === 'f' || k === 'F') { eat(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else if (root.requestFullscreen) root.requestFullscreen().then(() => { usedFullscreen = true; }).catch(() => {}); }
-  else if (k.length === 1 && /\S/.test(k) && !(e.target.tagName === 'BUTTON' && k === 'Enter')) { startType(); wInput.focus(); }   // any letter: start a note (the character lands in the box)
+  else if (k.length === 1 && /\S/.test(k) && !(e.target.closest && e.target.closest('input, textarea, select, [contenteditable]'))) { startType(); wInput.focus(); }   // only when no other field has the focus   // any letter: start a note (the character lands in the box)
   else e.stopPropagation();
 }
 

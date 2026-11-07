@@ -3,12 +3,14 @@
 The human watches the video in the editor, drops timestamped notes and clicks Send. The editor server (server.App.notes_send)
 marks those notes `sent` in project.json, saves a JPEG of each frame under .kurgu/notes/, rewrites NOTLAR.md (readable by both)
 and appends ONE JSON line per send to .kurgu/inbox.jsonl. The agent blocks on `kurgu notes wait <dir>` (or the MCP tool
-`notes_wait`) and is woken by that line; it fixes the notes, then `kurgu notes done <dir> <id...> --reply "..."`.
+`notes_wait`) and is woken by that line; it fixes the notes, then `kurgu notes done <dir> <id...> --reply "..."`, then waits again. Every inbox
+entry has a monotonically increasing `seq`; `.kurgu/inbox.cursor` holds the last seq the agent consumed, so a send made WHILE the agent was
+fixing is returned by the next wait instead of being lost.
 
 Note status (derived, nothing extra stored): done -> "done"; else sent timestamp set -> "sent"; else "open" (written, not sent yet).
 
 CLI:  kurgu notes list <dir> [--open|--sent|--all] [--json]
-      kurgu notes wait <dir> [--timeout S] [--json]
+      kurgu notes wait <dir> [--timeout S] [--since SEQ] [--json]
       kurgu notes done <dir> <id...> [--reply "text"]
 Pure standard library plus schema; no network. The project file is written through the running editor when there is one
 (so the editor reloads live), else directly."""
@@ -69,6 +71,7 @@ def frame_rel(nid):
 
 
 def read_inbox(d):
+    """Every inbox entry, each with its `seq` (older lines without one get their line number)."""
     out = []
     try:
         with open(inbox_path(d), encoding="utf-8") as f:
@@ -76,12 +79,34 @@ def read_inbox(d):
                 line = line.strip()
                 if line:
                     try:
-                        out.append(json.loads(line))
+                        e = json.loads(line)
                     except ValueError:
-                        pass
+                        continue
+                    e.setdefault("seq", len(out) + 1)
+                    out.append(e)
     except OSError:
         pass
     return out
+
+
+def cursor_path(d):
+    return os.path.join(d, ".kurgu", "inbox.cursor")
+
+
+def get_cursor(d):
+    try:
+        with open(cursor_path(d), encoding="utf-8") as f:
+            return int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def set_cursor(d, seq):
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    tmp = cursor_path(d) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(str(int(seq)))
+    os.replace(tmp, cursor_path(d))
 
 
 # ---------------------------------------------------------------- marks (circles / boxes / arrows drawn on the frame to say WHERE)
@@ -209,31 +234,93 @@ def write_notes_md(d, proj=None):
     return path
 
 
-def append_inbox(d, proj, notes, sent_at):
-    """One JSON line per send; the line is the wake-up signal for `notes wait`."""
+def append_inbox(d, proj, notes, sent_at, recovered=False):
+    """One JSON line per send; the line is the wake-up signal for `notes wait`. `seq` grows by one per line."""
     os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
-    entry = {"sent": sent_at, "project": proj.get("name") or os.path.basename(d), "dir": d,
+    seq = max([e["seq"] for e in read_inbox(d)] or [0]) + 1
+    entry = {"seq": seq, "sent": sent_at, "project": proj.get("name") or os.path.basename(d), "dir": d,
              "notes": [note_view(d, n, proj) for n in notes]}
+    if recovered:
+        entry["recovered"] = True
     with open(inbox_path(d), "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     return entry
 
 
 def inbox_len(d):
-    return len(read_inbox(d))
+    return max([e["seq"] for e in read_inbox(d)] or [0])
 
 
-def wait_for_send(d, since=None, timeout=None, poll=0.4):
-    """Block until the inbox holds more than `since` lines (default: its length now). Returns the new entries, or None on timeout."""
-    since = inbox_len(d) if since is None else since
-    end = None if not timeout else time.monotonic() + timeout
+def recover_undelivered(d, grace=10.0):
+    """A send that stamped `sent` in project.json but crashed before its inbox line was written would never wake the agent: give such notes
+    (sent, not done, in no inbox entry, stamped more than `grace` seconds ago) an inbox entry of their own."""
+    try:
+        proj, notes = load_notes(d)
+    except (OSError, ValueError):
+        return
+    seen = {n["id"] for e in read_inbox(d) for n in e.get("notes", [])}
+    now = datetime.now()
+    lost = []
+    for n in notes:
+        if n.get("sent") and not n.get("done") and n["id"] not in seen and n.get("author") != "agent":
+            try:
+                if (now - datetime.fromisoformat(n["sent"])).total_seconds() < grace:
+                    continue
+            except ValueError:
+                pass
+            lost.append(n)
+    if lost:
+        append_inbox(d, proj, lost, max(n["sent"] for n in lost), recovered=True)
+
+
+def _live(d, entries):
+    """Entries reduced to the notes that still need the agent (sent, not done, still in the project); empty entries dropped."""
+    try:
+        _p, notes = load_notes(d)
+    except (OSError, ValueError):
+        return entries
+    todo = {n["id"] for n in notes if n.get("sent") and not n.get("done")}
+    out = []
+    for e in entries:
+        keep = [n for n in e.get("notes", []) if n["id"] in todo]
+        if keep:
+            out.append(dict(e, notes=keep))
+    return out
+
+
+def wait_for_send(d, since=None, timeout=None, poll=0.4, cancel=None):
+    """Return the inbox entries the agent has not consumed yet (seq above `since`, default: the saved cursor), blocking until there is one.
+    Only notes that are still `sent` and not `done` are returned. Without `since` the cursor is advanced to what was returned, so a send made
+    while the agent was fixing the previous batch is delivered by the next call. `since` given: the cursor is neither read nor moved.
+    timeout None = wait forever, 0 = look once, N = N seconds; returns None on timeout (or when `cancel`, a threading.Event, is set)."""
+    use_cursor = since is None
+    base = get_cursor(d) if use_cursor else int(since)
+    end = None if timeout is None else time.monotonic() + timeout
+    recover_undelivered(d)
+    last_size = -1
     while True:
-        entries = read_inbox(d)
-        if len(entries) > since:
-            return entries[since:]
+        try:
+            size = os.path.getsize(inbox_path(d))
+        except OSError:
+            size = 0
+        if size != last_size:                       # only re-parse the file when it changed
+            last_size = size
+            pending = [e for e in read_inbox(d) if e["seq"] > base]
+            if pending:
+                top = max(e["seq"] for e in pending)
+                if use_cursor:
+                    set_cursor(d, top)
+                base = top
+                live = _live(d, pending)
+                if live:
+                    return live
         if end is not None and time.monotonic() >= end:
             return None
-        time.sleep(poll)
+        if cancel is not None:
+            if cancel.wait(poll):
+                return None
+        else:
+            time.sleep(poll)
 
 
 def list_views(d, status="sent"):
@@ -278,8 +365,8 @@ def render_text(views):
 def render_entries(entries):
     out = []
     for e in entries:
-        out.append(f"Sent {e['sent']} from \"{e['project']}\" ({len(e['notes'])} notes):\n" + render_text(e["notes"]))
-    return "\n\n".join(out)
+        out.append(f"Send #{e['seq']} · {e['sent']} from \"{e['project']}\" ({len(e['notes'])} notes):\n" + render_text(e["notes"]))
+    return "\n\n".join(out) + (f"\n\n(inbox position {entries[-1]['seq']}; after fixing: kurgu notes done <dir> <id...>, then kurgu notes wait <dir> again)" if entries else "")
 
 
 # ---------------------------------------------------------------- CLI
@@ -305,7 +392,8 @@ def main(argv=None):
     pl.add_argument("--json", action="store_true")
     pw = sub.add_parser("wait", help="block until the human clicks Send, print the new notes, exit 0")
     pw.add_argument("project_dir")
-    pw.add_argument("--timeout", type=float, default=0, help="seconds (0 = wait forever); exit code 3 on timeout")
+    pw.add_argument("--timeout", type=float, default=None, help="seconds; omitted = wait forever, 0 = look once without waiting; exit code 3 on timeout")
+    pw.add_argument("--since", type=int, default=None, help="return sends with seq above this (the saved cursor is then neither read nor moved)")
     pw.add_argument("--json", action="store_true")
     pd = sub.add_parser("done", help="mark notes done, optionally with a one-line reply the human sees")
     pd.add_argument("project_dir")
@@ -322,9 +410,9 @@ def main(argv=None):
             print(render_text(views) if views else f"No {st} notes.")
         return 0
     if a.cmd == "wait":
-        entries = wait_for_send(d, timeout=a.timeout)
+        entries = wait_for_send(d, since=a.since, timeout=a.timeout)
         if entries is None:
-            print("timeout: nothing was sent", file=sys.stderr)
+            print(f"timeout: nothing new was sent (inbox position {inbox_len(d)})", file=sys.stderr)
             return 3
         if a.json:
             print(json.dumps(entries, ensure_ascii=False, indent=2))

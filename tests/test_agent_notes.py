@@ -122,12 +122,84 @@ def test_cli_wait_times_out_then_wakes_on_send(srv):
     assert len(entries) == 1 and [n["id"] for n in entries[0]["notes"]] == ["n_b"] and entries[0]["notes"][0]["text"] == "sound a bit loud here"
 
 
-def test_wait_ignores_sends_made_before_it_started(project_dir):
+def test_wait_cursor_delivers_a_send_made_while_the_agent_was_fixing(srv):
+    c, d = srv
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_a"]})[0] == 200
+    first = agent_notes.wait_for_send(d, timeout=0)                         # look once: the first send is pending
+    assert [n["id"] for n in first[0]["notes"]] == ["n_a"] and first[0]["seq"] == 1
+    assert agent_notes.get_cursor(d) == 1
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_b"]})[0] == 200     # the human sends again while the agent is busy fixing n_a
+    second = agent_notes.wait_for_send(d, timeout=0)                        # the next wait must not lose it
+    assert [n["id"] for n in second[0]["notes"]] == ["n_b"] and second[0]["seq"] == 2
+    assert agent_notes.wait_for_send(d, timeout=0) is None                  # nothing new now
+    again = agent_notes.wait_for_send(d, since=0, timeout=0)                # --since peeks: still-sent notes after seq 0, cursor untouched
+    assert [e["seq"] for e in again] == [1, 2] and agent_notes.get_cursor(d) == 2
+    r = cli("wait", d, "--timeout", "0")                                    # CLI: 0 = look once, exit 3 when nothing is new
+    assert r.returncode == 3 and "inbox position 2" in r.stderr
+    r = cli("wait", d, "--since", "1", "--timeout", "0")
+    assert r.returncode == 0 and "Send #2" in r.stdout and "inbox position 2" in r.stdout and "[n_b]" in r.stdout
+
+
+def test_wait_skips_notes_that_are_already_done(srv):
+    c, d = srv
+    c.req("POST", "/api/notes/send", {"ids": ["n_a", "n_b"]})
+    assert cli("done", d, "n_a").returncode == 0
+    got = agent_notes.wait_for_send(d, timeout=0)
+    assert [n["id"] for e in got for n in e["notes"]] == ["n_b"]            # n_a was fixed meanwhile: not handed out again
+
+
+def test_wait_recovers_sent_notes_whose_inbox_line_was_never_written(project_dir):
+    seed(project_dir, [dict(NOTES[0], sent="2026-11-07T10:05:00"), dict(NOTES[1], sent="2026-11-07T10:05:00", done=True)])   # a crash between the project write and the inbox append
+    got = agent_notes.wait_for_send(project_dir, timeout=0)
+    assert got and got[0].get("recovered") and [n["id"] for n in got[0]["notes"]] == ["n_a"]
+    assert agent_notes.wait_for_send(project_dir, timeout=0) is None         # recovered once, not again
+
+
+def test_wait_stops_polling_when_cancelled(project_dir):
     seed(project_dir)
-    proj = json.load(open(os.path.join(project_dir, "project.json"), encoding="utf-8"))
-    import schema
-    agent_notes.append_inbox(project_dir, schema.normalize(proj), [], "2026-11-07T09:00:00")
-    assert agent_notes.wait_for_send(project_dir, timeout=0.3, poll=0.05) is None
+    ev = threading.Event()
+    threading.Timer(0.3, ev.set).start()
+    t0 = time.time()
+    assert agent_notes.wait_for_send(project_dir, timeout=30, cancel=ev) is None and time.time() - t0 < 5
+
+
+def test_two_sends_at_once_stamp_and_announce_once(srv):
+    c, d = srv
+    codes = []
+    ts = [threading.Thread(target=lambda: codes.append(c.req("POST", "/api/notes/send", {})[0])) for _ in range(2)]
+    [t.start() for t in ts]
+    [t.join() for t in ts]
+    assert sorted(codes) == [200, 409]
+    assert len(open(os.path.join(d, ".kurgu", "inbox.jsonl"), encoding="utf-8").read().splitlines()) == 1
+    assert c.req("POST", "/api/notes/send", {})[0] == 400                    # nothing left to send
+
+
+def test_notlar_md_follows_note_edits_made_through_save_project(srv):
+    c, d = srv
+    c.req("POST", "/api/notes/send", {})
+    st, data = c.req("GET", "/api/project")
+    p = data["project"]
+    p["notes"][0]["done"] = True
+    p["notes"][0]["reply"] = "fixed by hand in the editor"
+    assert c.req("PUT", "/api/project", {"project": p, "summary": ["x"], "base_version": data["version"]})[0] == 200
+    assert "fixed by hand in the editor" in open(os.path.join(d, "NOTLAR.md"), encoding="utf-8").read()
+
+
+def test_notes_commands_do_not_import_the_editor_modules(project_dir):
+    seed(project_dir)
+    code = "import sys, agent_notes; agent_notes.main(['list', %r, '--all']); sys.exit(0 if not {'server', 'ai', 'media_tools', 'exports', 'mcp_server'} & set(sys.modules) else 1)" % project_dir
+    assert subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True).returncode == 0
+
+
+def test_kurgu_cmd_passes_the_exit_code_on():
+    lines = [l.strip() for l in open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read().splitlines()]
+    code = [l for l in lines if l and not l.lower().startswith("rem")]
+    depth = 0
+    for l in code:
+        assert not (depth > 0 and "%errorlevel%" in l.lower()), "%errorlevel% inside a parenthesised block is expanded at parse time: " + l
+        depth += l.count("(") - l.count(")")
+    assert depth == 0 and code.count("exit /b %errorlevel%") == 2          # editor path and notes path both hand the exit code on
+    assert any("agent_notes.py" in l for l in code)
 
 
 def test_launcher_dispatches_notes_and_keeps_editor_args(project_dir):
@@ -136,6 +208,8 @@ def test_launcher_dispatches_notes_and_keeps_editor_args(project_dir):
     assert r.returncode == 0 and "title appears too late" in r.stdout
     r = subprocess.run(["bash", LAUNCHER, "/no/such/folder"], capture_output=True, text=True, timeout=30)
     assert r.returncode == 1 and "No such folder" in r.stderr             # `kurgu <dir>` still goes the editor way
+    r = subprocess.run(["bash", LAUNCHER, "./notes"], capture_output=True, text=True, timeout=30, cwd=project_dir)
+    assert r.returncode == 1 and "No such folder: ./notes" in r.stderr   # a folder called notes is `kurgu ./notes`, not the subcommand
 
 
 def test_mcp_notes_tools(project_dir):
@@ -145,8 +219,11 @@ def test_mcp_notes_tools(project_dir):
         listed = json.loads(first_text(m.ok("notes_list")))
         assert [n["id"] for n in listed["notes"]] == ["n_a"] and listed["notes"][0]["status"] == "sent"
         assert json.loads(first_text(m.ok("notes_list", status="open")))["notes"][0]["id"] == "n_b"
+        got = json.loads(first_text(m.ok("notes_wait", timeout=0.4)))                  # n_a is sent but was never announced: delivered once, flagged recovered
+        assert got["sent"][0]["recovered"] is True and got["sent"][0]["notes"][0]["id"] == "n_a" and got["inbox"] == 1
         waited = json.loads(first_text(m.ok("notes_wait", timeout=0.4)))
-        assert waited["timeout"] is True and waited["inbox"] == 0
+        assert waited["timeout"] is True and waited["inbox"] == 1
+        assert json.loads(first_text(m.ok("notes_wait", timeout=0)))["timeout"] is True        # 0 = look once, never "forever" over MCP
         assert m.tool("notes_done", ids=["n_nope"])["isError"]
         out = first_text(m.ok("notes_done", ids=["n_a", "n_b"], reply="fixed"))
         assert "2 note(s) marked done" in out
