@@ -149,11 +149,11 @@ def test_report_has_the_facts_the_log_and_the_hook_log_and_is_redacted(srv, cfg)
     (cfg / "config.json").write_text(json.dumps({"on_send": ["/secret/path/kurgu", "wake", "claude", "{dir}", "{seq}"]}))
     diag.event(d, "test", f"contact me@example.com from {os.path.expanduser('~')}")
     os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
-    open(os.path.join(d, ".kurgu", "hook.log"), "w").write("\n".join(f"own line {i}" for i in range(80)) + "\n| agent says hi\n")
+    open(os.path.join(d, ".kurgu", "hook.log"), "w").write("\n".join(f"[2026-01-01T10:00:00] run (send #{i}, 1 notes): kurgu wake claude /p {i}" for i in range(80)) + "\n| agent says hi\n")
     text = diag.build_report(d)
     for part in ("Kurgu report", "kurgu:", "python:", "ffmpeg:", "chrome:", "Agent setup", "wake:      configured (claude)", "listening: no", "Doctor", "Last events", "hook.log (last 50 lines, agent output left out)"):
         assert part in text, part
-    assert "/secret/path" not in text and "me@example.com" not in text and "<email>" in text and "own line 79" in text and "own line 20" not in text and "agent says hi" not in text
+    assert "/secret/path" not in text and "me@example.com" not in text and "<email>" in text and "(send #79," in text and "(send #20," not in text and "agent says hi" not in text
     assert c.req("GET", "/api/report")[1]["text"].startswith("Kurgu report")
 
 
@@ -290,3 +290,25 @@ def test_reading_through_a_symlinked_kurgu_folder_is_refused(project_dir, tmp_pa
     assert diag.read_events(project_dir) == []
     text = diag.build_report(project_dir, include_agent_output=True)
     assert "refused: .kurgu is a symbolic link" in text and "refused: hook.log is a symbolic link" in text and "LEAK" not in text
+
+
+def test_legacy_unprefixed_agent_output_in_hook_log_is_left_out_of_the_default_report(project_dir):
+    os.makedirs(os.path.join(project_dir, ".kurgu"), exist_ok=True)
+    legacy = 'Fixed note: make the logo bigger'
+    open(os.path.join(project_dir, ".kurgu", "hook.log"), "w", encoding="utf-8").write(
+        "[2026-01-01T10:00:00] run (send #1, 1 notes): /x/kurgu wake claude /p 1\n"
+        + json.dumps({"type": "result", "result": legacy}) + "\n" + legacy + "\n[not a timestamp] " + legacy + "\n"
+        + "  finished, exit code 0\n| " + legacy + "\n")
+    default = diag.build_report(project_dir)
+    assert legacy not in default and "run (send #1, 1 notes)" in default and "  finished, exit code 0" in default
+    assert legacy in diag.build_report(project_dir, include_agent_output=True)
+
+
+def test_a_project_shipped_listening_json_with_junk_beats_cannot_crash_the_heartbeat(project_dir):
+    os.makedirs(os.path.join(project_dir, ".kurgu"), exist_ok=True)
+    junk = {"1": {"pid": 1, "beat": "x"}, "2": {"pid": os.getpid(), "beat": None}, "3": {"pid": os.getpid(), "beat": float("inf")}, "4": "text", "5": {"pid": os.getpid(), "beat": [1]}}
+    open(os.path.join(project_dir, ".kurgu", "listening.json"), "w").write(json.dumps(junk).replace("Infinity", "1e999"))
+    assert agent_notes.is_listening(project_dir) is False
+    agent_notes._beat(project_dir, time.time(), None)                                                  # does not raise
+    assert list(agent_notes._read_listeners(project_dir)) == [str(os.getpid())]
+    assert agent_notes.is_listening(project_dir) is True

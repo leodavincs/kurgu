@@ -181,6 +181,9 @@ def _chrome():
     return "not found"
 
 
+_OWN_LINE = re.compile(r"^(\[\d{4}-\d\d-\d\dT[\d:]{8}\] |  (finished, exit code -?\d+$|stopped: still running after [\d.]+ s$|could not start: ))")
+
+
 def build_report(d, include_agent_output=False):
     import agent_notes
     d = os.path.realpath(d)
@@ -222,7 +225,7 @@ def build_report(d, include_agent_output=False):
         with open(p, encoding="utf-8", errors="replace") as f:
             lines = [l.rstrip("\n") for l in f.readlines()]
         if not include_agent_output:
-            lines = [l for l in lines if not l.startswith("| ")]          # the agent's output may quote the user's notes
+            lines = [l for l in lines if _OWN_LINE.match(l)]               # allowlist: Kurgu's own line shapes only (agent output, also unprefixed legacy output, may quote notes)
         L += lines[-50:] or ["(empty)"]
     except OSError as e:
         L.append("(refused: hook.log is a symbolic link)" if os.path.islink(os.path.join(d, ".kurgu")) or "symbolic" in str(e) else "(no hook.log)")

@@ -17,6 +17,7 @@ Pure standard library plus schema; no network. The project file is written throu
 import argparse
 import collections
 import json
+import math
 import os
 import sys
 import threading
@@ -544,12 +545,23 @@ def _locked_update(d, fn):
         pass
 
 
+def _num(v):
+    """A finite number from a (possibly project-shipped) JSON value, else None."""
+    if isinstance(v, bool) or not isinstance(v, (int, float, str)):
+        return None
+    try:
+        f = float(v)
+    except ValueError:
+        return None
+    return f if math.isfinite(f) else None
+
+
 def _beat(d, since, agent):
     pid = os.getpid()
     now = time.time()
 
     def go(e):
-        for k in [k for k, v in e.items() if not isinstance(v, dict) or not _pid_alive(v.get("pid", -1)) or now - float(v.get("beat", 0) or 0) > 10 * BEAT_FRESH]:
+        for k in [k for k, v in e.items() if not isinstance(v, dict) or not _pid_alive(v.get("pid", -1)) or (_num(v.get("beat")) is None or now - _num(v.get("beat")) > 10 * BEAT_FRESH)]:
             if k != str(pid):
                 del e[k]                                   # dead process or long-stale entry: pruned
         e[str(pid)] = {"pid": pid, "since": since, "beat": now, **({"agent": agent} if agent else {})}
@@ -565,7 +577,8 @@ def is_listening(d, now=None):
     now = time.time() if now is None else now
     for e in _read_listeners(d).values():
         try:
-            if 0 <= now - float(e["beat"]) < BEAT_FRESH and _pid_alive(e["pid"]):
+            b = _num(e.get("beat")) if isinstance(e, dict) else None
+            if b is not None and 0 <= now - b < BEAT_FRESH and _pid_alive(e["pid"]):
                 return True
         except (KeyError, TypeError, ValueError):
             continue
