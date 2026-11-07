@@ -94,6 +94,7 @@ def run_case(tmp_path, proj, times, chrome_exe):
             time.sleep(0.2)
         js = """(async (t) => {
           const st = await import('/web/js/state.js'), pv = await import('/web/js/preview.js');
+          pv.setZoom(1);   // parity is measured at full resolution: the preview canvas is only as big as what is shown, and at zoom 1 that is every project pixel
           const c = document.getElementById('canvas'); let prev = '', cur = '';
           for (let i = 0; i < 40; i++) {
             st.setTime(t); pv.requestRedraw(); await new Promise(r => setTimeout(r, 150));

@@ -515,6 +515,7 @@ def test_preview_text_matches_render_frame(chrome):
     p = chrome.new_page()
     try:
         p.open(srv.url("/?t=2"), lang="en", ready="window.__kurgu && __kurgu.S.project && document.querySelector('.row')")
+        p.eval("__kurgu.setZoom(1)")        # compare at 100 %: the preview canvas is full resolution there (in the fit view it is only as big as what is shown)
         # wait until the fonts are loaded and the canvas stops changing
         last, box = None, None
         t0 = time.time()

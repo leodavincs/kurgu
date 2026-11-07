@@ -766,7 +766,8 @@ function wantScale() {
 }
 function applyScale(force) {
   const want = wantScale();
-  if (!force && Math.abs(Math.log(want / rs)) < 0.15) return;      // no flicker while a window edge is dragged
+  const rel = want / rs;
+  if (!force && !(want >= 0.999 && rs < 0.999) && rel > 0.87 && rel < 1.15) return;      // no flicker while a window edge is dragged; full size is always honoured
   rs = want;
   dom.canvas.width = Math.round(W * rs); dom.canvas.height = Math.round(H * rs);
   grainTile.pattern = null;

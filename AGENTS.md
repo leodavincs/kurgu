@@ -4,7 +4,7 @@ Kurgu is a local Premiere-style timeline editor for videos that an agent writes 
 
 ## Setup
 
-Python 3.10+, ffmpeg + ffprobe on PATH, installed with `pipx install git+https://github.com/leodavincs/kurgu` (commands `kurgu`, `kurgu-render`, `kurgu-mcp`) or, in a clone, a virtualenv with `pip install -r requirements.txt` (`python scripts/check_deps.py` says what is missing). Tests: `python -m pytest -q`. Use `python` (or `py -3` on Windows) where this file says `python3`.
+Install with one line: `curl -LsSf https://raw.githubusercontent.com/leodavincs/kurgu/main/install.sh | sh` (macOS / Linux) or `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/leodavincs/kurgu/main/install.ps1 | iex"` (Windows): Python 3.10+ and ffmpeg are fetched when missing; commands `kurgu`, `kurgu-render`, `kurgu-mcp`, `kurgu-notes`. `kurgu doctor` says what is missing or wrong. In a clone: a virtualenv with `pip install -r requirements.txt` (`python scripts/check_deps.py`). Tests: `python -m pytest -q`. Use `python` (or `py -3` on Windows) where this file says `python3`.
 
 ## Workflow
 
