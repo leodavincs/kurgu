@@ -124,7 +124,7 @@ def test_legacy_handshake_and_tools_list(project_dir):
         assert m.call("ping")["result"] == {}
         names = [t["name"] for t in m.call("tools/list")["result"]["tools"]]
         assert names == ["open_editor", "get_state", "get_project", "edit_project", "render_frame", "render",
-                         "get_changes", "get_brief", "update_brief", "get_notes", "update_note", "add_note", "list_fonts", "list_media", "import_file",
+                         "get_changes", "get_brief", "update_brief", "get_notes", "update_note", "add_note", "notes_list", "notes_wait", "notes_done", "list_fonts", "list_media", "import_file",
                          "transcribe", "make_captions"]
         for t in m.call("tools/list")["result"]["tools"]:
             assert t["inputSchema"]["type"] == "object" and "project_dir" in t["inputSchema"]["properties"] and t["description"]
@@ -151,7 +151,7 @@ def test_modern_era_without_handshake(project_dir):
         assert d["supportedVersions"] == ["2026-07-28"] and d["resultType"] == "complete"
         assert d["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "kurgu"
         tl = m.call("tools/list", meta=meta)["result"]
-        assert tl["resultType"] == "complete" and len(tl["tools"]) == 17
+        assert tl["resultType"] == "complete" and len(tl["tools"]) == 20
         assert isinstance(tl["ttlMs"], int) and tl["cacheScope"] in ("public", "private")  # required by Claude Code 2.1.296
         r = m.call("tools/call", {"name": "get_project", "arguments": {"summary": True}}, meta=meta)["result"]
         assert r["resultType"] == "complete" and "k_buyuk" in r["content"][0]["text"]

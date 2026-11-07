@@ -167,7 +167,7 @@ def test_load_project_missing(tmp_path):
 def test_old_notes_are_normalised_with_defaults():
     p = schema.normalize({"notes": [{"id": "n_ab12", "t": 12.3, "text": "loud", "created": "2026-09-29T15:04:00"}, "junk", {"t": "x"}]})
     assert p["notes"][0] == {"id": "n_ab12", "t": 12.3, "text": "loud", "created": "2026-09-29T15:04:00", "done": False,
-                             "author": "user", "resolved_at": "", "layer_ids": [], "reply": ""}
+                             "author": "user", "resolved_at": "", "layer_ids": [], "reply": "", "sent": ""}
     assert p["notes"][1]["id"] == "n_3" and p["notes"][1]["t"] == 0 and p["notes"][1]["text"] == ""
 
 

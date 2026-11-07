@@ -45,6 +45,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
+import agent_notes
 import fonts
 import media_tools
 import captions
@@ -766,6 +767,60 @@ def tool_add_note(a, ctx):
     return [text(f'Added note {n["id"]} @ {num(n["t"])}s (shows in the editor as an agent note).')]
 
 
+def _agent_note_views(d, status):
+    if status not in ("open", "sent", "done", "all"):
+        raise ToolError('status must be "sent", "open", "done" or "all".')
+    require_project(d)
+    return agent_notes.list_views(d, status)
+
+
+def tool_notes_list(a, ctx):
+    d = project_dir(a)
+    status = a.get("status") or "sent"
+    views = _agent_note_views(d, status)
+    if not views:
+        return [text(f"No {status} notes.")]
+    return [text(jdump({"status": status, "count": len(views), "notes": views, "file": agent_notes.NOTES_MD,
+                        "hint": "Fix each note at its time t (look at `frame`, a JPEG of that moment, and `layers`), then call "
+                                "notes_done with the ids and a one-line reply."}))]
+
+
+def tool_notes_wait(a, ctx):
+    """Block until the human clicks Send in the editor (a new line in .kurgu/inbox.jsonl), then return those notes."""
+    d = project_dir(a)
+    require_project(d)
+    timeout = a.get("timeout", 120)
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout < 0:
+        raise ToolError("timeout must be a number of seconds >= 0.")
+    timeout = min(float(timeout) or 120.0, 600.0)
+    since = a.get("since")
+    entries = agent_notes.wait_for_send(d, since if isinstance(since, int) and not isinstance(since, bool) else None, timeout)
+    if entries is None:
+        return [text(json.dumps({"timeout": True, "inbox": agent_notes.inbox_len(d),
+                                 "hint": "Nothing was sent yet. Call notes_wait again (pass `since` = this inbox value to miss nothing)."}))]
+    return [text(jdump({"sent": entries, "inbox": agent_notes.inbox_len(d), "file": agent_notes.NOTES_MD,
+                        "hint": "Fix each note, then call notes_done with the ids and a one-line reply."}))]
+
+
+def tool_notes_done(a, ctx):
+    d = project_dir(a)
+    ids = as_json_arg(a.get("ids"), "ids")
+    if isinstance(ids, str):
+        ids = [ids]
+    if not isinstance(ids, list) or not ids or any(not isinstance(x, str) for x in ids):
+        raise ToolError("ids must be a non-empty list of note ids (see notes_list).")
+    reply = a.get("reply", "")
+    if not isinstance(reply, str):
+        raise ToolError("reply must be a string.")
+    require_project(d)
+    try:
+        done = agent_notes.mark_done(d, ids, reply, _write_notes)
+    except ValueError as e:
+        raise ToolError(str(e))
+    return [text(f'{len(done)} note(s) marked done: ' + ", ".join(n["id"] for n in done)
+                 + (f' (reply: {reply.strip()})' if reply.strip() else "") + ". The editor shows them as fixed.")]
+
+
 # ---------------------------------------------------------------- render tools
 def tool_render_frame(a, ctx):
     d = project_dir(a)
@@ -1081,6 +1136,23 @@ TOOLS = [
      schema_of({"t": {"type": "number", "description": "Timeline time in seconds."},
                 "text": {"type": "string", "description": "The note."}}, ["t", "text"]),
      tool_add_note, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
+    ("notes_list", "List notes the user sent to you",
+     "Notes from the editor's watch + note mode. status: sent (default: released by the user, not fixed yet), open (drafts), done, all. "
+     "Each has id, t, timecode, text, layers active then, `frame` (JPEG path relative to the project) and status. Same data as NOTLAR.md.",
+     schema_of({"status": {"type": "string", "enum": ["sent", "open", "done", "all"], "description": "Default sent."}}),
+     tool_notes_list, {"readOnlyHint": True}),
+    ("notes_wait", "Wait until the user sends notes",
+     "Blocks (up to timeout, default 120 s, max 600) until the user clicks the send button in the editor, then returns the notes of that "
+     "send. Call it in a loop to be woken the moment the user is done watching; on timeout call again with `since` = the returned inbox.",
+     schema_of({"timeout": {"type": "number", "description": "Seconds to wait (default 120, max 600)."},
+                "since": {"type": "integer", "description": "Inbox length from a previous call; returns sends after it (default: now)."}}),
+     tool_notes_wait, {"readOnlyHint": True}),
+    ("notes_done", "Mark sent notes as fixed",
+     "Mark notes done after fixing them, with a one-line reply the user sees under the note (\"fixed\" in the editor), e.g. "
+     "\"Score order swapped, home team first\". Updates NOTLAR.md too. Resolve, do not delete.",
+     schema_of({"ids": {"type": "array", "items": {"type": "string"}, "description": "Note ids (from notes_list / notes_wait)."},
+                "reply": {"type": "string", "description": "One-line reply (what you changed)."}}, ["ids"]),
+     tool_notes_done, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}),
     ("list_fonts", "List usable fonts",
      "Font ids for text layers' `font` (project, bundled, and with query/source also system fonts).",
      schema_of({"query": {"type": "string", "description": "Filter by family/style/id substring, e.g. 'gill'."},

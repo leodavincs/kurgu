@@ -13,7 +13,8 @@ Python 3.10+, ffmpeg + ffprobe on PATH, installed with `pipx install git+https:/
 3. Start the editor and tell the human the URL: `open_editor` (MCP) or `python3 server.py <dir> --no-open` in the background.
 4. Look before you show: render stills (`render_frame`, or `python3 render.py <dir> --frame 12.3 --output /tmp/f.png --draft`) at the first frame, each title, and the end. Fix what is off.
 5. **Brief.** `<dir>/brief.md` is the video's creative brief (max 250 words, short bullets: what it is, audience/platform, tone/style, hard rules, open decisions). Read it before editing (`get_brief`). Whenever the human states intent, style, audience or a rule about the video, update it (`update_brief`: full replace, max 2000 chars; without MCP edit the file). No secrets/paths/personal data. Ask AI in the editor passes it to its agent.
-6. **Before every follow-up edit, re-read what the human did:** current `project.json`, the tail of `changes.md` (one line per manual edit; respect them, do not revert values they set), and `.kurgu/state.json` (`{time, selected, playing, language, updated}`: "this text" = the selected layer(s), "here" = `time`). If `project.json` has `notes`, they are the human's timeline comments (Notes panel). When the human says "apply my notes" / "notlarımı uygula": `get_notes` (open ones, with the layers under each), handle each at its time, then `update_note` it with `done: true` and a one-line `reply` ("Blur reduced 22→8"; shown under the note). Resolve, do not delete; `add_note` to flag something. Without MCP set `done`/`reply` on the note in project.json.
+6. **Before every follow-up edit, re-read what the human did:** current `project.json`, the tail of `changes.md` (one line per manual edit; respect them, do not revert values they set), and `.kurgu/state.json` (`{time, selected, playing, language, updated}`: "this text" = the selected layer(s), "here" = `time`). If `project.json` has `notes`, they are the human's timeline comments (Notes panel). When the human says "apply my notes" / "notlarımı uygula": `get_notes` (open ones, with the layers under each), handle each at its time, then `update_note` it with `done: true` and a one-line `reply` ("Blur reduced 22→8"; shown under the note). Resolve, do not delete; `add_note` to flag something.
+   **Watch + note loop:** the human can watch the video in the editor (*İzle + not*) and click Send. Run `kurgu notes wait <dir>` in the background (MCP `notes_wait`): it returns the moment he sends. Notes get `sent` (timestamp); `NOTLAR.md` in the project folder lists each with timecode, layers at that time and a frame JPEG under `.kurgu/notes/`. Fix each, then `kurgu notes done <dir> <id...> --reply "what you changed"` (MCP `notes_done`); `kurgu notes list <dir>` shows what is still to fix. Then wait again. Without MCP set `done`/`reply` on the note in project.json.
 7. Render a draft first (`--draft`, half resolution), full quality only when the human says it is right.
 
 ## Rules
@@ -37,6 +38,7 @@ Same powers over MCP (`mcp_server.py`, stdio, zero dependencies). Every tool tak
 | `render_frame` | one PNG frame (image), `t`, `draft` |
 | `render` | full render, `draft` (progress notifications) |
 | `get_notes`, `update_note`, `add_note` | read open/done notes with the layers at their time; resolve/edit/reply; leave an agent note |
+| `notes_list`, `notes_wait`, `notes_done` | notes the human sent from watch mode: list (default sent), block until he sends, mark fixed with a reply |
 | `get_brief`, `update_brief` | read / fully replace `brief.md` (max 2000 chars; logs `[agent] brief updated`) |
 | `get_changes` | tail of `changes.md` (what the human did by hand) |
 | `transcribe`, `make_captions` | optional local speech-to-text (needs `pip install mlx-whisper` or `faster-whisper`): word timings in timeline time; one `text` layer per caption chunk in group "Captions" (`cap_1`, ...) |
@@ -53,6 +55,7 @@ python3 server.py <dir> [--port 8765] [--no-open]                  # editor
 python3 render.py <dir> [--draft] [--output f.mp4]                 # video
 python3 render.py <dir> --frame 12.3 --output f.png [--draft]      # one frame
 python3 mcp_server.py                                              # MCP server on stdio
+kurgu notes wait|list|done <dir> ...                               # watch + note loop (python3 server.py notes ...)
 python3 -m pytest -q
 ```
 

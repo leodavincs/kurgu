@@ -26,5 +26,5 @@ kurgu-render = "render:main"
 kurgu-mcp = "mcp_server:main"
 
 [tool.setuptools]
-py-modules = ["media_tools", "server", "render", "schema", "fonts", "anim", "presets", "ai", "exports", "transcribe", "captions", "mcp_server", "kurgu_paths"]
+py-modules = ["media_tools", "server", "render", "schema", "fonts", "anim", "presets", "ai", "exports", "transcribe", "captions", "mcp_server", "kurgu_paths", "agent_notes"]
 license-files = ["LICENSE"]

@@ -16,7 +16,7 @@ Authoritative contract: `SPEC.md` at the plugin root. This is the condensed vers
 | `global.loudness_lufs` | -14 | `null` = no loudness normalisation |
 | `global.fade_out` | 0 | seconds; picture to black and sound to silence at the end |
 | `layers` | `[]` | FIRST element = front-most |
-| `notes` | `[]` | `{id, t, text, created, done, author, resolved_at, layer_ids, reply}` comments pinned to the timeline (only id/t/text needed; `done` bool, `author` user/agent, `reply` one-line agent answer) |
+| `notes` | `[]` | `{id, t, text, created, done, author, resolved_at, layer_ids, reply}` comments pinned to the timeline (only id/t/text needed; `done` bool, `author` user/agent, `reply` one-line agent answer, `sent` timestamp when the human sent it) |
 
 ## Layer fields (all types)
 `id` (required, unique) · `name` · `type` (`video|image|text|color|audio`, required) · `group` (display heading only) · `link` (string, optional: layers sharing it are a linked clip, e.g. video + its sound; editor-only, no effect on render; remove with `null`) · `hidden` · `locked` · `start`, `end` (s, required, active in `[start, end)`) · `fade_in`, `fade_out` (s, linear; opacity for visual layers, gain for audio).

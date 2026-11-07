@@ -39,6 +39,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
+import agent_notes
 import ai
 import media_tools
 import exports
@@ -813,6 +814,73 @@ class App:
         res.sort(key=lambda r: -r["mtime"])
         return res[:200]
 
+    # ------------------------------------------------------------ watch + note: send notes to the agent
+    def notes_info(self):
+        return {"agent_name": agent_notes.agent_name(self.dir), "inbox": agent_notes.inbox_len(self.dir)}
+
+    def note_frame_jpeg(self, nid, t):
+        """Render the timeline frame at `t` (same machinery as /api/frame, draft size) and store it as .kurgu/notes/<id>.jpg."""
+        from PIL import Image
+        png = self.frame(t)
+        out = os.path.join(self.sub("notes"), nid + ".jpg")
+        with Image.open(png) as im:
+            im = im.convert("RGB")
+            if im.width > 640:
+                im = im.resize((640, max(1, round(im.height * 640 / im.width))), Image.LANCZOS)
+            tmp = out + ".part"
+            im.save(tmp, format="JPEG", quality=82)
+        os.replace(tmp, out)
+        return out
+
+    def notes_send(self, body):
+        """POST /api/notes/send {ids?}: hand notes to the agent. Without ids: every note of the human that is neither sent nor done.
+        Stamps `sent` in project.json (one write, one changes.md line, the editor takes it as one undo step), saves a frame
+        JPEG per note, rewrites NOTLAR.md and appends one line to .kurgu/inbox.jsonl (what `kurgu notes wait` listens for)."""
+        ids = body.get("ids")
+        if ids is not None and (not isinstance(ids, list) or any(not isinstance(x, str) for x in ids)):
+            raise HttpError(400, "ids must be a list of note ids")
+        try:
+            raw = json.loads(self.project_bytes())
+        except ValueError as e:
+            raise HttpError(500, f"project.json is not valid JSON: {e}")
+        notes = [schema.normalize_note(n, i) for i, n in enumerate(raw.get("notes") or []) if isinstance(n, dict)]
+        want = [n for n in notes if (n["id"] in ids if ids is not None else n["author"] == "user" and not n["sent"] and not n["done"])]
+        if not want:
+            raise HttpError(400, "no notes to send")
+        failed = []
+        from concurrent.futures import ThreadPoolExecutor
+
+        def one(n):
+            try:
+                self.note_frame_jpeg(n["id"], n["t"])
+            except Exception as e:                      # a frame that cannot be drawn must not block the note
+                failed.append(f'{n["id"]}: {e}')
+        with ThreadPoolExecutor(3) as ex:
+            list(ex.map(one, want))
+        stamp = agent_notes.now_iso()
+        with self.write_lock:
+            old = self.project_bytes()
+            cur = json.loads(old)
+            cur_notes = [schema.normalize_note(n, i) for i, n in enumerate(cur.get("notes") or []) if isinstance(n, dict)]
+            sent_ids = {n["id"] for n in want}
+            sent_notes = []
+            for n in cur_notes:
+                if n["id"] in sent_ids:
+                    n["sent"] = stamp
+                    sent_notes.append(n)
+            if not sent_notes:
+                raise HttpError(409, "the notes are gone from project.json")
+            cur["notes"] = cur_notes
+            name = agent_notes.agent_name(self.dir) or "agent"
+            version = self._write_project(cur, [f"{len(sent_notes)} note(s) sent to {name}: " + "; ".join(
+                f'{agent_notes.tc(n["t"])} {n["text"][:60]}' for n in sorted(sent_notes, key=lambda n: n["t"]))], old)
+            proj = schema.normalize(cur)
+            sent_norm = [n for n in proj["notes"] if n["id"] in sent_ids]
+            entry = agent_notes.append_inbox(self.dir, proj, sorted(sent_norm, key=lambda n: n["t"]), stamp)
+            agent_notes.write_notes_md(self.dir, proj)
+        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "at": stamp, "file": agent_notes.NOTES_MD,
+                "failed_frames": failed, "inbox": entry, "project": proj, "version": version}
+
     def reveal(self, rel):
         full = os.path.realpath(os.path.join(self.dir, str(rel)))
         if not is_under(full, self.dir) or not os.path.exists(full):
@@ -1060,6 +1128,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/exports/reveal" and method == "POST":
             app.reveal(self.read_json().get("path", ""))
             return self.reply(200, {"ok": True})
+        elif path == "/api/notes/info" and method == "GET":
+            return self.reply(200, app.notes_info())
+        elif path == "/api/notes/send" and method == "POST":
+            return self.reply(200, app.notes_send(self.read_json()))
         elif path == "/api/frame" and method == "GET":
             try:
                 t = float(q.get("t", ""))
@@ -1207,6 +1279,10 @@ def make_server(project_dir, port=8765, tries=50):
 
 
 def main(argv=None):
+    args = sys.argv[1:] if argv is None else list(argv)
+    if args and args[0] == "notes":                        # kurgu notes list|wait|done <project_dir> ...
+        import agent_notes as _an
+        sys.exit(_an.main(args[1:]))
     for _s in (sys.stdout, sys.stderr):  # Windows consoles default to a legacy code page; paths may hold emoji / Turkish letters
         if hasattr(_s, "reconfigure"):
             _s.reconfigure(encoding="utf-8", errors="replace")

@@ -375,7 +375,7 @@ NOTE_AUTHORS = ("user", "agent")
 
 
 def normalize_note(n, i=0):
-    """Fill/repair one timeline note. Old notes (id, t, text, created) gain done=False, author="user", layer_ids=[], reply=""."""
+    """Fill/repair one timeline note. Old notes (id, t, text, created) gain done=False, author="user", layer_ids=[], reply="", sent=""."""
     nn = dict(n)
     nn["id"] = _str(n.get("id"), "") or f"n_{i + 1}"
     nn["t"] = _clean_number(_flt(n.get("t"), 0.0))
@@ -387,6 +387,7 @@ def normalize_note(n, i=0):
     ids = n.get("layer_ids")
     nn["layer_ids"] = [x for x in ids if isinstance(x, str)] if isinstance(ids, list) else []
     nn["reply"] = _str(n.get("reply"), "")
+    nn["sent"] = _str(n.get("sent"), "")
     return nn
 
 
