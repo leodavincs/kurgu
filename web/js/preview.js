@@ -320,6 +320,19 @@ export function layerBox(l) {
   if (g.dim) out.dim = g.dim;
   return out;
 }
+/** Viewer geometry for overlays on the stage: frame origin (css px in the stage), zoom, and the project size. */
+export const viewGeom = () => ({ vox, voy, vz, W, H });
+/** Visual layers under any of the given project-pixel points at the playhead, front-most first (layers hit by the FIRST point come first). Colour layers are skipped. */
+export function layersUnder(pts) {
+  const hits = [];
+  S.project.layers.forEach((l, i) => {
+    if (!VISUAL.has(l.type) || l.type === 'color' || l.hidden || !isActive(l, S.t)) return;
+    const g = geom(l); if (!g || Math.abs(g.T.sx) < 1e-6 || Math.abs(g.T.sy) < 1e-6) return;
+    const idx = pts.findIndex(p => { const q = toLocalPt(g, p.x, p.y); return Math.abs(q.x) <= g.w1 / 2 && Math.abs(q.y) <= g.h1 / 2; });
+    if (idx >= 0) hits.push({ l, first: idx === 0 ? 0 : 1, i });
+  });
+  return hits.sort((a, b) => a.first - b.first || a.i - b.i).map(h => h.l);
+}
 // ---- selection handles (project px): 4 corners, 4 side midpoints, rotate handle above the top edge, anchor crosshair
 const HANDLES = { nw: [-1, -1], n: [0, -1], ne: [1, -1], e: [1, 0], se: [1, 1], s: [0, 1], sw: [-1, 1], w: [-1, 0] };
 function handleSet(l) {

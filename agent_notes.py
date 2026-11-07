@@ -84,6 +84,66 @@ def read_inbox(d):
     return out
 
 
+# ---------------------------------------------------------------- marks (circles / boxes / arrows drawn on the frame to say WHERE)
+MARK_TYPES = ("ellipse", "rect", "arrow")
+MARK_COLOR = (243, 195, 75)          # cue yellow, same as the editor's --note
+
+
+def _r(v, n=0):
+    v = round(float(v), n)
+    return int(v) if n == 0 else v
+
+
+def _region(cx, cy):
+    """Plain-language place of a point given as 0-1 coordinates: the quarter of the frame, or the centre."""
+    if 0.4 <= cx <= 0.6 and 0.4 <= cy <= 0.6:
+        return "merkez"
+    return f'{"sol" if cx < 0.5 else "sağ"} {"üst" if cy < 0.5 else "alt"} çeyrek'
+
+
+def mark_view(m, W, H):
+    """One mark for agents: pixel + normalised coordinates (project space W x H), a plain-language hint and the layers under it (topmost first)."""
+    typ = m.get("type")
+    W, H = max(1.0, float(W)), max(1.0, float(H))
+    out = {"type": typ}
+    if typ == "arrow":
+        x1, y1, x2, y2 = (float(m.get(k, 0)) for k in ("x1", "y1", "x2", "y2"))
+        out.update(x1=_r(x1), y1=_r(y1), x2=_r(x2), y2=_r(y2), nx1=_r(x1 / W, 4), ny1=_r(y1 / H, 4), nx2=_r(x2 / W, 4), ny2=_r(y2 / H, 4))
+        out["hint"] = f"işaret: ok, ({_r(x1)}, {_r(y1)}) noktasından ({_r(x2)}, {_r(y2)}) noktasına — ucu {_region(x2 / W, y2 / H)}"
+    else:
+        x, y, w, h = (float(m.get(k, 0)) for k in ("x", "y", "w", "h"))
+        cx, cy = x + w / 2, y + h / 2
+        out.update(x=_r(x), y=_r(y), w=_r(w), h=_r(h), nx=_r(x / W, 4), ny=_r(y / H, 4), nw=_r(w / W, 4), nh=_r(h / H, 4), center=[_r(cx), _r(cy)])
+        name = "elips" if typ == "ellipse" else "dikdörtgen"
+        out["hint"] = f"işaret: {name}, merkez ({_r(cx)}, {_r(cy)}), {_r(w)}x{_r(h)} px — {_region(cx / W, cy / H)}"
+    lays = [l.get("name") or l.get("id") for l in (m.get("layers") or []) if isinstance(l, dict)]
+    out["layers"] = lays
+    if lays:
+        out["hint"] += " — altındaki katmanlar (üstten alta): " + ", ".join(lays)
+    return out
+
+
+def burn_marks(im, views):
+    """Draw the marks (as `mark_view` dicts) onto a PIL image in cue yellow, 3 px at 1000 px wide, no fill."""
+    from PIL import ImageDraw
+    d = ImageDraw.Draw(im)
+    w, h = im.size
+    lw = max(3, round(w * 0.004))
+    for v in views:
+        if v["type"] == "arrow":
+            x1, y1, x2, y2 = v["nx1"] * w, v["ny1"] * h, v["nx2"] * w, v["ny2"] * h
+            d.line([(x1, y1), (x2, y2)], fill=MARK_COLOR, width=lw)
+            import math
+            a = math.atan2(y2 - y1, x2 - x1)
+            L = max(12, lw * 5)
+            for da in (2.6, -2.6):
+                d.line([(x2, y2), (x2 + L * math.cos(a + da), y2 + L * math.sin(a + da))], fill=MARK_COLOR, width=lw)
+        else:
+            box = [v["nx"] * w, v["ny"] * h, (v["nx"] + v["nw"]) * w, (v["ny"] + v["nh"]) * h]
+            (d.ellipse if v["type"] == "ellipse" else d.rectangle)(box, outline=MARK_COLOR, width=lw)
+    return im
+
+
 def layers_under(proj, t):
     return [{"id": l.get("id"), "name": l.get("name", ""), "type": l.get("type")} for l in proj.get("layers", [])
             if isinstance(l, dict) and not l.get("hidden") and l.get("start", 0) <= t < l.get("end", 0)]
@@ -97,6 +157,8 @@ def tc(t):
 def note_view(d, n, proj):
     out = {"id": n["id"], "t": n["t"], "timecode": tc(n["t"]), "text": n["text"], "status": status_of(n),
            "layers": layers_under(proj, n["t"])}
+    if n.get("marks"):
+        out["marks"] = [mark_view(m, proj.get("width", 1920), proj.get("height", 1080)) for m in n["marks"]]
     for k in ("sent", "reply", "resolved_at", "created"):
         if n.get(k):
             out[k] = n[k]
@@ -130,7 +192,10 @@ def write_notes_md(d, proj=None):
         L.append(f"- time: {v['t']} s")
         L.append("- layers then: " + (", ".join(f"{l['name'] or l['id']} ({l['type']})" for l in v["layers"]) or "none"))
         if v.get("frame"):
-            L.append(f"- frame: ![{v['timecode']}]({v['frame']})")
+            L.append(f"- frame: ![{v['timecode']}]({v['frame']})" + (" (the marks are drawn on it in yellow)" if v.get("marks") else ""))
+        for mk in v.get("marks", []):
+            L.append(f"- {mk['hint']}")
+            L.append("  - coordinates: " + ", ".join(f"{k}={mk[k]}" for k in mk if k not in ("type", "hint", "layers", "center")) + " (px in the project frame; n* = 0-1 of its width/height)")
         if v.get("sent"):
             L.append(f"- sent: {v['sent']}")
         if v.get("reply"):
@@ -205,6 +270,7 @@ def render_text(views):
     for v in views:
         lay = ", ".join(l["name"] or l["id"] for l in v.get("layers", [])) or "-"
         out.append(f"[{v['id']}] {v['timecode']} ({v['t']} s) {v['status']}: {v['text']}\n    layers: {lay}"
+                   + "".join(f"\n    {mk['hint']}" for mk in v.get("marks", []))
                    + (f"\n    frame: {v['frame']}" if v.get("frame") else "") + (f"\n    reply: {v['reply']}" if v.get("reply") else ""))
     return "\n".join(out)
 

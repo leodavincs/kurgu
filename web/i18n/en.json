@@ -632,5 +632,12 @@
   "menu.themeDark": "Switch to dark theme",
   "menu.reviewNotes": "Notes panel",
   "review.notes": "Notes",
-  "av.scenesTip": "Scenes: click = go to the start of a scene"
+  "av.scenesTip": "Scenes: click = go to the start of a scene",
+  "mark.tools": "Draw on the frame",
+  "mark.ellipse": "Circle / ellipse",
+  "mark.rect": "Rectangle",
+  "mark.arrow": "Arrow",
+  "mark.undo": "Undo last shape",
+  "mark.clear": "Clear drawing",
+  "mark.only": "Here"
 }

@@ -632,5 +632,12 @@
   "menu.themeDark": "Koyu temaya geç",
   "menu.reviewNotes": "Notlar paneli",
   "review.notes": "Notlar",
-  "av.scenesTip": "Sahneler: tıkla = sahnenin başına git"
+  "av.scenesTip": "Sahneler: tıkla = sahnenin başına git",
+  "mark.tools": "Kare üzerine çiz",
+  "mark.ellipse": "Daire / elips",
+  "mark.rect": "Dikdörtgen",
+  "mark.arrow": "Ok",
+  "mark.undo": "Son şekli geri al",
+  "mark.clear": "Çizimi temizle",
+  "mark.only": "Burası"
 }

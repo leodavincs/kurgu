@@ -41,10 +41,10 @@ export function ic(name, glyph = '') {
 // ---------------------------------------------------------------- data helpers
 export const layersAt = (P, time) => P.layers.filter(l => !l.hidden && l.start <= time && time < l.end);
 /** Add a user note at `at` (seconds); returns its id. */
-export function addNote(text, at) {
-  text = String(text || '').trim(); if (!text) return null;
+export function addNote(text, at, marks) {
+  text = String(text || '').trim(); if (!text && !(marks && marks.length)) return null;
   const id = newId('n'); at = rnd(at);
-  change(p => { p.notes.push({ id, t: at, text, created: nowIso(), done: false, author: 'user', resolved_at: '', layer_ids: layersAt(p, at).map(l => l.id), reply: '' }); });
+  change(p => { p.notes.push({ id, t: at, text, created: nowIso(), done: false, author: 'user', resolved_at: '', layer_ids: layersAt(p, at).map(l => l.id), reply: '', ...(marks && marks.length ? { marks } : {}) }); });
   st.reveal = id; if (st.filter === 'done') setFilter('all');
   return id;
 }

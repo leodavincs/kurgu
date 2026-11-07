@@ -166,3 +166,45 @@ def test_default_mode_from_env_and_config(project_dir, monkeypatch):
     assert agent_notes.default_mode(project_dir) == "review"
     monkeypatch.setenv("KURGU_MODE", "nonsense")
     assert agent_notes.default_mode(project_dir) == "edit"
+
+
+# ------------------------------------------------------------------ marks drawn on the frame
+MARK = {"type": "ellipse", "x": 1080, "y": 340, "w": 260, "h": 180, "nx": 0.5625, "ny": 0.3148, "nw": 0.1354, "nh": 0.1667,
+        "layers": [{"id": "k_buyuk", "name": "Big title"}, {"id": "k_a", "name": "Clip A"}]}
+
+
+def test_schema_keeps_valid_marks_and_reports_bad_ones():
+    import schema
+    p = schema.normalize({"notes": [{"id": "n1", "t": 1, "text": "x"}, {"id": "n2", "t": 2, "text": "y", "marks": [MARK, {"type": "star"}, {"type": "arrow", "x1": 1, "y1": 2, "x2": 3}]}]})
+    assert "marks" not in p["notes"][0]                                   # notes without marks are untouched
+    assert [m["type"] for m in p["notes"][1]["marks"]] == ["ellipse"]
+    probs = schema.validate({"width": 10, "height": 10, "fps": 30, "duration": 1, "layers": [], "notes": [{"id": "n2", "t": 2, "text": "y", "marks": [{"type": "star"}, {"type": "arrow", "x1": 1}, "junk"]}]})
+    assert any("mark #1" in x and "type" in x for x in probs) and any("mark #2" in x and "y1" in x for x in probs) and any("mark #3" in x for x in probs)
+
+
+def test_send_burns_marks_in_and_writes_hint_layers_and_both_coordinate_systems(srv):
+    c, d = srv
+    seed(d, [dict(NOTES[0], marks=[MARK]), dict(NOTES[1], t=1.0, text="same second, no mark")])
+    st, data = c.req("POST", "/api/notes/send", {})
+    assert st == 200 and data["sent"] == 2
+    from PIL import Image
+    def yellow(nid):
+        im = Image.open(os.path.join(d, ".kurgu", "notes", nid + ".jpg")).convert("RGB")
+        return sum(1 for r, g, b in im.getdata() if r > 200 and 150 < g < 235 and b < 130)
+    assert yellow("n_a") > yellow("n_b") + 100                            # the ellipse is burned in; the same frame without marks has far less yellow
+    assert open(os.path.join(d, ".kurgu", "notes", "n_a.jpg"), "rb").read() != open(os.path.join(d, ".kurgu", "notes", "n_b.jpg"), "rb").read()
+    entry = json.loads(open(os.path.join(d, ".kurgu", "inbox.jsonl"), encoding="utf-8").read().splitlines()[0])
+    mk = [n for n in entry["notes"] if n["id"] == "n_a"][0]["marks"][0]
+    assert mk["x"] == 1080 and mk["w"] == 260 and mk["center"] == [1210, 430] and mk["nx"] == 0.5625 and mk["nw"] == 0.1354 and mk["layers"] == ["Big title", "Clip A"]
+    assert "işaret: elips, merkez (1210, 430), 260x180 px — sağ üst çeyrek" in mk["hint"] and "Big title, Clip A" in mk["hint"]
+    assert "marks" not in [n for n in entry["notes"] if n["id"] == "n_b"][0]
+    md = open(os.path.join(d, "NOTLAR.md"), encoding="utf-8").read()
+    assert "işaret: elips, merkez (1210, 430)" in md and "nx=0.5625" in md and "drawn on it in yellow" in md
+
+
+def test_arrow_hint_and_cli_json_shows_marks(project_dir):
+    seed(project_dir, [dict(NOTES[0], sent="2026-11-07T10:05:00", marks=[{"type": "arrow", "x1": 200, "y1": 900, "x2": 300, "y2": 800, "layers": []}])])
+    n = json.loads(cli("list", project_dir, "--json").stdout)["notes"][0]
+    assert n["marks"][0]["x2"] == 300 and n["marks"][0]["nx2"] == 0.1562
+    assert "ok" in n["marks"][0]["hint"] and "sol alt çeyrek" in n["marks"][0]["hint"]
+    assert "işaret: ok" in cli("list", project_dir).stdout

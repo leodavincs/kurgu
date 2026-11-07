@@ -388,7 +388,44 @@ def normalize_note(n, i=0):
     nn["layer_ids"] = [x for x in ids if isinstance(x, str)] if isinstance(ids, list) else []
     nn["reply"] = _str(n.get("reply"), "")
     nn["sent"] = _str(n.get("sent"), "")
+    if "marks" in n:
+        marks = normalize_marks(n.get("marks"))
+        if marks:
+            nn["marks"] = marks
+        else:
+            nn.pop("marks", None)
     return nn
+
+
+MARK_TYPES = ("ellipse", "rect", "arrow")
+MARK_NUMS = {"ellipse": ("x", "y", "w", "h"), "rect": ("x", "y", "w", "h"), "arrow": ("x1", "y1", "x2", "y2")}
+
+
+def mark_problems(m):
+    """Why one note mark is invalid (empty list = fine). Marks are shapes drawn on the frame: {type, x, y, w, h} (arrow: x1, y1, x2, y2) in
+    project pixels, optionally with the same values normalised 0-1 (nx, ny, nw, nh / nx1, ny1, nx2, ny2) and `layers` (what is under it)."""
+    if not isinstance(m, dict):
+        return ["is not an object"]
+    if m.get("type") not in MARK_TYPES:
+        return [f'type must be one of {", ".join(MARK_TYPES)}']
+    probs = [f"{k} must be a number" for k in MARK_NUMS[m["type"]] if not _isnum(m.get(k))]
+    for k in ("nx", "ny", "nw", "nh", "nx1", "ny1", "nx2", "ny2"):
+        if k in m and not _isnum(m[k]):
+            probs.append(f"{k} must be a number")
+    if m.get("layers") is not None and not isinstance(m.get("layers"), list):
+        probs.append("layers must be a list")
+    return probs
+
+
+def normalize_marks(marks):
+    """Keep the valid marks of a note (invalid ones are dropped; validate() reports them)."""
+    out = []
+    for m in marks if isinstance(marks, list) else []:
+        if not mark_problems(m):
+            mm = dict(m)
+            mm["layers"] = [l for l in (m.get("layers") or []) if isinstance(l, dict)]
+            out.append(mm)
+    return out
 
 
 # ---------------------------------------------------------------- validation
@@ -499,6 +536,12 @@ def validate(project, font_ids=None):
                 probs.append(f'{tag}: author must be "user" or "agent"')
             if n.get("done") is not None and not isinstance(n.get("done"), bool):
                 probs.append(f"{tag}: done must be true or false")
+            if "marks" in n:
+                if not isinstance(n["marks"], list):
+                    probs.append(f"{tag}: marks must be a list")
+                else:
+                    for j, mk in enumerate(n["marks"]):
+                        probs += [f"{tag}: mark #{j + 1}: {x}" for x in mark_problems(mk)]
     return probs
 
 

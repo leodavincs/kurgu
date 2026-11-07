@@ -5,7 +5,9 @@ import { S, change, setTime, clamp, loadExternal, timecode, sceneName } from './
 import * as API from './api.js';
 import { t, getLang } from './i18n.js';
 import { $, el, icon } from './dom.js';
-import { play, pause, togglePlay, setZoom, viewInfo } from './preview.js';
+import { play, pause, togglePlay, setZoom, viewInfo, viewGeom } from './preview.js';
+import { isReview } from './mode.js';
+import { startDraw, endDraw, takeDraft, draftMarks, markKey, makeToolRow } from './marks.js';
 import { addNote, layersAt } from './notes.js';
 
 { const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/web/watch.css'; document.head.append(link); }
@@ -60,21 +62,29 @@ function refreshSend() {
 let nbInput, nbTime, nbAt = null;
 function bindNoteBar() {
   nbInput = $('nb-input'); nbTime = $('nb-time');
-  const pin = () => { if (nbAt === null) nbAt = S.t; nbTime.textContent = tcShort(nbAt); };
-  const release = () => { nbAt = null; nbTime.textContent = tcShort(S.t); };
+  const pin = () => { if (nbAt === null) nbAt = S.t; nbTime.textContent = tcShort(nbAt); if (isReview()) startDraw(); };   // Review: the frame can be drawn on while the note is written
+  const release = () => { nbAt = null; nbTime.textContent = tcShort(S.t); endDraw(false); };
+  $('note-dock').append(makeToolRow());
   nbInput.addEventListener('focus', pin);
-  nbInput.addEventListener('blur', () => { if (!nbInput.value) release(); });
+  nbInput.addEventListener('blur', () => { if (!nbInput.value && !draftMarks().length) release(); });
   nbInput.addEventListener('keydown', e => {
     e.stopPropagation();
-    if (e.isComposing) return;
+    if (e.isComposing || markKey(e)) return;
     if (e.key === 'Enter') {
-      const v = nbInput.value.trim();
-      if (v) { addNote(v, nbAt === null ? S.t : nbAt); nbInput.value = ''; }
+      const v = nbInput.value.trim(), marks = draftMarks();
+      if (v || marks.length) { addNote(v || t('mark.only'), nbAt === null ? S.t : nbAt, marks); takeDraft(); nbInput.value = ''; }
       release(); nbInput.blur();
     } else if (e.key === 'Escape') { nbInput.value = ''; release(); nbInput.blur(); }
   });
   $('b-send').addEventListener('click', sendNotes);
 }
+/** Review mode: the note box sits under the viewer, on the viewer's centre line and about as wide as the video; otherwise it lives in the top bar. */
+function placeDock() {
+  const dock = $('note-dock'), tr = $('transport');
+  if (isReview()) { if (dock.parentNode !== tr.parentNode) tr.parentNode.insertBefore(dock, tr); sizeDock(); }
+  else { const c = document.querySelector('.tb-center'); if (dock.parentNode !== c) c.prepend(dock); dock.style.width = ''; }
+}
+function sizeDock() { if (!isReview()) return; const g = viewGeom(); $('note-dock').style.width = clamp(Math.round(g.W * g.vz), 420, 720) + 'px'; }
 /** N in the editor: jump into the top-bar note box (pinned to the playhead). */
 export function focusNote() { if (nbInput) { nbInput.focus(); nbInput.select(); } }
 
@@ -117,7 +127,7 @@ function build() {
   wInput = el('input', 'w-input'); wInput.id = 'w-input'; wInput.spellcheck = false; wInput.autocomplete = 'off';
   const enter = el('kbd', 'w-enter', ''); enter.id = 'w-enter';
   wChip = el('label', 'w-notebox'); wChip.append(wTime, wInput, enter);
-  const ctl = el('div', 'w-ctl'); ctl.append(playBtn, tcBox, wChip);
+  const ctl = el('div', 'w-ctl'); ctl.append(playBtn, tcBox, wChip, makeToolRow());
   const bottom = el('div', 'w-bottom'); bottom.append(seekEl, ctl);
   const main = el('div', 'w-main'); main.append(stageHost, top, wPaused, bottom);
   // side list
@@ -166,6 +176,7 @@ export async function openWatch() {
 export function closeWatch(fromFullscreen = false) {
   if (!isOpen) return;
   isOpen = false;
+  endDraw(false);
   if (S.playing) pause();
   endType(false); wInput.value = '';
   if (usedFullscreen) { usedFullscreen = false; try { if (navigator.keyboard && navigator.keyboard.unlock) navigator.keyboard.unlock(); } catch (e) { /* ignore */ } if (document.fullscreenElement && fromFullscreen !== true) document.exitFullscreen().catch(() => {}); }
@@ -181,10 +192,12 @@ function startType() {
   if (noteAt === null) { noteAt = S.t; resumeAfter = S.playing; if (S.playing) pause(); }
   wTime.textContent = tcShort(noteAt);
   wPaused.hidden = false; root.classList.add('typing');
+  startDraw();
 }
 function endType(resume) {
   const go = resume && resumeAfter && isOpen;
   noteAt = null; resumeAfter = false; wPaused.hidden = true; if (root) root.classList.remove('typing');
+  endDraw(false);
   if (wTime) wTime.textContent = tcShort(S.t);
   if (go) play();
 }
@@ -192,10 +205,11 @@ function onType() { if (wInput.value) startType(); else if (noteAt !== null) { /
 function onInputKey(e) {
   e.stopPropagation();
   if (e.isComposing) return;
+  if (markKey(e)) return;
   if (e.key === 'Enter') {
     e.preventDefault();
-    const v = wInput.value.trim();
-    if (v) { addNote(v, noteAt === null ? S.t : noteAt); wInput.value = ''; endType(true); wInput.blur(); }
+    const v = wInput.value.trim(), marks = draftMarks();
+    if (v || marks.length) { addNote(v || t('mark.only'), noteAt === null ? S.t : noteAt, marks); takeDraft(); wInput.value = ''; endType(true); wInput.blur(); }
   } else if (e.key === 'Escape') {
     e.preventDefault(); wInput.value = ''; endType(true); wInput.blur();
   }
@@ -326,6 +340,7 @@ export function startWatch({ toast: toastFn } = {}) {
   if (toastFn) toast = toastFn;
   bindNoteBar();
   buildReview();
+  placeDock();
   $('b-watch').addEventListener('click', openWatch);
   const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; refreshSend(); renderLists(); });
   info();
@@ -334,6 +349,8 @@ export function startWatch({ toast: toastFn } = {}) {
     project() { refreshSend(); if (isOpen) renderMarks(); if (!(watchList && watchList.editing) && !(reviewList && reviewList.editing)) renderLists(); if (isOpen) updateTime(); },
     time() { if (nbInput && nbAt === null) nbTime.textContent = tcShort(S.t); if (isOpen) updateTime(); if (reviewList) reviewList.near(); },
     playing() { updatePlay(); },
+    view() { sizeDock(); },
+    mode() { placeDock(); },
     lang() { refreshSend(); applyReviewText(); if (isOpen) { applyText(); updateTime(); } renderLists(); },
   };
 }

@@ -818,7 +818,7 @@ class App:
     def notes_info(self):
         return {"agent_name": agent_notes.agent_name(self.dir), "inbox": agent_notes.inbox_len(self.dir), "default_mode": agent_notes.default_mode(self.dir)}
 
-    def note_frame_jpeg(self, nid, t):
+    def note_frame_jpeg(self, nid, t, marks=None, size=(1920, 1080)):
         """Render the timeline frame at `t` (same machinery as /api/frame, draft size) and store it as .kurgu/notes/<id>.jpg."""
         from PIL import Image
         png = self.frame(t)
@@ -828,6 +828,8 @@ class App:
             if im.width > 640:
                 im = im.resize((640, max(1, round(im.height * 640 / im.width))), Image.LANCZOS)
             tmp = out + ".part"
+            if marks:                                  # burn the marks in (yellow), so the picture alone says where
+                agent_notes.burn_marks(im, [agent_notes.mark_view(m, *size) for m in marks])
             im.save(tmp, format="JPEG", quality=82)
         os.replace(tmp, out)
         return out
@@ -852,7 +854,7 @@ class App:
 
         def one(n):
             try:
-                self.note_frame_jpeg(n["id"], n["t"])
+                self.note_frame_jpeg(n["id"], n["t"], n.get("marks"), (raw.get("width") or 1920, raw.get("height") or 1080))
             except Exception as e:                      # a frame that cannot be drawn must not block the note
                 failed.append(f'{n["id"]}: {e}')
         with ThreadPoolExecutor(3) as ex:

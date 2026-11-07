@@ -4,7 +4,7 @@ import { S, aspectLabel, onChange, emit, change, select, setTime, layer, selecte
 import * as API from './api.js';
 import { initI18n, t, fmt, getLang, setLang, onLang, applyStatic } from './i18n.js';
 import { refreshFonts, ensureFont } from './fonts.js';
-import { startPreview, togglePlay, play, pause, startAudio, setRealFrame, debugInfo, setZoom, zoomStep, viewAnchor, viewInfo, setGuides, handKey, shuttle, ZOOMS, layerBox } from './preview.js';
+import { viewGeom, startPreview, togglePlay, play, pause, startAudio, setRealFrame, debugInfo, setZoom, zoomStep, viewAnchor, viewInfo, setGuides, handKey, shuttle, ZOOMS, layerBox } from './preview.js';
 import { openSequence, sequenceOpen } from './sequence.js';
 import { startLayerPanel } from './layers.js';
 import { startInspector } from './inspector.js';
@@ -14,6 +14,7 @@ import { startExport } from './export.js';
 import { startMediaPanel, togglePanel, openPanel } from './mediapanel.js';
 import { startNotes, toggleNotes, jumpNote, notesOpen } from './notes.js';
 import { startWatch, focusNote, watchOpen, openWatch, toggleReviewNotes, reviewNotesShown } from './watch.js';
+import { startMarks } from './marks.js';
 import { initMode, getMode, setMode, isReview, toggleMode } from './mode.js';
 import { initMenu, menuOpen, closeMenu } from './menu.js';
 import { $, el, icon, setIcon, copyText } from './dom.js';
@@ -47,7 +48,8 @@ async function boot() {
   const panel = startMediaPanel($('media-panel'), toast);
   const notesPanel = startNotes({ toast });
   const watch = startWatch({ toast });
-  const modules = [preview, layers, inspector, panel, notesPanel, watch];
+  const marksMod = startMarks($('stage'));
+  const modules = [preview, layers, inspector, panel, notesPanel, watch, marksMod];
   onChange(kind => {
     for (const m of modules) { try { if (m[kind]) m[kind](); } catch (e) { console.error(kind, e); } }
     if (kind === 'project') { updateTop(); renderScrubNotes(); updateTransport(); updateSequenceUi(); updateSplit(); }
@@ -72,7 +74,7 @@ async function boot() {
   window.addEventListener('beforeunload', e => { if (API.savePending()) { API.save(); e.preventDefault(); e.returnValue = ''; } });
   window.addEventListener('pointerdown', startAudio, { once: true });
   window.addEventListener('keydown', startAudio, { once: true });
-  window.__kurgu = { S, change, debugInfo, setLang, emit, viewInfo, setZoom, zoomStep, layerBox, LK, select, splitLayers, removeLayers, duplicateLayers, rippleDelete };  // debugging / tests
+  window.__kurgu = { S, change, debugInfo, viewGeom, setLang, emit, viewInfo, setZoom, zoomStep, layerBox, LK, select, splitLayers, removeLayers, duplicateLayers, rippleDelete };  // debugging / tests
   const q = new URLSearchParams(location.search); // tests only: ?t=5&sel=l_1
   if (q.has('t')) setTime(parseFloat(q.get('t')));
   if (q.has('sel')) select(q.get('sel').split(','));

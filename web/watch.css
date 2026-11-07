@@ -104,3 +104,24 @@ body.watching #frame { box-shadow: none; }
 
 @media (max-width: 900px) { #watch { grid-template-columns: 1fr; } .w-side { display: none; } }
 #watch #toasts { position: absolute; left: calc(50% - 160px); top: 64px; bottom: auto; z-index: 10; }
+
+/* ---- note dock (the note box + its drawing tools) */
+#note-dock { flex: 1; min-width: 0; display: flex; align-items: center; }
+body[data-mode=review] #note-dock { flex: none; align-self: center; position: relative; margin: 8px 0 0; }
+body[data-mode=review] #preview-section > #transport { margin-top: 8px; }
+.dt { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: var(--r-md); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line2); flex: none; }
+.dt[hidden] { display: none; }
+body[data-mode=review] #note-dock > .dt { position: absolute; left: calc(100% + 8px); top: 50%; transform: translateY(-50%); z-index: 4; }
+.dt-b { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-sm); color: var(--t2); }
+.dt-b .ic { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dt-b:hover:not(:disabled) { background: var(--hover); color: var(--t1); }
+.dt-b.on { background: var(--acc-soft); color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc-line); }
+.dt-b:disabled { opacity: .35; cursor: default; }
+.dt-sep { width: 1px; height: 18px; background: var(--line2); margin: 0 3px; }
+.dt-count { min-width: 14px; padding: 0 5px 0 2px; font-family: var(--mono); font-size: var(--fs-cap); font-weight: 600; color: var(--note); }
+.dt-count:empty { display: none; }
+#watch .w-ctl .dt { margin-left: -4px; }
+
+/* ---- drawing layer over the viewer (web/js/marks.js) */
+#mark-canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; pointer-events: none; display: block; }
+#mark-canvas.drawing { cursor: crosshair; }

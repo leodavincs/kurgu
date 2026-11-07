@@ -88,6 +88,9 @@ try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'd
 <!-- custom icons (not Lucide; survive scripts/build_icons.mjs) -->
 <svg xmlns="http://www.w3.org/2000/svg" width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
 <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/></symbol>
+<symbol id="i-m-ellipse" viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="9.5" ry="6.5"/></symbol>
+<symbol id="i-m-rect" viewBox="0 0 24 24"><rect x="3.5" y="5.5" width="17" height="13" rx="1"/></symbol>
+<symbol id="i-m-arrow" viewBox="0 0 24 24"><path d="M5 19 19 5"/><path d="M9 5h10v10"/></symbol>
 <symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/></symbol>
 <symbol id="i-watch" viewBox="0 0 24 24"><path d="M3 8V5a2 2 0 0 1 2-2h3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M21 16v3a2 2 0 0 1-2 2h-3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M10 9l5 3-5 3z"/></symbol>
 </svg>
@@ -102,7 +105,7 @@ try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'd
     <button data-edit id="b-seq" class="btn ghost" data-i18n-title="seq.topTip"><svg class="ic" aria-hidden="true"><use href="#i-settings-2"/></svg><span id="seq-label"></span></button>
   </div>
   <div class="tb-center">
-    <label id="note-bar" data-i18n-title="nb.tip"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg><span id="nb-time">00:00.0</span><input id="nb-input" data-i18n-placeholder="nb.placeholder" spellcheck="false" autocomplete="off" aria-label="Note"><kbd>Enter</kbd></label>
+    <div id="note-dock"><label id="note-bar" data-i18n-title="nb.tip"><svg class="ic" aria-hidden="true"><use href="#i-flag"/></svg><span id="nb-time">00:00.0</span><input id="nb-input" data-i18n-placeholder="nb.placeholder" spellcheck="false" autocomplete="off" aria-label="Note"><kbd>Enter</kbd></label></div>
     <div id="upload" hidden><i></i><span></span></div>
     <div id="progress" tabindex="-1" hidden><i></i><span></span></div>
     <button id="b-cancel" class="ib" data-i18n-title="export.cancelTip" hidden><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
