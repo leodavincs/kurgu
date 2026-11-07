@@ -76,8 +76,8 @@ def test_the_frame_loop_sleeps_when_idle_and_wakes_on_change(page):
     assert page.eval("window.__raf") >= 1                                              # a change wakes it up and the frame is drawn
     page.eval("window.__raf=0")
     page.key(" ", code="Space", text=" ")
-    time.sleep(0.6)
-    assert page.eval("__kurgu.S.playing") and page.eval("window.__raf") > 20           # playing: one callback per frame
+    time.sleep(1.0)
+    assert page.eval("__kurgu.S.playing") and page.eval("window.__raf") > 15           # playing: one callback per frame (idle stays <15 over 1.5 s; slow CI runners draw ~20/0.6 s)
     page.key(" ", code="Space", text=" ")
 
 
