@@ -8,9 +8,40 @@ set "PYEXE=python"
 where py >nul 2>nul
 if not errorlevel 1 set "PYEXE=py -3"
 %PYEXE% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul
-if errorlevel 1 goto nopython
+if not errorlevel 1 goto havepy
+rem not on PATH: a Python that uv manages (the installer puts uv in %USERPROFILE%\.local\bin)
+set "UVPY="
+for /f "usebackq delims=" %%P in (`uv python find ">=3.10" 2^>nul`) do set "UVPY=%%P"
+if not defined UVPY if exist "%USERPROFILE%\.local\bin\uv.exe" for /f "usebackq delims=" %%P in (`"%USERPROFILE%\.local\bin\uv.exe" python find ">=3.10" 2^>nul`) do set "UVPY=%%P"
+if not defined UVPY goto nopython
+set PYEXE="%UVPY%"
+:havepy
+if /i "%~1"=="doctor" goto doctor
+if /i "%~1"=="setup-ffmpeg" goto setupff
 if /i "%~1"=="notes" goto notes
 %PYEXE% "%~dp0server.py" %*
+exit /b %errorlevel%
+:doctor
+set "NARGS="
+shift
+:dloop
+if "%~1"=="" goto drun
+set NARGS=%NARGS% "%~1"
+shift
+goto dloop
+:drun
+%PYEXE% "%~dp0doctor.py" %NARGS%
+exit /b %errorlevel%
+:setupff
+set "NARGS="
+shift
+:sloop
+if "%~1"=="" goto srun
+set NARGS=%NARGS% "%~1"
+shift
+goto sloop
+:srun
+%PYEXE% "%~dp0ffmpeg_fetch.py" %NARGS%
 exit /b %errorlevel%
 :notes
 rem rebuild the argument list without the word "notes": %* ignores SHIFT, and %1..%9 would cut long `done <dir> <ids> --reply "x"` lines
@@ -25,5 +56,5 @@ goto nloop
 %PYEXE% "%~dp0agent_notes.py" %NARGS%
 exit /b %errorlevel%
 :nopython
-echo Kurgu needs Python 3.10 or newer ^(https://www.python.org/downloads/^) 1>&2
+echo Kurgu needs Python 3.10 or newer. Easiest fix: run the installer ^(see README, "Install"^), it brings its own Python. 1>&2
 exit /b 1

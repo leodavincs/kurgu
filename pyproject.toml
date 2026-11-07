@@ -21,11 +21,11 @@ dev = ["pytest>=7", "websocket-client"]
 Homepage = "https://github.com/leodavincs/kurgu"
 
 [project.scripts]
-kurgu = "server:main"
+kurgu = "kurgu_cli:main"
 kurgu-render = "render:main"
 kurgu-mcp = "mcp_server:main"
 kurgu-notes = "agent_notes:main"
 
 [tool.setuptools]
-py-modules = ["media_tools", "server", "render", "schema", "fonts", "anim", "presets", "ai", "exports", "transcribe", "captions", "mcp_server", "kurgu_paths", "agent_notes"]
+py-modules = ["media_tools", "server", "render", "schema", "fonts", "anim", "presets", "ai", "exports", "transcribe", "captions", "mcp_server", "kurgu_paths", "agent_notes", "kurgu_cli", "doctor", "ffmpeg_fetch"]
 license-files = ["LICENSE"]

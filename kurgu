@@ -13,9 +13,16 @@ pick_python() {
     p="$(command -v "$c" 2>/dev/null)" || continue
     "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null && { echo "$p"; return 0; }
   done
+  # not on PATH: a Python that uv manages (`uv python find`), or the one in the installed tool environment
+  if command -v uv >/dev/null 2>&1; then
+    p="$(uv python find '>=3.10' 2>/dev/null)" && [ -x "$p" ] && { echo "$p"; return 0; }
+  fi
   return 1
 }
-py="$(pick_python)" || { echo "Kurgu needs Python 3.10 or newer (found none on PATH). Install one: https://www.python.org/downloads/" >&2; exit 1; }
+py="$(pick_python)" || { echo "Kurgu needs Python 3.10 or newer (found none on PATH). Easiest fix: run the installer (https://github.com/leodavincs/kurgu#install), it brings its own Python." >&2; exit 1; }
+# `kurgu doctor [dir] [--json] [--fix]` and `kurgu setup-ffmpeg` (download a static ffmpeg for Kurgu)
+if [ "$1" = "doctor" ]; then shift; exec "$py" "$dir/doctor.py" "$@"; fi
+if [ "$1" = "setup-ffmpeg" ]; then shift; exec "$py" "$dir/ffmpeg_fetch.py" "$@"; fi
 # `kurgu notes list|wait|done <dir>` goes straight to agent_notes.py (no editor modules imported). A folder called "notes" is opened as `kurgu ./notes`.
 if [ "$1" = "notes" ]; then shift; exec "$py" "$dir/agent_notes.py" "$@"; fi
 project="${1:-.}"; [ $# -gt 0 ] && shift
