@@ -312,3 +312,24 @@ def test_a_project_shipped_listening_json_with_junk_beats_cannot_crash_the_heart
     agent_notes._beat(project_dir, time.time(), None)                                                  # does not raise
     assert list(agent_notes._read_listeners(project_dir)) == [str(os.getpid())]
     assert agent_notes.is_listening(project_dir) is True
+
+
+def test_legacy_output_shaped_like_a_kurgu_line_still_stays_out(project_dir):
+    os.makedirs(os.path.join(project_dir, ".kurgu"), exist_ok=True)
+    note = "my note: make the title red"
+    open(os.path.join(project_dir, ".kurgu", "hook.log"), "w", encoding="utf-8").write(
+        f"[2026-11-07T10:00:01] {note}\n  could not start: {note}\n  finished, exit code 0 {note}\n"
+        "  could not start: [Errno 2] No such file or directory: 'claude'\n")
+    default = diag.build_report(project_dir)
+    assert note not in default and "could not start: [Errno 2]" in default
+
+
+def test_huge_numbers_and_deep_nesting_in_a_shipped_listening_json_cannot_crash_the_heartbeat(project_dir):
+    k = os.path.join(project_dir, ".kurgu")
+    os.makedirs(k, exist_ok=True)
+    p = os.path.join(k, "listening.json")
+    for body in ('{"1":{"pid":%d,"beat":1%s}}' % (os.getpid(), "0" * 400), '{"1":{"pid":%d,"beat":-1%s}}' % (os.getpid(), "0" * 400), "[" * 100000 + "]" * 100000):
+        open(p, "w").write(body)
+        assert agent_notes.is_listening(project_dir) is False
+        agent_notes._beat(project_dir, time.time(), None)                                              # does not raise
+        assert agent_notes.is_listening(project_dir) is True

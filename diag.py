@@ -181,7 +181,8 @@ def _chrome():
     return "not found"
 
 
-_OWN_LINE = re.compile(r"^(\[\d{4}-\d\d-\d\dT[\d:]{8}\] |  (finished, exit code -?\d+$|stopped: still running after [\d.]+ s$|could not start: ))")
+_OWN_LINE = re.compile(r"^(\[\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\] run \(send #\d+, \d+ notes\): "
+                       r"|  (finished, exit code -?\d+$|stopped: still running after [\d.]+ s$|could not start: \[(Errno|WinError) -?\d+\] ))")
 
 
 def build_report(d, include_agent_output=False):

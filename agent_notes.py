@@ -470,7 +470,7 @@ def _read_listeners(d):
         with open(os.path.join(d, LISTENING), encoding="utf-8") as f:
             v = json.load(f)
         return v if isinstance(v, dict) else {}
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):      # a project may ship any file here (deep nesting, junk)
         return {}
 
 
@@ -551,7 +551,7 @@ def _num(v):
         return None
     try:
         f = float(v)
-    except ValueError:
+    except (ValueError, OverflowError):               # junk, or an integer too large for a float
         return None
     return f if math.isfinite(f) else None
 
