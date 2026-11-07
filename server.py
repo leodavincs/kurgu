@@ -30,6 +30,7 @@ import os
 import queue
 import re
 import shutil
+import secrets
 import signal
 import subprocess
 import sys
@@ -102,8 +103,8 @@ def is_under(path, root):
 
 
 def write_atomic(path, data):
-    tmp = f"{path}.tmp{os.getpid()}{threading.get_ident()}"
-    with open(tmp, "wb") as f:
+    tmp = f"{path}.{secrets.token_hex(8)}.tmp"
+    with open(tmp, "xb") as f:                 # exclusive create: never through a planted symlink
         f.write(data)
     for attempt in range(20):  # Windows refuses to replace a file another handle is reading: retry briefly
         try:
@@ -361,6 +362,8 @@ class App:
 
     # ------------------------------------------------------------ paths
     def prepare(self):
+        if os.path.islink(self.kurgu):             # a downloaded project could point .kurgu anywhere; everything Kurgu writes lives there
+            raise agent_notes.KurguRefusal("symlink", f"refusing to open this project: {self.kurgu} is a symbolic link", path=".kurgu")
         os.makedirs(self.kurgu, exist_ok=True)
         if not os.path.exists(self.project_path):
             if os.path.exists(schema.legacy_path(self.dir)):
@@ -373,6 +376,8 @@ class App:
 
     def sub(self, name):
         d = os.path.join(self.kurgu, name)
+        if os.path.islink(self.kurgu) or os.path.islink(d):
+            raise agent_notes.KurguRefusal("symlink", f"refusing to write: {d} is a symbolic link", path=".kurgu/" + name)
         os.makedirs(d, exist_ok=True)
         return d
 
@@ -667,7 +672,7 @@ class App:
         return rc == 0
 
     def make_proxy(self, path, target, key, duration=0.0, codec=""):
-        tmp = target + ".part.mp4"
+        tmp = target + f".{secrets.token_hex(8)}.part.mp4"      # unpredictable: a project cannot plant a symlink under this name
         state = "error"
         try:
             # Hardware decode + encode only pays for codecs that are slow to decode in software (measured: H.264 is
@@ -1103,7 +1108,7 @@ class App:
             im = im.convert("RGB")
             if im.width > 640:
                 im = im.resize((640, max(1, round(im.height * 640 / im.width))), Image.LANCZOS)
-            tmp = out + f".{os.getpid()}.{threading.get_ident()}.part"
+            tmp = out + f".{secrets.token_hex(8)}.part"
             if marks:                                  # burn the marks in (yellow), so the picture alone says where
                 agent_notes.burn_marks(im, [agent_notes.mark_view(m, *size) for m in marks])
             im.save(tmp, format="JPEG", quality=82)
@@ -1217,7 +1222,7 @@ class App:
         with lock:
             if os.path.exists(png):
                 return png
-            tmp = png + ".part.png"
+            tmp = png + f".{secrets.token_hex(8)}.part.png"
             r = run([sys.executable, os.path.join(ROOT, "render.py"), self.dir, "--frame", f"{t:.3f}",
                                 "--output", tmp, "--draft"], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
             if r.returncode != 0 or not os.path.exists(tmp):

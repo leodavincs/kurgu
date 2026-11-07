@@ -424,3 +424,47 @@ def test_change_summary_lines_stay_one_line_each(srv):
     c.req("PUT", "/api/project", {"project": data["project"], "summary": ['"a\nb\r\nc": x 1 -> 2'], "base_version": data["version"]})
     text = open(os.path.join(d, "changes.md"), encoding="utf-8").read()
     assert '"a b c": x 1 -> 2' in text and "\nb\n" not in text
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need extra rights on Windows")
+def test_old_style_temp_names_planted_as_symlinks_are_never_written_through(srv, tmp_path):
+    """Frame / AI-thread / project temp files used fixed or computable names; a project could plant a symlink under them."""
+    import hashlib
+    c, d, _ = srv
+    victim = tmp_path / "victim.txt"
+    victim.write_text("keep\n")
+    k = os.path.join(d, ".kurgu")
+    os.makedirs(os.path.join(k, "frames"), exist_ok=True)
+    os.symlink(victim, os.path.join(k, "ai-threads.json.tmp"))
+    # every computable old-style frame part name for t=0 points at the victim
+    st, data = c.req("GET", "/api/version")
+    for v in {data["version"], hashlib.sha1(open(os.path.join(d, "project.json"), "rb").read()).hexdigest()}:
+        key = hashlib.sha1(f"{v}|0.000|".encode()).hexdigest()
+        try:
+            os.symlink(victim, os.path.join(k, "frames", key + ".png.part.png"))
+        except FileExistsError:
+            pass
+    c.req("GET", "/api/frame?t=0")
+    c.req("POST", "/api/ai/threads", {"scope": {"time": 1}})
+    assert victim.read_text() == "keep\n"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need extra rights on Windows")
+def test_a_symlinked_kurgu_folder_or_backups_folder_is_refused(tmp_path, project_dir, cfg):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    shutil.rmtree(os.path.join(project_dir, ".kurgu"), ignore_errors=True)
+    os.symlink(elsewhere, os.path.join(project_dir, ".kurgu"))
+    with pytest.raises(agent_notes.KurguRefusal):
+        server.make_server(project_dir, port=0)
+    assert list(elsewhere.iterdir()) == []
+    os.remove(os.path.join(project_dir, ".kurgu"))
+    s, c = start(project_dir)
+    try:
+        os.symlink(elsewhere, os.path.join(project_dir, ".kurgu", "backups"))
+        st, data = c.req("GET", "/api/project")
+        c.req("PUT", "/api/project", {"project": data["project"], "summary": ["x"], "base_version": data["version"]})
+        assert list(elsewhere.iterdir()) == []
+    finally:
+        s.shutdown()
+        s.server_close()

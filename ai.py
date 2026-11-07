@@ -23,6 +23,7 @@ import json
 import os
 import re
 import shlex
+import secrets
 import shutil
 import signal
 import subprocess
@@ -367,8 +368,8 @@ class Threads:
     def _save(self, ts):
         ts = sorted(ts, key=lambda x: x.get("updated", 0))[-MAX_THREADS:]
         os.makedirs(self.app.kurgu, exist_ok=True)
-        tmp = self.path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        tmp = self.path + f".{secrets.token_hex(8)}.tmp"
+        with open(tmp, "x", encoding="utf-8") as f:    # exclusive create: never through a planted symlink
             json.dump({"threads": ts}, f, ensure_ascii=False, indent=1)
         os.replace(tmp, self.path)
 
