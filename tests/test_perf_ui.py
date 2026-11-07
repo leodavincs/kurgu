@@ -91,8 +91,9 @@ def test_a_hidden_tab_does_not_poll_the_server(page):
 
 
 def test_a_hidden_tab_still_sends_a_slow_keep_alive(page):
-    page.eval("window.__kurguHiddenPingMs=700; Object.defineProperty(document,'hidden',{configurable:true,get:()=>true}); performance.clearResourceTimings()")
-    time.sleep(3.2)
-    n = page.eval("performance.getEntriesByType('resource').filter(r=>r.name.includes('/api/version')).length")
+    page.eval("window.__pings=0; const of=window.fetch; window.fetch=(u, ...a) => { if (String(u).includes('/api/version')) window.__pings++; return of(u, ...a); }")
+    page.eval("window.__kurguHiddenPingMs=700; Object.defineProperty(document,'hidden',{configurable:true,get:()=>true})")
+    time.sleep(3.5)
+    n = page.eval("window.__pings")
     assert 1 <= n <= 6                                                                 # a few pings (not one per second): the server sees an open editor
     page.eval("Object.defineProperty(document,'hidden',{configurable:true,get:()=>false})")

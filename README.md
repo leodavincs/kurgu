@@ -125,13 +125,7 @@ Tools: `open_editor`, `get_state`, `get_project`, `edit_project`, `render_frame`
 
 **Experimental:** the in-editor Ask AI box falls back to Codex when Claude Code is missing, but that path is not yet tested end to end. A custom agent command is read only from `KURGU_AGENT_CMD` or `~/.config/kurgu/config.json`, never from a project folder.
 
-**OpenAI Codex CLI.** Add to `~/.codex/config.toml` (or run `codex mcp add kurgu -- kurgu-mcp`):
-
-```toml
-[mcp_servers.kurgu]
-command = "kurgu-mcp"
-tool_timeout_sec = 900   # default is 60 s; full renders take longer
-```
+**OpenAI Codex (CLI, IDE, desktop app).** `kurgu setup-agent --codex` (add `--project <dir>` to put a short Kurgu section in that project's AGENTS.md; `--dry-run` shows what changes). It registers the MCP server in `~/.codex/config.toml` with `tool_timeout_sec = 3600` (Codex's default is 60 s, which would cut off `notes_wait`) and installs the skill to `~/.agents/skills/kurgu`. Restart Codex. Codex cannot be woken by a background process, so the watch + note loop uses repeated `notes_wait` calls (or you press Send and tell it "check notes"); with `--wake` Kurgu can start the agent itself when you press Send (see the "Wake the agent" notes in AGENTS.md). Run Codex inside the project folder with the `workspace-write` sandbox.
 
 **Cursor.** `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` for all projects):
 

@@ -51,7 +51,7 @@ def test_project_get_put_and_409(srv):
     assert data["project"]["layers"][0]["id"] == "k_buyuk"
     v0 = data["version"]
     st, v = c.req("GET", "/api/version")
-    assert v == {"version": v0}
+    assert v["version"] == v0 and v["app"] == "kurgu" and v["dir"] == os.path.realpath(d)   # app + dir let a second `kurgu <project>` recognise the running server
 
     proj = data["project"]
     proj["layers"][0]["x"] = 1000

@@ -193,14 +193,21 @@ def test_notes_commands_do_not_import_the_editor_modules(project_dir):
 
 
 def test_kurgu_cmd_passes_the_exit_code_on():
-    lines = [l.strip() for l in open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read().splitlines()]
+    raw = open(os.path.join(ROOT, "kurgu.cmd"), "rb").read()
+    assert b"\r\n" in raw and b"\n" not in raw.replace(b"\r\n", b"")           # a batch file needs CRLF
+    lines = [l.strip() for l in raw.decode("utf-8").splitlines()]
     code = [l for l in lines if l and not l.lower().startswith("rem")]
     depth = 0
     for l in code:
         assert not (depth > 0 and "%errorlevel%" in l.lower()), "%errorlevel% inside a parenthesised block is expanded at parse time: " + l
         depth += l.count("(") - l.count(")")
-    assert depth == 0 and code.count("exit /b %errorlevel%") == 2          # editor path and notes path both hand the exit code on
-    assert any("agent_notes.py" in l for l in code)
+    assert depth == 0
+    for i, l in enumerate(code):                                                  # every real launch of Python hands its exit code on, on the next line
+        if l.startswith("%PYEXE% ") and "-c " not in l:
+            assert code[i + 1] == "exit /b %errorlevel%", l
+    launches = [l for l in code if l.startswith("%PYEXE% ") and "-c " not in l]
+    assert any("server.py" in l for l in launches) and any("agent_notes.py" in l for l in launches)
+    assert any("kurgu_cli.py" in l and "setup-agent" in l for l in launches)       # setup-agent is routed here too
 
 
 def test_launcher_dispatches_notes_and_keeps_editor_args(project_dir):
@@ -209,6 +216,10 @@ def test_launcher_dispatches_notes_and_keeps_editor_args(project_dir):
     assert r.returncode == 0 and "title appears too late" in r.stdout
     r = subprocess.run(["bash", LAUNCHER, "/no/such/folder"], capture_output=True, text=True, timeout=30)
     assert r.returncode == 1 and "No such folder" in r.stderr             # `kurgu <dir>` still goes the editor way
+    home = os.path.join(project_dir, "home")
+    os.makedirs(home)
+    r = subprocess.run(["bash", LAUNCHER, "setup-agent", "--codex", "--dry-run"], capture_output=True, text=True, timeout=60, env=dict(os.environ, HOME=home, CODEX_HOME=""))
+    assert r.returncode == 0 and "Dry run" in r.stdout and "config.toml" in r.stdout              # `kurgu setup-agent` is routed to kurgu_cli.py
     r = subprocess.run(["bash", LAUNCHER, "./notes"], capture_output=True, text=True, timeout=30, cwd=project_dir)
     assert r.returncode == 1 and "No such folder: ./notes" in r.stderr   # a folder called notes is `kurgu ./notes`, not the subcommand
 

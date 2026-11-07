@@ -23,6 +23,7 @@ py="$(pick_python)" || { echo "Kurgu needs Python 3.10 or newer (found none on P
 # `kurgu doctor [dir] [--json] [--fix]` and `kurgu setup-ffmpeg` (download a static ffmpeg for Kurgu)
 if [ "$1" = "doctor" ]; then shift; exec "$py" "$dir/doctor.py" "$@"; fi
 if [ "$1" = "setup-ffmpeg" ]; then shift; exec "$py" "$dir/ffmpeg_fetch.py" "$@"; fi
+if [ "$1" = "setup-agent" ]; then shift; exec "$py" "$dir/kurgu_cli.py" setup-agent "$@"; fi          # register Kurgu with Codex / Claude Code
 # `kurgu notes list|wait|done <dir>` goes straight to agent_notes.py (no editor modules imported). A folder called "notes" is opened as `kurgu ./notes`.
 if [ "$1" = "notes" ]; then shift; exec "$py" "$dir/agent_notes.py" "$@"; fi
 project="${1:-.}"; [ $# -gt 0 ] && shift

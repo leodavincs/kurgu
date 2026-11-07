@@ -789,13 +789,13 @@ def tool_notes_list(a, ctx):
 
 def tool_notes_wait(a, ctx):
     """Return the sends the agent has not consumed yet (saved cursor), blocking until the human clicks Send. timeout: default 120 s, 0 = look
-    once, max 600 (the CLI waits forever when --timeout is omitted). A cancelled call stops polling."""
+    once, max 3500 (the CLI waits forever when --timeout is omitted). A cancelled call stops polling."""
     d = project_dir(a)
     require_project(d)
     timeout = a.get("timeout", 120)
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout < 0:
         raise ToolError("timeout must be a number of seconds >= 0 (0 = look once).")
-    timeout = min(float(timeout), 600.0)
+    timeout = min(float(timeout), 3500.0)
     since = a.get("since")
     if since is not None and (isinstance(since, bool) or not isinstance(since, int) or since < 0):
         raise ToolError("since must be an integer seq >= 0 (the inbox position of an earlier notes_wait).")
@@ -1153,10 +1153,10 @@ TOOLS = [
      schema_of({"status": {"type": "string", "enum": ["sent", "open", "done", "all"], "description": "Default sent."}}),
      tool_notes_list, {"readOnlyHint": True}),
     ("notes_wait", "Wait until the user sends notes",
-     "Blocks (up to timeout, default 120 s, max 600) until the user clicks the send button in the editor, then returns the notes of that "
+     "Blocks (up to timeout, default 120 s, max 3500) until the user clicks the send button in the editor, then returns the notes of that "
      "send. Loop: notes_wait -> fix -> notes_done -> notes_wait. A saved cursor (.kurgu/inbox.cursor) remembers what you already got, so a send made "
-     "while you were fixing is returned by the next call. On timeout just call again.",
-     schema_of({"timeout": {"type": "number", "description": "Seconds to wait (default 120, max 600); 0 = look once without waiting."},
+     "while you were fixing is returned by the next call. On timeout just call again; in Codex keep the timeout at or below 120 and call again (3000 when the user is watching live).",
+     schema_of({"timeout": {"type": "number", "description": "Seconds to wait (default 120, max 3500); 0 = look once without waiting."},
                 "since": {"type": "integer", "description": "Return sends with seq above this instead of using the saved cursor (the cursor is then not moved)."}}),
      tool_notes_wait, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
     ("notes_done", "Mark sent notes as fixed",

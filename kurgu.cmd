@@ -18,6 +18,7 @@ set PYEXE="%UVPY%"
 :havepy
 if /i "%~1"=="doctor" goto doctor
 if /i "%~1"=="setup-ffmpeg" goto setupff
+if /i "%~1"=="setup-agent" goto setupagent
 if /i "%~1"=="notes" goto notes
 %PYEXE% "%~dp0server.py" %*
 exit /b %errorlevel%
@@ -31,6 +32,17 @@ shift
 goto dloop
 :drun
 %PYEXE% "%~dp0doctor.py" %NARGS%
+exit /b %errorlevel%
+:setupagent
+set "NARGS="
+shift
+:aloop
+if "%~1"=="" goto arun
+set NARGS=%NARGS% "%~1"
+shift
+goto aloop
+:arun
+%PYEXE% "%~dp0kurgu_cli.py" setup-agent %NARGS%
 exit /b %errorlevel%
 :setupff
 set "NARGS="

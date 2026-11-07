@@ -23,7 +23,7 @@ Kurgu is a local video editor. You write `<dir>/project.json`; the human fine-tu
 **Watch + note loop** (the human drops timestamped notes, maybe with drawn marks, and clicks Send):
 1. At the START of every turn, look once: MCP `notes_wait` with `timeout: 0`, or `kurgu notes wait <dir> --timeout 0` (exit 3 = nothing new).
 2. Fix each note (`edit_project`, then `render_frame` to check), then `notes_done` / `kurgu notes done <dir> <id...> --reply "what you changed"`.
-3. To keep waiting: MCP `notes_wait` with `timeout: 120`, call it again whenever it times out. No MCP: `kurgu notes wait <dir> --timeout 20`, repeat on exit 3. The human sees the note picture in `NOTLAR.md`.
+3. To keep waiting: MCP `notes_wait` with `timeout: 120` (3000 when the user says they are watching live), call it again whenever it times out. No MCP: `kurgu notes wait <dir> --timeout 20`, repeat on exit 3. The human sees the note picture in `NOTLAR.md`.
 - Claude Code only: run `kurgu notes wait <dir>` (no timeout) as a BACKGROUND command; you are re-invoked when it exits.
 - Codex / other agents: a background process cannot wake you, and shell calls may be cut or yielded after ~30 s. Do not rely on one. Use the repeated short waits above, or tell the human "send, then say 'check notes'".
 """
@@ -65,7 +65,7 @@ def mcp_command():
 
 
 # ----------------------------------------------------------------------------- TOML (text-level: keeps comments and the other servers)
-TOOL_TIMEOUT = 700      # Codex default is 60 s; notes_wait blocks up to 600 s and a full render takes minutes
+TOOL_TIMEOUT = 3600     # Codex default is 60 s; notes_wait blocks up to 3500 s and a full render takes minutes
 STARTUP_TIMEOUT = 30
 
 

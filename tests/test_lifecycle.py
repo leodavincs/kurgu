@@ -23,7 +23,7 @@ def start(project_dir, *args, env=None, wait=True):
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     if wait:
         info = os.path.join(project_dir, ".kurgu", "server.json")
-        for _ in range(200):
+        for _ in range(600):
             if os.path.exists(info) or p.poll() is not None:
                 break
             time.sleep(0.05)
@@ -131,10 +131,13 @@ def test_a_stale_server_json_is_cleaned_up_and_does_not_block_a_start(project_di
     json.dump({"pid": gone.pid, "port": 59999}, open(info, "w"))
     p = start(project_dir, "--port", str(cdp.free_port()))
     try:
-        for _ in range(100):
-            if json.load(open(info))["pid"] == p.pid:
-                break
-            time.sleep(0.1)
+        for _ in range(600):                                                                          # up to 30 s: a loaded machine starts slowly
+            try:
+                if json.load(open(info))["pid"] == p.pid:
+                    break
+            except (OSError, ValueError):
+                pass                                                                                  # the file is replaced atomically; a read can land in between
+            time.sleep(0.05)
         assert json.load(open(info))["pid"] == p.pid                                                  # started normally, file rewritten
     finally:
         stop(p)

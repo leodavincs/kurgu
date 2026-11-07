@@ -32,7 +32,7 @@ trust_level = "trusted"
 
 def test_merge_into_empty_and_new():
     out = K.merge_codex_config("", "/bin/kurgu-mcp", [])
-    assert out.startswith("[mcp_servers.kurgu]\n") and 'command = "/bin/kurgu-mcp"' in out and "tool_timeout_sec = 700" in out
+    assert out.startswith("[mcp_servers.kurgu]\n") and 'command = "/bin/kurgu-mcp"' in out and "tool_timeout_sec = 3600" in out
     out2 = K.merge_codex_config('model = "x" # c\n', "k", ["m.py"])
     assert out2.startswith('model = "x" # c\n\n[mcp_servers.kurgu]') and out2.endswith("\n")
 
@@ -104,7 +104,7 @@ def test_cli_codex_real_run_backup_and_idempotent(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
     baks = [p for p in os.listdir(cfg.parent) if p.startswith("config.toml.kurgu-bak-")]
     assert len(baks) == 1 and (cfg.parent / baks[0]).read_text(encoding="utf-8") == EXISTING
-    assert "tool_timeout_sec = 700" in cfg.read_text(encoding="utf-8") and "[mcp_servers.other]" in cfg.read_text(encoding="utf-8")
+    assert "tool_timeout_sec = 3600" in cfg.read_text(encoding="utf-8") and "[mcp_servers.other]" in cfg.read_text(encoding="utf-8")
     assert (tmp_path / ".agents" / "skills" / "kurgu" / "SKILL.md").read_text(encoding="utf-8") == K.SKILL_CODEX
     assert (proj / "AGENTS.md").read_text(encoding="utf-8").startswith("# mine\n")
     before = (cfg.read_text(encoding="utf-8"), (proj / "AGENTS.md").read_text(encoding="utf-8"))

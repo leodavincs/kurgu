@@ -125,13 +125,7 @@ Araçlar: `open_editor`, `get_state`, `get_project`, `edit_project`, `render_fra
 
 **Deneysel:** editördeki Ask AI kutusu Claude Code yoksa Codex'e düşer, ama bu yol henüz uçtan uca test edilmedi. Özel ajan komutu yalnızca `KURGU_AGENT_CMD` veya `~/.config/kurgu/config.json` içinden okunur, proje klasöründen asla.
 
-**OpenAI Codex CLI.** `~/.codex/config.toml` dosyasına ekle (ya da `codex mcp add kurgu -- kurgu-mcp` çalıştır):
-
-```toml
-[mcp_servers.kurgu]
-command = "kurgu-mcp"
-tool_timeout_sec = 900   # varsayılan 60 sn; tam render daha uzun sürer
-```
+**OpenAI Codex (CLI, IDE, masaüstü uygulaması).** `kurgu setup-agent --codex` (`--project <klasör>` ile o projenin AGENTS.md dosyasına kısa bir Kurgu bölümü eklenir; `--dry-run` neyin değişeceğini gösterir). MCP sunucusunu `~/.codex/config.toml` içine `tool_timeout_sec = 3600` ile kaydeder (Codex'in varsayılanı 60 sn, `notes_wait`'i keserdi) ve skill'i `~/.agents/skills/kurgu` altına kurar. Codex'i yeniden başlat. Codex arka plandaki bir süreç tarafından uyandırılamaz; bu yüzden izle + not döngüsü tekrarlanan `notes_wait` çağrılarıyla işler (ya da Gönder'e basıp "notlara bak" dersin); `--wake` ile Gönder'e bastığında Kurgu ajanı kendisi başlatabilir (AGENTS.md'deki "Wake the agent" notlarına bak). Codex'i proje klasörünün içinde, `workspace-write` kum havuzuyla çalıştır.
 
 **Cursor.** Projendeki `.cursor/mcp.json` (tüm projeler için `~/.cursor/mcp.json`):
 
