@@ -19,8 +19,9 @@ import cdp  # noqa: E402  (free_port / wait_http)
 
 def start(project_dir, *args, env=None, wait=True):
     e = dict(os.environ, KURGU_CACHE=os.path.join(project_dir, "..", "cache"), **(env or {}))
+    flags = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {}      # Windows: so CTRL_BREAK reaches only this server
     p = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py"), project_dir, "--no-open", *args], env=e, cwd=ROOT,
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, **flags)
     if wait:
         info = os.path.join(project_dir, ".kurgu", "server.json")
         for _ in range(600):
@@ -39,9 +40,14 @@ def get(port, path, tab=False):
     return urllib.request.urlopen(req, timeout=5).read()
 
 
+def graceful(p):
+    """The platform's way to ask a server to stop: SIGTERM, or CTRL_BREAK on Windows (where send_signal(SIGTERM) is a hard kill that skips every cleanup)."""
+    p.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGTERM)
+
+
 def stop(p):
     if p.poll() is None:
-        p.send_signal(signal.SIGTERM)
+        graceful(p)
         try:
             p.wait(15)
         except subprocess.TimeoutExpired:
@@ -151,7 +157,7 @@ def test_sigterm_ends_children_and_removes_temp_files(project_dir):
     p = start(project_dir, "--port", str(cdp.free_port()))
     try:
         assert p.poll() is None
-        p.send_signal(signal.SIGTERM)
+        graceful(p)
         assert p.wait(20) == 0
     finally:
         stop(p)

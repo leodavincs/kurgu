@@ -117,7 +117,7 @@ def test_a_hook_that_cannot_start_is_logged_and_shown_but_the_send_succeeds(srv,
     c, d = srv
     set_hook(cfg, ["/no/such/program-kurgu-test"])
     st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
-    assert st == 200 and res["sent"] == 1 and res["hook"] == "error" and "No such file" in res["hook_error"]
+    assert st == 200 and res["sent"] == 1 and res["hook"] == "error" and ("No such file" in res["hook_error"] or "cannot find" in res["hook_error"])
     log = open(os.path.join(d, ".kurgu", "hook.log"), encoding="utf-8").read()
     assert "could not start" in log or "failed to start" in log
     assert agent_notes.wait_for_send(d, timeout=0)                                          # the notes are in the inbox regardless
@@ -170,13 +170,19 @@ def test_notes_wait_ceiling_is_3500_seconds_over_mcp(project_dir, monkeypatch):
 
 # ------------------------------------------------------------------ `kurgu wake`: the wrapper the hook runs
 def fake_agent(tmp_path, name, fail_first_calls_with):
-    """A `codex` / `claude` stand-in that logs its argv and exits 1 ("no session") when argv contains `fail_first_calls_with`."""
+    """A `codex` / `claude` stand-in that logs its argv and exits 1 ("no session") when argv contains `fail_first_calls_with`.
+    On Windows the real ones are npm `.cmd` shims, so the fake is one too (this is what `shutil.which` + PATHEXT has to find)."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
     log = tmp_path / f"{name}.log"
-    f = bin_dir / name
-    f.write_text(f"#!{PY}\nimport sys, json\nopen({str(log)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\nsys.exit(1 if {fail_first_calls_with!r} in sys.argv else 0)\n")
-    f.chmod(0o755)
+    impl = bin_dir / f"{name}_impl.py"
+    impl.write_text(f"import sys, json\nopen({str(log)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\nsys.exit(1 if {fail_first_calls_with!r} in sys.argv else 0)\n")
+    if os.name == "nt":
+        (bin_dir / f"{name}.cmd").write_text(f'@echo off\n"{PY}" "{impl}" %*\nexit /b %errorlevel%\n')
+    else:
+        f = bin_dir / name
+        f.write_text(f"#!{PY}\nimport runpy, sys\nsys.argv[0] = {str(impl)!r}\nrunpy.run_path({str(impl)!r}, run_name='__main__')\n")
+        f.chmod(0o755)
     return bin_dir, log
 
 

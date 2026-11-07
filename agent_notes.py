@@ -528,6 +528,13 @@ def expand_command(cmd, d, seq, count, file):
     return out
 
 
+def resolve_exe(name):
+    """A bare command name as a launchable path. On Windows `codex` / `claude` are npm `.cmd` shims that CreateProcess cannot find by their bare name;
+    shutil.which honours PATHEXT. A name that cannot be found is returned unchanged (the start then fails with the system's own message)."""
+    import shutil
+    return shutil.which(name) or name
+
+
 def _log(d, text):
     try:
         os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
@@ -545,6 +552,7 @@ class _Runner:
         import subprocess
         file = os.path.join(self.d, NOTES_MD)
         argv = expand_command(cmd, self.d, seq, count, file)
+        argv[0] = resolve_exe(argv[0])
         env = dict(os.environ, KURGU_PROJECT_DIR=self.d, KURGU_SEQ=str(seq), KURGU_NOTES_COUNT=str(count), KURGU_NOTES_FILE=file)
         os.makedirs(os.path.join(self.d, ".kurgu"), exist_ok=True)
         log = open(os.path.join(self.d, HOOK_LOG), "a", encoding="utf-8")

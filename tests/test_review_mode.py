@@ -44,8 +44,7 @@ def page(chrome, server):
     p = chrome.new_page()
     p.open(server.url("/"), lang="en", view=None, mode=None, ready=READY)
     p.eval("localStorage.removeItem('kurgu.mode')")                                            # every test starts from the real default
-    p.send("Page.reload")
-    p.wait_for(READY, 20)
+    p.reload_and_wait(READY)
     time.sleep(0.5)
     yield p
     p.close()
@@ -102,8 +101,7 @@ def test_hamburger_menu_opens_navigates_closes_and_switches_to_edit(page):
 def test_shift_e_toggles_and_the_choice_is_remembered(page):
     page.key("E", code="KeyE", modifiers=8, text="E")
     page.wait_for("document.body.dataset.mode==='edit'")
-    page.send("Page.reload")
-    page.wait_for(READY, 20)
+    page.reload_and_wait(READY)
     page.wait_for("document.body.dataset.mode==='edit'")                                       # mode is applied right after READY; do not race it
     assert page.eval("document.body.dataset.mode") == "edit"
     page.key("E", code="KeyE", modifiers=8, text="E")

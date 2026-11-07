@@ -89,14 +89,12 @@ def test_choice_is_remembered_and_old_views_work(page):
     page.click_sel(".lp-seg-btn[data-view=layers]")
     page.wait_for("!!document.querySelector('.lp-body') && !document.querySelector('.lp-body').hidden && document.querySelectorAll('.row').length>3")
     assert pane_on(page) == "layers" and page.eval("localStorage.getItem('kurgu.layerView')") == "layers"
-    page.send("Page.reload")
-    page.wait_for(READY, 20)
+    page.reload_and_wait(READY)
     time.sleep(0.5)
     assert pane_on(page) == "layers"                                              # remembered
     page.click_sel(".lp-seg-btn[data-view=tracks]")
     page.wait_for("document.querySelectorAll('.lp-list.view-tracks .row, .view-tracks .row').length>0")
     page.click_sel(".lp-seg-btn[data-view=audio]")
     page.wait_for("!document.querySelector('.lp-audio').hidden")
-    page.send("Page.reload")
-    page.wait_for(READY, 20)
+    page.reload_and_wait(READY)
     assert pane_on(page) == "audio"

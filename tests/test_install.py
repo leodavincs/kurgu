@@ -218,7 +218,7 @@ def test_media_tools_order_env_then_path_then_managed(data, tmp_path, monkeypatc
     on_path = _bin(tmp_path / "pathdir", "ffmpeg")
     monkeypatch.setenv("PATH", str(tmp_path / "pathdir"))
     monkeypatch.setattr(media_tools, "_extra_dirs", lambda: [])
-    assert media_tools.find("ffmpeg") == on_path != managed
+    assert os.path.normcase(media_tools.find("ffmpeg")) == os.path.normcase(on_path) != os.path.normcase(managed)    # Windows: PATHEXT may return .EXE for .exe
     media_tools.reset()
     envp = _bin(tmp_path / "envdir", "ffmpeg")
     monkeypatch.setenv("KURGU_FFMPEG", envp)

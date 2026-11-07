@@ -271,13 +271,14 @@ def wake_main(argv):
         print("usage: kurgu wake <codex|claude> <project_dir> [seq]", file=sys.stderr)
         return 2
     agent, d = argv[0], os.path.abspath(argv[1])
-    if not shutil.which(agent):
+    exe = shutil.which(agent)                                  # honours PATHEXT: on Windows `codex` / `claude` are .cmd shims
+    if not exe:
         print(f"kurgu wake: `{agent}` was not found on PATH", file=sys.stderr)
         return 127
     rc = 1
     for n, (label, cmd) in enumerate(wake_attempts(agent, d)):
         print(f"kurgu wake: {agent}, {label}" + (f" (send #{argv[2]})" if len(argv) > 2 else ""), flush=True)
-        rc = subprocess.run(cmd, cwd=d, stdin=subprocess.DEVNULL).returncode
+        rc = subprocess.run([exe] + cmd[1:], cwd=d, stdin=subprocess.DEVNULL).returncode
         if rc == 0:
             return 0
         print(f"kurgu wake: {agent} ({label}) exited {rc}" + ("; trying a new session" if n == 0 else ""), flush=True)

@@ -16,6 +16,13 @@ from test_server import Client
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LAUNCHER = os.path.join(ROOT, "kurgu")
+IS_WIN = os.name == "nt"
+
+
+def launch(*args, env=None, cwd=None, timeout=60):
+    """Run the checkout launcher for this platform: kurgu.cmd through cmd.exe on Windows (CI is the only place it really runs), `kurgu` through bash elsewhere."""
+    argv = ["cmd", "/c", os.path.join(ROOT, "kurgu.cmd"), *args] if IS_WIN else ["bash", LAUNCHER, *args]
+    return subprocess.run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", env=env, cwd=cwd, timeout=timeout)
 NOTES = [{"id": "n_a", "t": 1.0, "text": "title appears too late", "created": "2026-11-07T10:00:00"},
          {"id": "n_b", "t": 3.5, "text": "sound a bit loud here", "created": "2026-11-07T10:01:00"},
          {"id": "n_c", "t": 5.0, "text": "agent remark", "author": "agent"}]
@@ -212,16 +219,19 @@ def test_kurgu_cmd_passes_the_exit_code_on():
 
 def test_launcher_dispatches_notes_and_keeps_editor_args(project_dir):
     seed(project_dir)
-    r = subprocess.run(["bash", LAUNCHER, "notes", "list", project_dir, "--all"], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    r = launch("notes", "list", project_dir, "--all")
     assert r.returncode == 0 and "title appears too late" in r.stdout
-    r = subprocess.run(["bash", LAUNCHER, "/no/such/folder"], capture_output=True, text=True, timeout=30)
-    assert r.returncode == 1 and "No such folder" in r.stderr             # `kurgu <dir>` still goes the editor way
+    r = launch("/no/such/folder")
+    assert r.returncode == 1 and ("No such folder" in r.stderr or "does not exist" in r.stderr)         # `kurgu <dir>` still goes the editor way
     home = os.path.join(project_dir, "home")
     os.makedirs(home)
-    r = subprocess.run(["bash", LAUNCHER, "setup-agent", "--codex", "--dry-run"], capture_output=True, text=True, timeout=60, env=dict(os.environ, HOME=home, CODEX_HOME=""))
-    assert r.returncode == 0 and "Dry run" in r.stdout and "config.toml" in r.stdout              # `kurgu setup-agent` is routed to kurgu_cli.py
-    r = subprocess.run(["bash", LAUNCHER, "./notes"], capture_output=True, text=True, timeout=30, cwd=project_dir)
-    assert r.returncode == 1 and "No such folder: ./notes" in r.stderr   # a folder called notes is `kurgu ./notes`, not the subcommand
+    r = launch("setup-agent", "--codex", "--dry-run", env=dict(os.environ, HOME=home, USERPROFILE=home, CODEX_HOME=""))
+    assert r.returncode == 0 and "Dry run" in r.stdout and "config.toml" in r.stdout                    # `kurgu setup-agent` is routed to kurgu_cli.py
+    r = launch("./notes", cwd=project_dir)
+    assert r.returncode == 1 and "notes" in r.stderr and (IS_WIN or "No such folder: ./notes" in r.stderr)   # a folder called notes is `kurgu ./notes`, not the subcommand
+    # the exit code of the real program reaches the caller (kurgu.cmd used to lose it)
+    assert launch("notes", "wait", project_dir, "--timeout", "0").returncode == 3
+    assert launch("wake", "gemini", project_dir).returncode == 2
 
 
 def test_mcp_notes_tools(project_dir):
@@ -395,15 +405,21 @@ def test_mcp_notes_wait_rejects_a_bad_since_and_leaves_the_cursor(project_dir):
 
 
 def test_launcher_prefers_a_python_310_and_cmd_keeps_long_argument_lists(tmp_path, project_dir):
-    fake = tmp_path / "bin"
-    fake.mkdir()
-    (fake / "python3.13").write_text("#!/bin/sh\nexit 1\n")                     # an interpreter that fails the version guard
-    (fake / "python3.13").chmod(0o755)
-    (fake / "python3.12").symlink_to(sys.executable)
     seed(project_dir)
-    env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ["PATH"])
-    r = subprocess.run(["bash", LAUNCHER, "notes", "list", project_dir, "--all"], capture_output=True, text=True, env=env, timeout=60)
-    assert r.returncode == 0 and "title appears too late" in r.stdout
+    if not IS_WIN:                                                                # the interpreter choice of the bash launcher (kurgu.cmd is checked below)
+        fake = tmp_path / "bin"
+        fake.mkdir()
+        (fake / "python3.13").write_text("#!/bin/sh\nexit 1\n")                 # an interpreter that fails the version guard
+        (fake / "python3.13").chmod(0o755)
+        (fake / "python3.12").symlink_to(sys.executable)
+        env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ["PATH"])
+        r = launch("notes", "list", project_dir, "--all", env=env)
+        assert r.returncode == 0 and "title appears too late" in r.stdout
+    else:                                                                         # long argument lists survive kurgu.cmd (no %1..%9 cut-off)
+        r = launch("notes", "done", project_dir, *(["n_a"] * 12), "--reply", "a reply with spaces")      # 15 arguments: more than %1..%9
+        assert r.returncode == 0, r.stderr
+        n = {x["id"]: x for x in json.load(open(os.path.join(project_dir, "project.json"), encoding="utf-8"))["notes"]}["n_a"]
+        assert n["done"] is True and n["reply"] == "a reply with spaces"          # the last argument arrived whole
     text = open(LAUNCHER, encoding="utf-8").read()
     assert "python3.10" in text and "sys.version_info >= (3, 10)" in text and "needs Python 3.10" in text
     cmd = open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read()

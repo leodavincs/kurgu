@@ -411,13 +411,18 @@ def test_media_panel_drag_to_timeline_adds_a_layer(page):
 
 def test_splitter_resizes_the_timeline(page):
     h0 = page.eval("document.getElementById('layers').getBoundingClientRect().height")
+    inner = page.eval("window.innerHeight")
+    # the panel may grow up to innerHeight - 300 px (main.js): a short headless window (macOS CI) leaves no room to grow by 60, so shrink it instead
+    dy = -60 if inner - 300 - h0 >= 70 else 60
     c = page.center("#splitter")
-    page.drag(c[0], c[1], c[0], c[1] - 60, steps=6)
+    page.drag(c[0], c[1], c[0], c[1] + dy, steps=10)
+    page.wait_for("Math.abs(document.getElementById('layers').getBoundingClientRect().height - %s) < 6" % (h0 - dy), 10)       # layout settled
     h1 = page.eval("document.getElementById('layers').getBoundingClientRect().height")
-    assert abs((h1 - h0) - 60) < 6, (h0, h1)
-    assert abs(page.eval("document.getElementById('splitter').getBoundingClientRect().top+5") - (c[1] - 60)) < 6  # handle follows the pointer
+    assert abs((h1 - h0) - (-dy)) < 6, (h0, h1, inner)
+    assert abs(page.eval("document.getElementById('splitter').getBoundingClientRect().top+5") - (c[1] + dy)) < 6  # handle follows the pointer
     c2 = page.center("#splitter")
-    page.drag(c2[0], c2[1], c2[0], c2[1] + 60, steps=6)
+    page.drag(c2[0], c2[1], c2[0], c2[1] - dy, steps=10)
+    page.wait_for("Math.abs(document.getElementById('layers').getBoundingClientRect().height - %s) < 6" % h0, 10)
 
 
 def test_sequence_dialog_applies_fps(page):

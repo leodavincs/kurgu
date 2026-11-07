@@ -217,12 +217,20 @@ def stop_children():
 
 
 def pid_alive(pid):
+    """Is this process running? (os.kill(pid, 0) is not a liveness probe on Windows, and a finished process whose handle is still open must count as gone.)"""
     if os.name == "nt":
         import ctypes
-        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, int(pid))      # PROCESS_QUERY_LIMITED_INFORMATION
-        if h:
-            ctypes.windll.kernel32.CloseHandle(h)
-        return bool(h)
+        from ctypes import wintypes
+        k = ctypes.windll.kernel32
+        k.OpenProcess.restype = wintypes.HANDLE
+        h = k.OpenProcess(0x1000, False, int(pid))                            # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        try:
+            code = wintypes.DWORD()
+            return bool(k.GetExitCodeProcess(h, ctypes.byref(code))) and code.value == 259     # STILL_ACTIVE
+        finally:
+            k.CloseHandle(h)
     try:
         os.kill(int(pid), 0)
     except ProcessLookupError:
