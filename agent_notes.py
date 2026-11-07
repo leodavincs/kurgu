@@ -26,6 +26,41 @@ import schema
 
 RECOVER_EVERY = 15.0          # seconds between "sent but never announced" checks while waiting
 NOTES_MD = "NOTLAR.md"
+# ---------------------------------------------------------------- safe writes inside .kurgu/ (a shared project folder may ship symlinks there)
+def open_nofollow(path, mode="w"):
+    """Open `path` for writing ("w" truncate / "a" append) as UTF-8 text, refusing symlinks: the file itself, and the `.kurgu` folder it lives in.
+    A project folder is untrusted: `.kurgu/hook.log -> ~/.zshrc` must not turn Send into an append to the user's shell profile."""
+    parent = os.path.dirname(path)
+    if os.path.basename(parent) == ".kurgu" and os.path.islink(parent):
+        raise OSError(f"refusing to write: {parent} is a symbolic link")
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == "a" else os.O_TRUNC) | getattr(os, "O_NOFOLLOW", 0)
+    if not hasattr(os, "O_NOFOLLOW") and os.path.islink(path):
+        raise OSError(f"refusing to write: {path} is a symbolic link")
+    try:
+        fd = os.open(path, flags, 0o644)
+    except OSError as e:
+        if os.path.islink(path):
+            raise OSError(f"refusing to write: {path} is a symbolic link") from e
+        raise
+    return os.fdopen(fd, mode, encoding="utf-8")
+
+
+SHELL_META = '&|<>^%"!'
+
+
+def shim_refusal(exe, items):
+    """Windows only: an npm `.cmd` / `.bat` shim runs through cmd.exe, where these characters inside an argument can inject commands (BatBadBut).
+    Returns the reason to refuse, or None."""
+    if os.name != "nt" or not str(exe).lower().endswith((".cmd", ".bat")):
+        return None
+    for a in items:
+        bad = sorted({c for c in str(a) if c in SHELL_META})
+        if bad:
+            return (f"refusing to start {os.path.basename(str(exe))}: an argument contains {' '.join(bad)} (cmd.exe would read it as a command). "
+                    f"Rename the project folder so its path has none of {SHELL_META} and send again.")
+    return None
+
+
 INBOX = os.path.join(".kurgu", "inbox.jsonl")
 FRAMES = os.path.join(".kurgu", "notes")
 
@@ -105,7 +140,7 @@ def get_cursor(d):
 def set_cursor(d, seq):
     os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
     tmp = cursor_path(d) + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open_nofollow(tmp, "w") as f:
         f.write(str(int(seq)))
     os.replace(tmp, cursor_path(d))
 
@@ -302,7 +337,7 @@ def write_notes_md(d, proj=None):
         L.append("")
     path = os.path.join(d, NOTES_MD)
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open_nofollow(tmp, "w") as f:
         f.write("\n".join(L))
     os.replace(tmp, path)
     return path
@@ -323,7 +358,7 @@ def _read_int(path):
 def _write_int(path, v):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open_nofollow(tmp, "w") as f:
         f.write(str(int(v)))
     os.replace(tmp, path)
 
@@ -346,7 +381,7 @@ def append_inbox(d, proj, notes, sent_at, recovered=False):
                 lead = "" if f.read(1) == b"\n" else "\n"
     except OSError:
         pass
-    with open(inbox_path(d), "a", encoding="utf-8") as f:
+    with open_nofollow(inbox_path(d), "a") as f:
         f.write(lead + json.dumps(entry, ensure_ascii=False) + "\n")
     _write_int(seq_path(d), seq)
     return entry
@@ -419,7 +454,7 @@ def _write_listeners(d, entries):
             return
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = f"{path}.{os.getpid()}.tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
+        with open_nofollow(tmp, "w") as f:
             json.dump(entries, f)
         os.replace(tmp, path)
     except OSError:
@@ -635,9 +670,18 @@ def resolve_exe(name):
 def _log(d, text):
     try:
         os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
-        with open(os.path.join(d, HOOK_LOG), "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] {text}\n")
-    except OSError:
+        with open_nofollow(os.path.join(d, HOOK_LOG), "a") as f:
+            f.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] {str(text).replace(chr(10), ' ')}\n")
+    except OSError as e:
+        print(f"kurgu: could not write {HOOK_LOG}: {e}", file=sys.stderr)
+
+
+def _pump(stream, log):
+    try:
+        for raw in iter(stream.readline, b""):
+            log.write("| " + raw.decode("utf-8", "replace").replace("\r", "").rstrip("\n").replace("\n", " ") + "\n")
+            log.flush()
+    except (OSError, ValueError):
         pass
 
 
@@ -651,17 +695,28 @@ class _Runner:
         argv = expand_command(cmd, self.d, seq, count, file)
         argv[0] = resolve_exe(argv[0])
         env = dict(os.environ, KURGU_PROJECT_DIR=self.d, KURGU_SEQ=str(seq), KURGU_NOTES_COUNT=str(count), KURGU_NOTES_FILE=file)
+        why = shim_refusal(argv[0], argv)
+        if why:
+            _log(self.d, why)
+            print(f"kurgu: {why}", file=sys.stderr)
+            raise OSError(why)
         os.makedirs(os.path.join(self.d, ".kurgu"), exist_ok=True)
-        log = open(os.path.join(self.d, HOOK_LOG), "a", encoding="utf-8")
-        log.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] run (send #{seq}, {count} notes): {' '.join(argv)}\n")
+        try:
+            log = open_nofollow(os.path.join(self.d, HOOK_LOG), "a")
+        except OSError as e:
+            print(f"kurgu: {e}; the on_send hook was not started", file=sys.stderr)
+            raise
+        log.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] run (send #{seq}, {count} notes): {' '.join(argv)}".replace("\n", " ") + "\n")
         log.flush()
         kw = {"creationflags": 0x00000200} if os.name == "nt" else {"start_new_session": True}      # its own process group: stoppable as a whole
         try:
-            p = subprocess.Popen(argv, cwd=self.d, env=env, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, **kw)
+            p = subprocess.Popen(argv, cwd=self.d, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, **kw)
         except OSError as e:
             log.write(f"  could not start: {e}\n")
             log.close()
             raise
+        p.pump = threading.Thread(target=_pump, args=(p.stdout, log), daemon=True)      # the agent's output goes in line by line, each prefixed "| ": it can never forge a log line
+        p.pump.start()
         threading.Thread(target=self._wait, args=(p, log, cmd), daemon=True).start()
 
     def _wait(self, p, log, cmd):
@@ -674,6 +729,7 @@ class _Runner:
             pass
         try:
             rc = p.wait(limit)
+            p.pump.join(5)
             log.write(f"  finished, exit code {rc}\n")
         except subprocess.TimeoutExpired:
             try:
@@ -684,6 +740,7 @@ class _Runner:
                     os.killpg(p.pid, signal.SIGTERM)
             except OSError:
                 pass
+            p.pump.join(2)
             log.write(f"  stopped: still running after {limit:g} s\n")
         finally:
             log.close()

