@@ -37,28 +37,46 @@ Kurgu is a local video editor built around one plain file, `project.json`. Claud
 
 ## Install
 
-Kurgu needs Python 3.10+ and ffmpeg (with ffprobe) on your PATH.
+One command. It installs [uv](https://docs.astral.sh/uv/) if needed, a private Python 3.12 (no system Python required), Kurgu, and a static ffmpeg; no admin rights. Run it again any time to upgrade.
 
-| OS | ffmpeg |
+| OS | Command |
 |---|---|
-| macOS | `brew install ffmpeg` |
-| Debian / Ubuntu | `sudo apt install ffmpeg` |
-| Windows | `winget install Gyan.FFmpeg`, or without admin rights: unzip a portable build (e.g. BtbN `ffmpeg-master-latest-win64-gpl.zip`) anywhere and set `KURGU_FFMPEG` / `KURGU_FFPROBE` to its `bin\ffmpeg.exe` / `bin\ffprobe.exe` |
+| macOS / Linux | `curl -LsSf https://raw.githubusercontent.com/leodavincs/kurgu/main/install.sh \| sh` |
+| Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/leodavincs/kurgu/main/install.ps1 \| iex"` |
 
-Pick one route. Recent Python installs refuse a bare `pip install` into the system Python (PEP 668, "externally-managed-environment"), so use an isolated environment:
+Then open a **new** terminal and run `kurgu path/to/project`. `kurgu doctor` checks the machine (Python, ffmpeg, hardware encoders, free disk space; `--json` for agents, `--fix` downloads a missing ffmpeg).
 
-**uvx (nothing to install, runs from git):** [uv](https://docs.astral.sh/uv/) fetches Python and the dependencies for you.
+### Install for your user (for a coding agent: Claude Code, Codex, ...)
+
+When the user says "install Kurgu and open my project", follow this verbatim:
+
+1. **Detect the OS** (`uname -s` on macOS/Linux, `$env:OS` / `ver` on Windows).
+2. **Run the one-liner for that OS** (table above). Read its output to the end; it ends with `Done. Next step:  kurgu <your project folder>`.
+3. **Check:** `kurgu doctor --json` (use `%USERPROFILE%\.local\bin\kurgu.exe` or `~/.local/bin/kurgu` if the new command is not on PATH yet in your shell). `"ok": true` means ready.
+4. **Open the project:** run `kurgu "<project folder>"` as a background process (it prints the URL and opens the browser; add `--no-open` if the user has no desktop browser) and tell the user the URL. Quote the path: folders with spaces, Turkish letters (İ ı ş ğ) or emoji are fine.
+
+When something goes wrong:
+
+- **PowerShell says "running scripts is disabled" / execution policy.** The one-liner already uses `-ExecutionPolicy Bypass` for that one process; use it exactly as written, from a normal (non-admin) PowerShell. If the shell is locked by a company policy, ask the user to run it from their own PowerShell window.
+- **Company proxy / no download.** Set `HTTPS_PROXY` (and `HTTP_PROXY`) to the proxy URL, e.g. `$env:HTTPS_PROXY="http://proxy.company:8080"` (PowerShell) or `export HTTPS_PROXY=...`, and run the one-liner again. If ffmpeg alone cannot be fetched, Kurgu still installs; download any ffmpeg build by hand and set `KURGU_FFMPEG` and `KURGU_FFPROBE` to the full paths of `ffmpeg` and `ffprobe`, then run `kurgu doctor`.
+- **`kurgu` not found right after install.** The terminal that ran the installer has the old PATH. Open a new terminal, or call it by its full path (printed by the installer; `uv tool dir --bin` shows the folder).
+- **ffmpeg only:** `kurgu setup-ffmpeg` (`--force` re-downloads, `--json` for agents).
+- **Windows Defender / SmartScreen.** Files that a script downloads carry no "from the internet" mark, so SmartScreen normally stays quiet. Defender may scan `ffmpeg.exe` for a few seconds on the first start; that is normal.
+- **Uninstall:** `uv tool uninstall kurgu`, then delete the data folder (Windows `%LOCALAPPDATA%\Kurgu`, macOS `~/Library/Application Support/Kurgu`, Linux `~/.local/share/kurgu`). Optional: `uv cache clean`.
+
+### Where ffmpeg comes from
+
+Order: `KURGU_FFMPEG` / `KURGU_FFPROBE` (a file or a folder) → `ffmpeg` on PATH (a system ffmpeg always wins) → the copy `kurgu setup-ffmpeg` downloaded into Kurgu's data folder (`%LOCALAPPDATA%\Kurgu\ffmpeg`, `~/Library/Application Support/Kurgu/ffmpeg`, `~/.local/share/kurgu/ffmpeg`) → usual install folders (Homebrew, winget, Chocolatey, Scoop, ...). The editor never downloads anything by itself; only the install script, `kurgu setup-ffmpeg` or `kurgu doctor --fix` do. Downloads are verified by SHA-256 and by running `-version`.
+
+Static builds used (all GPL builds of FFmpeg, free software, fetched on your machine, not shipped inside Kurgu; see https://ffmpeg.org/legal.html): Windows and Linux from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), macOS from [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de/). Prefer your own? `brew install ffmpeg`, `sudo apt install ffmpeg` or `winget install Gyan.FFmpeg` also work.
+
+### Other routes
+
+Python 3.10+ and ffmpeg/ffprobe are the only requirements; the one-liner just provides both. Recent Python installs refuse a bare `pip install` into the system Python (PEP 668), so use an isolated environment:
 
 ```bash
-uvx --from git+https://github.com/leodavincs/kurgu kurgu path/to/project
-```
-
-**pipx (a permanent `kurgu` command):**
-
-```bash
-pipx install git+https://github.com/leodavincs/kurgu
-kurgu path/to/project              # editor
-kurgu-render path/to/project       # render
+uvx --from git+https://github.com/leodavincs/kurgu kurgu path/to/project    # no install, runs from git
+pipx install git+https://github.com/leodavincs/kurgu                         # permanent command (needs ffmpeg: kurgu setup-ffmpeg)
 ```
 
 **Virtualenv (from a clone, for development):**
@@ -67,10 +85,10 @@ kurgu-render path/to/project       # render
 git clone https://github.com/leodavincs/kurgu.git && cd kurgu
 python3 -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\activate
 python -m pip install -r requirements.txt
-python scripts/check_deps.py
+python scripts/check_deps.py        # same as `kurgu doctor`
 ```
 
-`check_deps.py` tells you what is missing and how to install it. Optional, for automatic captions (speech-to-text runs locally, the model downloads once on first use): `pipx inject kurgu faster-whisper` (or `mlx-whisper` on Apple Silicon), or `pip install faster-whisper` inside your virtualenv.
+Optional, for automatic captions (speech-to-text runs locally, the model downloads once on first use): `uv tool install --force --python 3.12 --with faster-whisper git+https://github.com/leodavincs/kurgu` (Apple Silicon: `--with mlx-whisper`), or `pipx inject kurgu faster-whisper`, or `pip install faster-whisper` inside your virtualenv.
 
 ### As a Claude Code plugin
 
@@ -79,7 +97,7 @@ python scripts/check_deps.py
 /plugin install kurgu@kurgu
 ```
 
-The plugin registers its MCP server through [`uvx`](https://docs.astral.sh/uv/), which works the same on macOS, Linux and Windows and installs the Python dependencies itself; install uv first (`brew install uv`, `winget install astral-sh.uv`, or `pipx install uv`). You still need ffmpeg. Claude Code namespaces plugin commands, so the editor command is **`/kurgu:kurgu path/to/project`** (typing `/kurgu` may complete to it). Without uv, install Kurgu with pipx and add the MCP server by hand: `claude mcp add kurgu -- kurgu-mcp`.
+The plugin registers its MCP server through [`uvx`](https://docs.astral.sh/uv/), which works the same on macOS, Linux and Windows and installs the Python dependencies itself; install uv first (`brew install uv`, `winget install astral-sh.uv`, or `pipx install uv`), or just run the one-line installer above, which also sets up ffmpeg. Without it you still need ffmpeg (`uvx --from git+https://github.com/leodavincs/kurgu kurgu setup-ffmpeg`). Claude Code namespaces plugin commands, so the editor command is **`/kurgu:kurgu path/to/project`** (typing `/kurgu` may complete to it). Without uv, install Kurgu with pipx and add the MCP server by hand: `claude mcp add kurgu -- kurgu-mcp`.
 
 ## Usage
 
@@ -101,7 +119,7 @@ Draft first, full when it looks right. (From a clone, `python render.py ...` doe
 
 Kurgu ships an MCP server (`kurgu-mcp`, stdio; the same code as `mcp_server.py`), so any MCP-capable agent gets the same powers: open the editor, see what you selected, edit the project in validated batches, look at rendered frames, render. `AGENTS.md` in the repo root tells agents that read that file how to work with Kurgu.
 
-Tools: `open_editor`, `get_state`, `get_project`, `edit_project`, `render_frame`, `render`, `get_changes`, `list_fonts`, `list_media`, `import_file`. Each takes an optional `project_dir` (default: the server's working directory, or the `KURGU_PROJECT_DIR` environment variable). The snippets below assume `pipx install git+https://github.com/leodavincs/kurgu`, which puts `kurgu-mcp` on your PATH (on Windows, use the full path printed by `pipx` if the agent cannot find it). From a clone, use your virtualenv's Python and the full path to `mcp_server.py` instead.
+Tools: `open_editor`, `get_state`, `get_project`, `edit_project`, `render_frame`, `render`, `get_changes`, `list_fonts`, `list_media`, `import_file`. Each takes an optional `project_dir` (default: the server's working directory, or the `KURGU_PROJECT_DIR` environment variable). The snippets below assume the one-line installer above (or `pipx install git+https://github.com/leodavincs/kurgu`), which puts `kurgu-mcp` on your PATH (if the agent cannot find it, use the full path: `uv tool dir --bin` or `pipx` print the folder). From a clone, use your virtualenv's Python and the full path to `mcp_server.py` instead.
 
 **Claude Code.** Install the plugin (see above). The MCP server is registered automatically through the plugin's `.mcp.json` (via `uvx`); nothing to configure. Without the plugin: `claude mcp add kurgu -- kurgu-mcp`.
 

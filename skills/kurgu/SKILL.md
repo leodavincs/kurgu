@@ -11,6 +11,17 @@ You write `project.json`. The user opens the same file in a local browser editor
 
 Paths: the plugin root is `${CLAUDE_PLUGIN_ROOT}`. `<dir>` is the project directory (the one holding `project.json`).
 
+## Install Kurgu for the user (if `kurgu` is not installed yet)
+
+No Python, ffmpeg or admin rights needed; one command, safe to repeat (it upgrades). Detect the OS, run the matching line, then check and open:
+
+- macOS / Linux: `curl -LsSf https://raw.githubusercontent.com/leodavincs/kurgu/main/install.sh | sh`
+- Windows (PowerShell): `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/leodavincs/kurgu/main/install.ps1 | iex"`
+- Check: `kurgu doctor --json` (`"ok": true` = ready; if the command is not found yet use `~/.local/bin/kurgu` or `%USERPROFILE%\.local\bin\kurgu.exe`). Missing ffmpeg only: `kurgu setup-ffmpeg`.
+- Open: `kurgu "<project folder>"` in the background, tell the user the URL. Quote the path (spaces, Turkish letters, emoji are fine).
+- Blocked? Execution policy: keep `-ExecutionPolicy Bypass` and use a normal PowerShell. Proxy: set `HTTPS_PROXY` and rerun. No download possible: get any ffmpeg by hand and set `KURGU_FFMPEG` / `KURGU_FFPROBE`.
+- Uninstall: `uv tool uninstall kurgu`, then delete the data folder (`%LOCALAPPDATA%\Kurgu`, `~/Library/Application Support/Kurgu` or `~/.local/share/kurgu`).
+
 ## Workflow
 
 1. **Set up.** Pick or create `<dir>`. Put every new asset in `<dir>/media/` (copy or generate it there; fonts in `<dir>/fonts/`). Reference it relatively: `"src": "media/clip.mp4"`.
