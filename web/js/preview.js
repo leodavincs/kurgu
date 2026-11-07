@@ -531,7 +531,7 @@ export function requestRealFrame() {
     im.src = frameUrl(time);
   }, 350);
 }
-export function setRealFrame(on) { S.realFrame = on; frame.status = 'none'; if (on) requestRealFrame(); requestRedraw(); emit('settings'); }
+export function setRealFrame(on) { S.realFrame = on; frame.status = 'none'; applyScale(true); if (on) requestRealFrame(); requestRedraw(); emit('settings'); }
 
 // ---------------------------------------------------------------- interaction
 function toProject(e) { const r = ovl.getBoundingClientRect(); const cx = e.clientX - r.left, cy = e.clientY - r.top; return { x: (cx - vox) / vz, y: (cy - voy) / vz, cx, cy }; }
@@ -755,14 +755,25 @@ function layout() {
   requestRedraw();
 }
 function resize() { const z = vz, f = fitZ; layout(); if (z !== vz || f !== fitZ) emit('view'); }
+  applyScale(false);
 export function applyProjectSize() {
   W = S.project.width; H = S.project.height;
-  rs = Math.min(1, Math.sqrt(2.5e6 / (W * H))); // internal canvas resolution, capped at ≈2.5 MP (coordinates stay in project pixels)
+/** The internal canvas only needs the pixels that are shown: on-screen frame size x devicePixelRatio, at most ~1 MP in the fit view. At 100 % zoom and
+ *  more, and in real-frame mode, it is the full resolution (still capped at 2.5 MP). Drawing is in project pixels either way (the context is scaled by rs). */
+function wantScale() {
+  const full = S.realFrame || vz >= 0.999, cap = Math.sqrt((full ? 2.5e6 : 1.0e6) / (W * H));
+  return clamp(Math.min(1, cap, S.realFrame ? 1 : vz * dpr), 0.2, 1);
+}
+function applyScale(force) {
+  const want = wantScale();
+  if (!force && Math.abs(Math.log(want / rs)) < 0.15) return;      // no flicker while a window edge is dragged
+  rs = want;
   dom.canvas.width = Math.round(W * rs); dom.canvas.height = Math.round(H * rs);
-  ctx = dom.canvas.getContext('2d', { alpha: false });
   grainTile.pattern = null;
+}
+  ctx = dom.canvas.getContext('2d', { alpha: false });
   view.px = view.py = 0;
-  layout(); emit('view');
+  layout(); applyScale(true); emit('view');
 }
 /** Draw project `P` (maybe with another frame size) into a small canvas with the real compositor — used by the Sequence dialog. */
 export function renderThumb(P, canvas) {
