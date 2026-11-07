@@ -80,12 +80,12 @@ def test_hook_comes_from_the_user_config_and_env_but_never_from_the_project(proj
 def test_send_runs_the_hook_detached_with_env_placeholders_and_log(srv, cfg, tmp_path):
     c, d = srv
     out = str(tmp_path / "out.json")
-    script = write_script(tmp_path, "time.sleep(1.5)\njson.dump({'argv': sys.argv[1:], 'cwd': os.getcwd(), 'env': {k: v for k, v in os.environ.items() if k.startswith('KURGU_')}}, open(sys.argv[1], 'w'))\nprint('hook says hi')\n")
+    script = write_script(tmp_path, "time.sleep(6)\njson.dump({'argv': sys.argv[1:], 'cwd': os.getcwd(), 'env': {k: v for k, v in os.environ.items() if k.startswith('KURGU_')}}, open(sys.argv[1], 'w'))\nprint('hook says hi')\n")
     set_hook(cfg, [PY, script, out, "{dir}", "{seq}"])
     t0 = time.time()
     st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1", "n_2"]})
     assert st == 200 and res["hook"] == "started" and not res["hook_error"]
-    assert time.time() - t0 < 1.4                                                   # the hook sleeps 1.5 s: the answer did not wait for it
+    assert time.time() - t0 < 5                                                     # the hook sleeps 6 s: the answer did not wait for it (slack for slow CI runners)
     got = json.load(open(wait_for(lambda: os.path.exists(out) and out), "r"))
     assert got["argv"][1:] == [os.path.realpath(d), "1"] and os.path.realpath(got["cwd"]) == os.path.realpath(d)
     e = got["env"]
