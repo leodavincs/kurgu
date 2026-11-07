@@ -99,18 +99,23 @@ def test_a_send_during_a_hook_run_queues_exactly_one_follow_up(srv, cfg, tmp_pat
     c, d = srv
     marks = tmp_path / "runs"
     marks.mkdir()
-    script = write_script(tmp_path, "open(os.path.join(sys.argv[1], 'run-' + os.environ['KURGU_SEQ'] + '-' + os.environ['KURGU_NOTES_COUNT']), 'w').close()\ntime.sleep(2)\n")
-    set_hook(cfg, [PY, script, str(marks)])
+    release = tmp_path / "release"
+    # the first run stays alive until the test says so (no timing guess: a slow machine cannot let it finish early)
+    script = write_script(tmp_path, "open(os.path.join(sys.argv[1], 'run-' + os.environ['KURGU_SEQ'] + '-' + os.environ['KURGU_NOTES_COUNT']), 'w').close()\n"
+                                    "t0 = time.time()\nwhile not os.path.exists(sys.argv[2]) and time.time() - t0 < 90:\n    time.sleep(0.05)\n")
+    set_hook(cfg, [PY, script, str(marks), str(release)])
     assert c.req("POST", "/api/notes/send", {"ids": ["n_1"]})[1]["hook"] == "started"
     wait_for(lambda: os.listdir(marks))
     assert c.req("POST", "/api/notes/send", {"ids": ["n_2"]})[1]["hook"] == "queued"        # one run at a time ...
     assert c.req("POST", "/api/notes/send", {"ids": ["n_3"]})[1]["hook"] == "queued"        # ... and several sends make ONE follow-up
     assert sorted(os.listdir(marks)) == ["run-1-1"]
-    wait_for(lambda: len(os.listdir(marks)) == 2, 30)
-    time.sleep(2.5)
-    assert sorted(os.listdir(marks)) == ["run-1-1", "run-3-1"]                              # the follow-up carries the latest send (#3)
-    wait_for(lambda: not agent_notes._runners[os.path.realpath(d)].running, 30)
+    release.write_text("go")                                                                 # let the first run end: the follow-up starts
+    wait_for(lambda: len(os.listdir(marks)) == 2, 60)
+    time.sleep(1.0)
+    assert sorted(os.listdir(marks)) == ["run-1-1", "run-3-1"]                              # the follow-up carries the latest send (#3), nothing else started
+    wait_for(lambda: not agent_notes._runners[os.path.realpath(d)].running, 60)
     assert c.req("POST", "/api/notes/send", {"ids": ["n_4"]})[1]["hook"] == "started"        # idle again: the next send starts normally
+    wait_for(lambda: len(os.listdir(marks)) == 3, 60)
 
 
 def test_a_hook_that_cannot_start_is_logged_and_shown_but_the_send_succeeds(srv, cfg):

@@ -9,9 +9,12 @@ done
 dir="$(cd -P "$(dirname "$src")" && pwd)"
 # A Python >= 3.10 (prefer a versioned one when several are installed)
 pick_python() {
-  for c in python3.13 python3.12 python3.11 python3.10 python3 python; do
-    p="$(command -v "$c" 2>/dev/null)" || continue
-    "$p" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null && { echo "$p"; return 0; }
+  # first choice: an interpreter that already has Kurgu's dependencies (the venv of this checkout); then any Python >= 3.10
+  for need in 'import numpy, PIL, fontTools' 'pass'; do
+    for c in python3.13 python3.12 python3.11 python3.10 python3 python; do
+      p="$(command -v "$c" 2>/dev/null)" || continue
+      "$p" -c "import sys; $need; sys.exit(0 if sys.version_info >= (3, 10) else 1)" 2>/dev/null && { echo "$p"; return 0; }
+    done
   done
   # not on PATH: a Python that uv manages (`uv python find`), or the one in the installed tool environment
   if command -v uv >/dev/null 2>&1; then

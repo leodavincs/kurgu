@@ -5,6 +5,8 @@ rem The exit code is passed on at the END of the script (outside any parenthesis
 rem parsed, which made every run exit 0 and hid `notes wait` timeouts).
 setlocal
 set "PYEXE=python"
+rem a checkout runs with the interpreter that has its dependencies (an activated venv, the one that ran `pip install -r requirements.txt`): try `python` first
+where python >nul 2>nul && python -c "import sys, numpy, PIL, fontTools; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul && goto havepy
 where py >nul 2>nul
 if not errorlevel 1 set "PYEXE=py -3"
 %PYEXE% -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>nul

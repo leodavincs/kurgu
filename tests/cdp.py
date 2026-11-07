@@ -208,10 +208,17 @@ class Page:
         return r["result"].get("value")
 
     def reload_and_wait(self, ready, timeout=20):
-        """Reload and wait for the NEW document: right after Page.reload the old page still satisfies `ready`, and a check on it would race the navigation."""
-        self.eval("window.__kurgu_old_doc = true")
+        """Reload and wait for the NEW document. Right after Page.reload the old page still satisfies `ready`, so the new one is recognised by its own
+        performance.timeOrigin (every document has its own); if the first reload did not take (a slow runner), it is sent once more."""
+        t0 = self.eval("performance.timeOrigin")
         self.send("Page.reload")
-        self.wait_for("!window.__kurgu_old_doc && (" + ready + ")", timeout)
+        cond = "performance.timeOrigin !== %r" % t0
+        try:
+            self.wait_for(cond, 8)
+        except TimeoutError:
+            self.send("Page.reload")
+            self.wait_for(cond, timeout)
+        self.wait_for(ready, timeout)
 
     def wait_for(self, js, timeout=10, interval=0.1):
         t0 = time.time()
@@ -228,7 +235,7 @@ class Page:
     # -- navigation
     def open(self, url, lang=None, theme=None, view="layers", mode="edit", ready="window.__kurgu && __kurgu.S.project && document.querySelector('.row')"):
         self.send("Page.navigate", url=url)
-        time.sleep(0.2)
+        self.wait_for("location.href.startsWith('http') && document.readyState === 'complete'", 60 if os.environ.get("CI") else 20)    # the page itself, not about:blank
         # set persisted prefs, then reload so that boot() sees them
         pre = []
         if view:   # the product default is the track view; the older tests were written for one row per layer
@@ -240,10 +247,10 @@ class Page:
         if theme:
             pre.append("localStorage.setItem('kurgu.theme','%s')" % theme)
         if pre:
-            self.eval(";".join(pre) + ";window.__kurgu_old_doc = true")
-            self.send("Page.reload")
-            ready = "!window.__kurgu_old_doc && (" + ready + ")"          # the old document must not answer for the new one
-        self.wait_for(ready, 60 if os.environ.get("CI") else 20)
+            self.eval(";".join(pre))
+            self.reload_and_wait(ready, 60 if os.environ.get("CI") else 20)    # the old document must not answer for the new one
+        else:
+            self.wait_for(ready, 60 if os.environ.get("CI") else 20)
         time.sleep(0.6)
 
     # -- input
