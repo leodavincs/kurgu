@@ -1624,6 +1624,9 @@ class Handler(BaseHTTPRequestHandler):
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
+    # The editor loads ~40 ES modules at once. With the default listen backlog (5) Windows answers the overflow with a
+    # reset (the browser shows ERR_CONNECTION_REFUSED and the editor never boots); macOS / Linux just queue them.
+    request_queue_size = 128
     allow_reuse_address = os.name != "nt"     # on Windows SO_REUSEADDR lets a second server bind a port that is in use
 
     def server_bind(self):

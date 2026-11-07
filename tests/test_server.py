@@ -317,3 +317,9 @@ def test_path_traversal_names(srv):
     assert not os.path.exists(os.path.join(os.path.dirname(d), "escape.png"))
     assert c.req("GET", "/media?path=" + "../../../etc/passwd")[0] == 403
     assert c.req("POST", "/api/exports/reveal", {"path": "../../etc/passwd"})[0] == 404
+
+
+def test_the_listen_backlog_takes_a_burst_of_module_loads():
+    """Windows CI: the editor's parallel module loads overflowed the default backlog (5) and some got ERR_CONNECTION_REFUSED."""
+    import server
+    assert server.Server.request_queue_size >= 64
