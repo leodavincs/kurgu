@@ -32,14 +32,19 @@ export async function sendNotes() {
   try {
     await API.saveAndWait();
     const r = await API.sendNotes(ids);
-    if (!r.ok) { toast(t('send.failed', { reason: API.errorText(r.status, r.data) }), 'error', 6000); return false; }
+    if (!r.ok) {
+      if (r.data && r.data.reason) showReason({ code: r.data.reason, params: r.data.params });   // refused for safety: nothing was recorded, NOT a success
+      else toast(t('send.failed', { reason: API.errorText(r.status, r.data) }), 'error', 6000);
+      return false;
+    }
     loadExternal(r.data.project, r.data.version);               // the server wrote project.json: one undo step
     watchSent.push(...r.data.ids);
     const woke = r.data.hook === 'started' || r.data.hook === 'queued';     // the user's on_send hook ran: the agent was started for these notes
     live = { listening: !!r.data.listening, wake: r.data.wake === 'configured' }; refreshSend();
-    if (woke || live.listening) toast(t(r.data.sent === 1 && getLang() === 'en' ? 'send.toast1' : 'send.toast', { n: r.data.sent, who: who() }) + ' · ' + t(woke ? 'send.woke' : 'send.listening'), 'ok', woke ? 6000 : 5000);
+    if (r.data.hook_reason) showReason(r.data.hook_reason);                  // the notes are saved, but the agent was not started: say why
+    else if (woke || live.listening) toast(t(r.data.sent === 1 && getLang() === 'en' ? 'send.toast1' : 'send.toast', { n: r.data.sent, who: who() }) + ' · ' + t(woke ? 'send.woke' : 'send.listening'), 'ok', woke ? 6000 : 5000);
     else if (r.data.hook !== 'error') showIdlePanel();                      // nobody will read them: not a success toast
-    if (r.data.hook === 'error') toast(t('send.wakeFailed', { error: r.data.hook_error || '' }), 'warn', 9000);
+    if (r.data.hook === 'error' && !r.data.hook_reason) toast(t('send.wakeFailed', { error: r.data.hook_error || '' }), 'warn', 9000);
     if (r.data.failed_frames && r.data.failed_frames.length) toast(t('send.noFrames', { n: r.data.failed_frames.length }), 'warn', 7000);
     return true;
   } catch (e) { toast(t('send.failed', { reason: String(e.message || e) }), 'error', 6000); return false; }
@@ -73,11 +78,24 @@ function showIdlePanel() {
   }
   document.body.append(p);
 }
+// A refusal (symlink under .kurgu, Windows special characters in the path): persistent + dismissible, same component as the "not listening" panel.
+export function showReason(r) {
+  const code = r && r.code ? r.code : 'unknown', params = Object.assign({ code }, (r && r.params) || {});
+  const key = 'reason.' + code, known = t(key, params) !== key;
+  const old = $('notice-panel'); if (old) old.remove();
+  const p = el('div', 'idle-panel err'); p.id = 'notice-panel'; p.dataset.code = code; p.setAttribute('role', 'alert');
+  const x = el('button', 'w-ib idle-x'); x.type = 'button'; x.title = t('reason.close'); x.append(icon('x')); x.addEventListener('click', () => p.remove());
+  p.append(x, el('b', 'idle-title', t('reason.title')), el('span', 'idle-body', known ? t(key, params) : t('reason.unknown', params)));
+  document.body.append(p);
+}
+let shownProblem = '';
 async function pollLive() {
   if (document.hidden) return;
   const i = await API.notesLive(); if (!i) return;
   live = { listening: !!i.listening, wake: i.wake === 'configured' }; refreshSend();
+  noteProblem(i.problem);
 }
+function noteProblem(pr) { const c = pr ? pr.code : ''; if (c && c !== shownProblem) showReason(pr); shownProblem = c; }
 
 function refreshSend() {
   const n = S.project ? unsent().length : 0;
@@ -376,7 +394,7 @@ export function startWatch({ toast: toastFn } = {}) {
   buildReview();
   placeDock();
   $('b-watch').addEventListener('click', openWatch);
-  const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; live = { listening: !!i.listening, wake: i.wake === 'configured' }; refreshSend(); renderLists(); });
+  const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; live = { listening: !!i.listening, wake: i.wake === 'configured' }; noteProblem(i.problem); refreshSend(); renderLists(); });
   info(); setInterval(pollLive, 10000);
   refreshSend(); renderLists();
   return {

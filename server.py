@@ -43,6 +43,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import agent_notes
+import diag
 import ai
 import media_tools
 import exports
@@ -1055,8 +1056,39 @@ class App:
         return res[:200]
 
     # ------------------------------------------------------------ watch + note: send notes to the agent
+    CLIENT_ERRORS_PER_MIN = 10
+
+    def client_error(self, body):
+        """POST /api/diag/client {message, source, line, col}: a browser error (window.onerror / unhandledrejection) into the event log. Rate limited;
+        no stack, no note text: the message is clipped and the source reduced to its file name."""
+        now = time.time()
+        recent = [t for t in getattr(self, "_client_err", []) if now - t < 60]
+        if len(recent) >= self.CLIENT_ERRORS_PER_MIN:
+            self._client_err = recent
+            return 429, {"error": "too many error reports"}
+        self._client_err = recent + [now]
+        if not isinstance(body, dict):
+            return 400, {"error": "object expected"}
+        src = str(body.get("source") or "").split("?")[0].rsplit("/", 1)[-1][:80]
+        diag.event(self.dir, "frontend", str(body.get("message") or "")[:200], "error",
+                   ctx={"source": src, "line": body.get("line") if isinstance(body.get("line"), int) else None,
+                        "col": body.get("col") if isinstance(body.get("col"), int) else None})
+        return 200, {"ok": True}
+
+    def notes_problem(self):
+        """{code, params} when something Kurgu refuses to do stops notes from working (shown in the editor), else None."""
+        try:
+            agent_notes.check_writable(self.dir, side=True)
+        except agent_notes.KurguRefusal as e:
+            return {"code": e.code, "params": e.params}
+        if agent_notes.IS_WINDOWS and agent_notes.wake_configured():
+            e = agent_notes.shim_refusal("claude.cmd", self.dir)
+            if e:
+                return {"code": e.code, "params": e.params}
+        return None
+
     def notes_info(self):
-        return {"agent_name": agent_notes.agent_name(self.dir), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "inbox": agent_notes.inbox_len(self.dir), "default_mode": agent_notes.default_mode(self.dir)}
+        return {"agent_name": agent_notes.agent_name(self.dir), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "problem": self.notes_problem(), "inbox": agent_notes.inbox_len(self.dir), "default_mode": agent_notes.default_mode(self.dir)}
 
     def note_frame_jpeg(self, nid, t, marks=None, size=(1920, 1080)):
         """Render the timeline frame at `t` (same machinery as /api/frame, draft size) and store it as .kurgu/notes/<id>.jpg."""
@@ -1105,6 +1137,7 @@ class App:
         ids = body.get("ids")
         if ids is not None and (not isinstance(ids, list) or any(not isinstance(x, str) for x in ids)):
             raise HttpError(400, "ids must be a list of note ids")
+        agent_notes.check_writable(self.dir)                   # a symlink under .kurgu: refuse BEFORE anything is stamped as sent
         try:
             raw = json.loads(self.project_bytes())
         except ValueError as e:
@@ -1156,7 +1189,10 @@ class App:
             hook = agent_notes.run_on_send(self.dir, entry["seq"], len(sent_notes))
         except Exception as e:                                  # a broken hook must not fail a send
             hook = {"hook": "error", "error": f"{type(e).__name__}: {e}"}
-        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "at": stamp, "file": agent_notes.NOTES_MD,
+        listening, wake = agent_notes.is_listening(self.dir), "configured" if agent_notes.wake_configured() else "none"
+        diag.event(self.dir, "send", "notes sent", ctx={"count": len(sent_notes), "listening": listening, "wake": wake, "hook": hook.get("hook", "") or "none",
+                                                        "failed_frames": len(failed)})
+        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "hook_reason": hook.get("reason"), "listening": listening, "wake": wake, "at": stamp, "file": agent_notes.NOTES_MD,
                 "failed_frames": failed, "inbox": entry, "project": proj, "version": version}
 
     def reveal(self, rel):
@@ -1254,6 +1290,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(data)
 
     def fail(self, code, message, close=False):
+        if code >= 500:                                          # route + short message only: never a request body
+            try:
+                diag.event(self.app.dir, "error", message, "error", code=str(code), ctx={"route": (self.path or "").split("?")[0], "method": self.command, "exc": getattr(self, "_exc", "")})
+            except Exception:
+                pass
         self.reply(code, {"error": message}, close=close)
 
     def handle_one_request(self):
@@ -1315,13 +1356,18 @@ class Handler(BaseHTTPRequestHandler):
             self.fail(e.code, e.message)
         except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
             self.close_connection = True
+        except agent_notes.KurguRefusal as e:                   # a safety refusal: the editor shows reason + params in plain language
+            diag.refusal(self.app.dir, e)
+            self.reply(409, {"error": str(e), "reason": e.code, "params": e.params})
         except json.JSONDecodeError as e:
             self.fail(400, f"invalid JSON: {e}")
         except (subprocess.SubprocessError, RuntimeError) as e:
+            self._exc = type(e).__name__
             self.fail(500, str(e))
         except FileNotFoundError as e:
             self.fail(404, str(e))
         except Exception as e:
+            self._exc = type(e).__name__
             self.fail(500, f"{type(e).__name__}: {e}")
 
     do_GET = lambda self: self.dispatch("GET")
@@ -1337,6 +1383,10 @@ class Handler(BaseHTTPRequestHandler):
             if method == "PUT":
                 code, data = app.save_project(self.read_json())
                 return self.reply(code, data)
+        elif path == "/api/report" and method == "GET":
+            return self.reply(200, {"text": diag.build_report(app.dir)})
+        elif path == "/api/diag/client" and method == "POST":
+            return self.reply(*app.client_error(self.read_json()))
         elif path == "/api/version" and method == "GET":
             return self.reply(200, {"version": app.version(), "app": "kurgu", "dir": app.dir})
         elif path == "/api/state":
@@ -1682,6 +1732,7 @@ def main(argv=None):
     print(f"Kurgu: {url}  (project: {srv.app.dir})", flush=True)
     if not a.no_open:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
+    diag.event(srv.app.dir, "server", "server started", ctx={"version": diag._kurgu_version()[0], "port": srv.server_address[1], "pid": os.getpid()})
     info_path = os.path.join(srv.app.kurgu, "server.json")
     info = {"port": srv.server_address[1], "pid": os.getpid(), "started": datetime.now().replace(microsecond=0).isoformat()}
     write_atomic(info_path, json.dumps(info).encode())
@@ -1708,6 +1759,7 @@ def main(argv=None):
     except KeyboardInterrupt:
         print("\nshutting down")
     finally:
+        diag.event(srv.app.dir, "server", "server stopped", ctx={"version": diag._kurgu_version()[0]})
         stop.set()
         srv.app.ai.shutdown()
         srv.server_close()                                   # also cancels a running render

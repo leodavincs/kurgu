@@ -1,0 +1,242 @@
+"""Diagnostics: the event log (.kurgu/log.jsonl), `kurgu report`, redaction, refusal reasons end to end, the listener lock."""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import threading
+import time
+
+import pytest
+
+import agent_notes
+import diag
+import server
+from test_server import Client
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+NOTE_TEXT = "SECRET-NOTE-TEXT make the title bigger"
+
+
+def events(d):
+    return diag.read_events(d, 1000)
+
+
+def wait_for(pred, timeout=20):
+    t0 = time.time()
+    while time.time() - t0 < timeout:
+        v = pred()
+        if v:
+            return v
+        time.sleep(0.05)
+    raise AssertionError("condition never true")
+
+
+@pytest.fixture()
+def cfg(tmp_path, monkeypatch):
+    c = tmp_path / "userconf"
+    c.mkdir()
+    monkeypatch.setenv("KURGU_CONFIG", str(c))
+    monkeypatch.delenv("KURGU_ON_SEND", raising=False)
+    agent_notes._runners.clear()
+    return c
+
+
+def start(d):
+    p = json.load(open(os.path.join(d, "project.json"), encoding="utf-8"))
+    p["notes"] = [{"id": f"n_{i}", "t": float(i), "text": NOTE_TEXT} for i in range(1, 4)]
+    json.dump(p, open(os.path.join(d, "project.json"), "w", encoding="utf-8"))
+    s = server.make_server(d, port=0)
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+    return s, Client(s.server_address[1])
+
+
+@pytest.fixture()
+def srv(project_dir, cfg):
+    s, c = start(project_dir)
+    yield c, project_dir, s
+    s.shutdown()
+    s.server_close()
+
+
+# ---------------------------------------------------------------- the log
+def test_log_rotates_at_the_size_limit_and_keeps_three_files(project_dir, monkeypatch):
+    monkeypatch.setattr(diag, "MAX_BYTES", 3000)
+    for i in range(200):
+        diag.event(project_dir, "test", f"event number {i} " + "x" * 40)
+    k = os.path.join(project_dir, ".kurgu")
+    names = sorted(n for n in os.listdir(k) if n.startswith("log.jsonl"))
+    assert names == ["log.jsonl", "log.jsonl.1", "log.jsonl.2"]
+    assert all(os.path.getsize(os.path.join(k, n)) < 3600 for n in names)
+    ev = events(project_dir)
+    assert ev[-1]["msg"].startswith("event number 199") and len(ev) < 200 and all({"ts", "kind", "level", "msg"} <= set(e) for e in ev)
+
+
+def test_log_refuses_a_symlink_and_leaves_the_target_alone(project_dir, tmp_path):
+    target = tmp_path / "profile"
+    target.write_text("keep\n")
+    os.makedirs(os.path.join(project_dir, ".kurgu"), exist_ok=True)
+    os.symlink(target, os.path.join(project_dir, ".kurgu", "log.jsonl"))
+    assert diag.event(project_dir, "test", "x") is False and target.read_text() == "keep\n"
+    assert events(project_dir) == []
+
+
+def test_events_for_send_refusal_error_frontend_and_wake_without_note_text(srv, cfg):
+    c, d, s = srv
+    st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})                                      # a send
+    assert st == 200 and res["listening"] is False
+    c.req("POST", "/api/diag/client", {"message": "TypeError: x is undefined", "source": "http://127.0.0.1:1/web/js/main.js?v=3", "line": 12, "col": 4})
+    s.app.get_state = lambda: (_ for _ in ()).throw(RuntimeError("boom"))                              # a 5xx
+    assert c.req("GET", "/api/state")[0] == 500
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)                                              # a refusal
+    if os.path.lexists(os.path.join(d, ".kurgu", "inbox.seq")):
+        os.remove(os.path.join(d, ".kurgu", "inbox.seq"))
+    os.symlink(os.path.join(d, "project.json"), os.path.join(d, ".kurgu", "inbox.seq"))
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_2"]})[0] == 409
+    os.remove(os.path.join(d, ".kurgu", "inbox.seq"))
+    (cfg / "config.json").write_text(json.dumps({"on_send": [sys.executable, "-c", "import sys; print('a'); print('err line', file=sys.stderr); sys.exit(3)"]}))
+    c.req("POST", "/api/notes/send", {"ids": ["n_3"]})                                                  # a wake run
+    wait_for(lambda: any(e["kind"] == "wake" and e["msg"] == "hook run finished" for e in events(d)))
+    ev = events(d)
+    kinds = {e["kind"] for e in ev}
+    assert {"send", "refusal", "error", "frontend", "wake"} <= kinds
+    send = next(e for e in ev if e["kind"] == "send")
+    assert send["ctx"]["count"] == 1 and send["ctx"]["listening"] is False and send["ctx"]["wake"] == "none"
+    assert next(e for e in ev if e["kind"] == "refusal")["code"] == "symlink"
+    err = next(e for e in ev if e["kind"] == "error")
+    assert err["ctx"]["route"] == "/api/state" and err["ctx"]["exc"] == "RuntimeError" and err["code"] == "500"
+    fe = next(e for e in ev if e["kind"] == "frontend")
+    assert fe["ctx"]["source"] == "main.js" and fe["ctx"]["line"] == 12
+    fin = next(e for e in ev if e["msg"] == "hook run finished")
+    assert fin["ctx"]["exit"] == 3 and "err line" in fin["ctx"]["tail"] and next(e for e in ev if e["msg"] == "hook run started")["ctx"]["exe"]
+    assert NOTE_TEXT not in open(os.path.join(d, ".kurgu", "log.jsonl"), encoding="utf-8").read()
+    assert NOTE_TEXT not in diag.build_report(d)
+
+
+def test_server_start_and_stop_are_logged(project_dir):
+    port = __import__("cdp").free_port()
+    p = subprocess.Popen([sys.executable, os.path.join(ROOT, "server.py"), project_dir, "--port", str(port), "--no-open"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        wait_for(lambda: any(e["msg"] == "server started" for e in events(project_dir)))
+        assert next(e for e in events(project_dir) if e["msg"] == "server started")["ctx"]["version"]
+    finally:
+        p.terminate()
+        p.wait(10)
+    assert any(e["msg"] == "server stopped" for e in events(project_dir))
+
+
+def test_client_error_endpoint_is_rate_limited(srv):
+    c, d, s = srv
+    codes = [c.req("POST", "/api/diag/client", {"message": f"e{i}", "source": "a.js"})[0] for i in range(13)]
+    assert codes[:10] == [200] * 10 and codes[10:] == [429] * 3
+    assert len([e for e in events(d) if e["kind"] == "frontend"]) == 10
+
+
+# ---------------------------------------------------------------- redaction + report
+def test_redaction_hides_home_emails_and_tokens_but_keeps_names():
+    home = os.path.expanduser("~")
+    txt = (f"{home}/Videos/my_project_final.mp4 mail me@example.com Authorization: Bearer abc.DEF-123_xyz sk-ant-api03-ABCDEFGH12345678 "
+           "hash 0123456789abcdef0123456789abcdef01234567 key aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bC1dE3fG5h token=hunter2 api_key: 'zz' path /tmp/x/clip-01.mov")
+    out = diag.redact(txt)
+    assert "~/Videos/my_project_final.mp4" in out and home not in out and "clip-01.mov" in out
+    for leaked in ("me@example.com", "abc.DEF-123", "ABCDEFGH12345678", "0123456789abcdef0123456789abcdef", "aB3dE5gH7jK9mN1pQ3sT5vW7yZ9bC1dE3fG5h", "hunter2", "'zz'"):
+        assert leaked not in out, leaked
+    assert "<email>" in out and "<redacted>" in out
+
+
+def test_report_has_the_facts_the_log_and_the_hook_log_and_is_redacted(srv, cfg):
+    c, d, s = srv
+    (cfg / "config.json").write_text(json.dumps({"on_send": ["/secret/path/kurgu", "wake", "claude", "{dir}", "{seq}"]}))
+    diag.event(d, "test", f"contact me@example.com from {os.path.expanduser('~')}")
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    open(os.path.join(d, ".kurgu", "hook.log"), "w").write("\n".join(f"line {i}" for i in range(80)) + "\n")
+    text = diag.build_report(d)
+    for part in ("Kurgu report", "kurgu:", "python:", "ffmpeg:", "chrome:", "Agent setup", "wake:      configured (claude)", "listening: no", "Doctor", "Last events", "hook.log (last 50 lines)"):
+        assert part in text, part
+    assert "/secret/path" not in text and "me@example.com" not in text and "<email>" in text and "line 79" in text and "line 20" not in text
+    assert c.req("GET", "/api/report")[1]["text"].startswith("Kurgu report")
+
+
+def test_kurgu_report_cli_prints_or_writes_a_file(project_dir):
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "kurgu_cli.py"), "report", project_dir], capture_output=True, text=True, encoding="utf-8")
+    assert r.returncode == 0 and r.stdout.startswith("Kurgu report")
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "kurgu_cli.py"), "report", project_dir, "-o"], capture_output=True, text=True, encoding="utf-8")
+    path = r.stdout.strip()
+    assert r.returncode == 0 and os.path.basename(path).startswith("report-") and open(path, encoding="utf-8").read().startswith("Kurgu report")
+
+
+# ---------------------------------------------------------------- refusal reasons end to end (server side)
+def test_reason_symlinked_kurgu_folder_or_inbox_refuses_the_send_as_an_error(srv, tmp_path):
+    c, d, s = srv
+    os.makedirs(tmp_path / "elsewhere")
+    shutil.rmtree(os.path.join(d, ".kurgu"), ignore_errors=True)
+    os.symlink(tmp_path / "elsewhere", os.path.join(d, ".kurgu"))
+    st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
+    assert st == 409 and res["reason"] == "symlink" and res["params"] == {"path": ".kurgu"}
+    assert c.req("GET", "/api/notes/info")[1]["problem"] == {"code": "symlink", "params": {"path": ".kurgu"}}
+    assert not any(n.get("sent") for n in c.req("GET", "/api/project")[1]["project"]["notes"]) if "project" in c.req("GET", "/api/project")[1] else True
+    assert os.listdir(tmp_path / "elsewhere") == []                                                        # nothing was written through the link
+
+
+def test_reason_symlinked_inbox_refuses_and_hook_log_is_reported(srv, tmp_path):
+    c, d, s = srv
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    os.symlink(tmp_path / "target", os.path.join(d, ".kurgu", "inbox.jsonl"))
+    st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
+    assert st == 409 and res["params"] == {"path": ".kurgu/inbox.jsonl"} and not (tmp_path / "target").exists()
+    os.remove(os.path.join(d, ".kurgu", "inbox.jsonl"))
+    os.symlink(tmp_path / "target", os.path.join(d, ".kurgu", "hook.log"))
+    assert c.req("GET", "/api/notes/info")[1]["problem"]["params"] == {"path": ".kurgu/hook.log"}
+
+
+def test_reason_windows_special_characters_in_the_project_path(tmp_path, cfg, monkeypatch, project_dir):
+    odd = tmp_path / "films & more"
+    shutil.copytree(project_dir, odd)
+    s, c = start(str(odd))
+    try:
+        monkeypatch.setattr(agent_notes, "IS_WINDOWS", True)
+        monkeypatch.setattr(agent_notes, "resolve_exe", lambda n: "C:\\Users\\A&B\\npm\\claude.cmd")       # the launcher path itself has an & : fine
+        (cfg / "config.json").write_text(json.dumps({"on_send": ["claude", "wake", "claude", "{dir}", "{seq}"]}))
+        info = c.req("GET", "/api/notes/info")[1]
+        assert info["problem"]["code"] == "shell_chars" and info["problem"]["params"]["chars"] == "&"
+        st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
+        assert st == 200 and res["hook"] == "error" and res["hook_reason"]["code"] == "shell_chars"
+        assert res["hook_reason"]["params"]["path"].endswith("films & more") and res["sent"] == 1
+        assert any(e["kind"] == "refusal" and e["code"] == "shell_chars" for e in events(str(odd)))
+        ok = tmp_path / "films"
+        shutil.copytree(project_dir, ok)
+        s2, c2 = start(str(ok))
+        try:
+            assert c2.req("POST", "/api/notes/send", {"ids": ["n_1"]})[1]["hook_reason"] is None          # no special character: not refused
+        finally:
+            s2.shutdown()
+            s2.server_close()
+    finally:
+        s.shutdown()
+        s.server_close()
+
+
+# ---------------------------------------------------------------- listener lock
+BEATER = ("import sys, time, agent_notes\nd = sys.argv[1]\nfor i in range(40):\n    agent_notes._beat(d, time.time(), None)\n"
+          "print('done', flush=True)\nsys.stdin.readline()\n")
+
+
+def test_four_concurrent_beaters_lose_no_entry(project_dir):
+    procs = [subprocess.Popen([sys.executable, "-c", BEATER, project_dir], cwd=ROOT, stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True) for _ in range(4)]
+    try:
+        for p in procs:
+            assert p.stdout.readline().strip() == "done"
+        got = agent_notes._read_listeners(project_dir)
+        assert sorted(got) == sorted(str(p.pid) for p in procs)
+    finally:
+        for p in procs:
+            p.stdin.close()
+            p.wait(10)
+
+
+def test_beat_prunes_dead_pids(project_dir):
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    agent_notes._write_listeners(project_dir, {"x": {"pid": dead.pid, "since": 0, "beat": time.time()}, "y": {"pid": os.getpid(), "since": 0, "beat": time.time()}})
+    agent_notes._beat(project_dir, time.time(), None)
+    assert sorted(agent_notes._read_listeners(project_dir)) == sorted(["y", str(os.getpid())])

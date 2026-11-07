@@ -269,6 +269,7 @@ def test_a_symlinked_hook_log_is_refused_and_its_target_is_untouched(srv, cfg, t
     set_hook(cfg, [sys.executable, "-c", "print('injected')"])
     st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
     assert st == 200 and res["hook"] == "error" and "symbolic link" in res["hook_error"]            # the send itself still works
+    assert res["hook_reason"] == {"code": "symlink", "params": {"path": ".kurgu/hook.log"}}
     assert target.read_text() == "export SAFE=1\n"
     assert "symbolic link" in capfd.readouterr().err
 
@@ -306,18 +307,20 @@ def test_the_wake_allowlist_has_no_ffprobe():
         assert all("ffprobe" not in " ".join(argv) for _, argv in kurgu_cli.wake_attempts(agent, "/tmp/p"))
 
 
-def test_windows_cmd_shims_refuse_shell_metacharacters(monkeypatch, tmp_path, capsys):
-    monkeypatch.setattr(agent_notes.os, "name", "nt")
-    assert agent_notes.shim_refusal("C:\\npm\\claude.cmd", ["C:\\films\\a & calc"]) is not None
+def test_windows_cmd_shims_refuse_shell_metacharacters_in_the_project_path_only(monkeypatch, capsys):
+    monkeypatch.setattr(agent_notes, "IS_WINDOWS", True)
+    r = agent_notes.shim_refusal("C:\\npm\\claude.cmd", "C:\\films\\a & calc")
+    assert r.code == "shell_chars" and r.params == {"chars": "&", "path": "C:\\films\\a & calc"}
     for ch in '&|<>^%"!':
-        assert agent_notes.shim_refusal("C:\\npm\\codex.CMD", ["x", "C:\\f" + ch + "g"]), ch
-    assert "Rename the project folder" in agent_notes.shim_refusal("c.bat", ["a|b"])
-    assert agent_notes.shim_refusal("C:\\npm\\claude.cmd", ["C:\\films\\my film (2)", "--json", "42"]) is None      # spaces and parentheses are fine
-    assert agent_notes.shim_refusal("C:\\Python\\python.exe", ["a & b"]) is None                                    # a real exe is not parsed by cmd.exe
+        assert agent_notes.shim_refusal("C:\\npm\\codex.CMD", "C:\\f" + ch + "g").code == "shell_chars", ch
+    assert "Move or rename" in str(agent_notes.shim_refusal("c.bat", "a|b"))
+    assert agent_notes.shim_refusal("C:\\npm\\claude.cmd", "C:\\films\\my film (2)") is None            # spaces and parentheses are fine
+    assert agent_notes.shim_refusal("C:\\Python\\python.exe", "a & b") is None                            # a real exe is not parsed by cmd.exe
+    assert agent_notes.shim_refusal("C:\\Users\\A&B\\AppData\\npm\\claude.cmd", "C:\\films\\ok") is None   # argv[0] (a profile called A&B) is NOT the project's
     monkeypatch.setattr(kurgu_cli.shutil, "which", lambda n: "C:\\npm\\claude.cmd")
     ran = []
     monkeypatch.setattr(kurgu_cli.subprocess, "run", lambda *a, **k: ran.append(a) or None)
     assert kurgu_cli.wake_main(["claude", "C:\\films\\a&b", "3"]) == 1 and not ran
-    assert "Rename the project folder" in capsys.readouterr().err
-    monkeypatch.undo()
-    assert agent_notes.shim_refusal("claude.cmd", ["a&b"]) is None                                                  # not Windows
+    assert "Move or rename" in capsys.readouterr().err
+    monkeypatch.setattr(agent_notes, "IS_WINDOWS", False)
+    assert agent_notes.shim_refusal("claude.cmd", "a&b") is None                                                  # not Windows

@@ -227,6 +227,10 @@ Everything is in [SPEC.md](SPEC.md): layer types and fields, effects, fonts, the
 
 **Where are my files?** `project.json`, `media/`, `fonts/` and `changes.md` in your project folder. `.kurgu/` holds caches, backups (last 50 versions of `project.json`) and `state.json`.
 
+## Something wrong? / Sorun mu var?
+
+Run `kurgu report` in a terminal (add the project folder, or `-o` to save it as `.kurgu/report-<time>.txt`), or open the editor's menu and choose **Hata raporu / Error report**. You get ONE plain-text report: versions of Kurgu, your system, ffmpeg and Chrome, the doctor check, whether an agent is set up and listening (never the command itself), the last events from `.kurgu/log.jsonl` and the end of `.kurgu/hook.log`. Your home folder is shown as `~`, e-mails as `<email>`, anything that looks like a key or token as `<redacted>`; note texts and project content are never in it. The editor shows the text first and only copies it when you press Copy; nothing is sent anywhere. Paste it to whoever is helping you.
+
 ## Privacy
 
 Nothing leaves your machine, and there is no telemetry, analytics or update check. The server binds to `127.0.0.1` only; the editor loads no CDN scripts, fonts or images; fonts, proxies, thumbnails and renders stay in your project folder or in a local cache folder (`~/Library/Caches/kurgu` on macOS, `$XDG_CACHE_HOME/kurgu` or `~/.cache/kurgu` on Linux, `%LOCALAPPDATA%\kurgu\Cache` on Windows; set `KURGU_CACHE` to move it). Two things are worth knowing:

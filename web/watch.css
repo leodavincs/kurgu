@@ -137,3 +137,12 @@ body[data-mode=review] #note-dock > #note-bar { min-width: 0; }
 .idle-lbl { color: var(--t2); }
 .idle-cmd { font-family: var(--mono); font-size: var(--fs-cap); background: var(--sunken); border-radius: var(--r-xs); padding: 2px 6px; user-select: all; }
 .idle-note { color: var(--t3); }
+.idle-panel.err { border-left-color: var(--err); }
+.idle-body { color: var(--t2); line-height: 1.45; overflow-wrap: anywhere; }
+
+/* ---- error report window */
+.rp-back { position: fixed; inset: 0; z-index: 480; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.rp-box { background: var(--raised); border: 1px solid var(--line2); border-radius: var(--r-lg); box-shadow: var(--shadow); width: min(760px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: var(--s-3); padding: 16px; color: var(--t1); }
+.rp-title { margin: 0; font-size: 16px; } .rp-hint { margin: 0; color: var(--t2); }
+.rp-text { flex: 1; min-height: 280px; resize: none; font-family: var(--mono); font-size: var(--fs-cap); background: var(--sunken); color: var(--t1); border: 1px solid var(--line2); border-radius: var(--r-md); padding: 8px; }
+.rp-actions { display: flex; gap: var(--s-3); justify-content: flex-end; }

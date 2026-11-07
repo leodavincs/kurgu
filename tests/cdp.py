@@ -49,7 +49,7 @@ def chrome_flags(port, profile, width, height, extra=()):
     """Command-line flags shared by every test that starts headless Chrome. On Linux (CI runs as a user without a usable
     sandbox / with a tiny /dev/shm) --no-sandbox and --disable-dev-shm-usage are needed."""
     flags = ["--headless=new", "--remote-debugging-port=%d" % port, "--remote-allow-origins=*", "--user-data-dir=" + profile,
-             "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--mute-audio", "--window-size=%d,%d" % (width, height)]
+             "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--mute-audio", "--use-mock-keychain", "--password-store=basic", "--window-size=%d,%d" % (width, height)]
     if sys.platform.startswith("linux") or os.environ.get("CI"):
         flags += ["--no-sandbox", "--disable-dev-shm-usage"]
     return flags + list(extra) + ["about:blank"]

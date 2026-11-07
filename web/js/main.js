@@ -21,6 +21,7 @@ import { $, el, icon, setIcon, copyText } from './dom.js';
 import { isMod, IS_MAC } from './platform.js';
 import { openFilePicker } from './import.js';
 import { initTheme, toggleTheme } from './theme.js';
+import { openReport } from './report.js';
 
 // ---------------------------------------------------------------- toasts
 function toast(text, kind = 'info', ms = 3500) {
@@ -163,7 +164,7 @@ function bindHamburger() {
     realFrame: () => S.realFrame, toggleRealFrame: () => setRealFrame(!S.realFrame), zooms,
     notesLabel: () => t(isReview() ? 'menu.reviewNotes' : 'np.button'), notesOn: () => (isReview() ? reviewNotesShown() : notesOpen()),
     toggleNotes: () => (isReview() ? toggleReviewNotes() : toggleNotes()), notesKey: isReview() ? '' : '{shift}N',
-    theme: () => document.documentElement.dataset.theme, toggleTheme, lang: getLang, setLang, exportVideo: () => $('b-export').click(),
+    theme: () => document.documentElement.dataset.theme, toggleTheme, lang: getLang, setLang, exportVideo: () => $('b-export').click(), report: openReport,
   });
 }
 

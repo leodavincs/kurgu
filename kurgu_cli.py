@@ -276,9 +276,11 @@ def wake_main(argv):
         print(f"kurgu wake: `{agent}` was not found on PATH", file=sys.stderr)
         return 127
     import agent_notes
-    why = agent_notes.shim_refusal(exe, [d, *argv[2:3]])
+    why = agent_notes.shim_refusal(exe, d)
     if why:
         print(f"kurgu wake: {why}", file=sys.stderr)
+        import diag
+        diag.refusal(d, why)
         return 1
     rc = 1
     for n, (label, cmd) in enumerate(wake_attempts(agent, d)):
@@ -364,6 +366,9 @@ def setup_agent_main(argv):
 
 def main(argv=None):
     args = sys.argv[1:] if argv is None else list(argv)
+    if args and args[0] == "report":
+        import diag
+        sys.exit(diag.main(args[1:]))
     if args and args[0] == "doctor":
         import doctor
         sys.exit(doctor.main(args[1:]))

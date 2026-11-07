@@ -46,6 +46,7 @@ function build() {
   item('Türkçe', { on: A.lang() === 'tr', role: 'menuitemradio', fn: () => A.setLang('tr') });
   item('English', { on: A.lang() === 'en', role: 'menuitemradio', fn: () => A.setLang('en') });
   item(t('top.export'), { fn: A.exportVideo });
+  item(t('menu.report'), { fn: A.report });
   m.addEventListener('keydown', e => {
     const items = [...m.querySelectorAll('.mm-item:not(:disabled)')], i = items.indexOf(document.activeElement);
     if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }

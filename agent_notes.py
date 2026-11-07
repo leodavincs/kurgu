@@ -15,6 +15,7 @@ CLI:  kurgu notes list <dir> [--open|--sent|--all] [--json]
 Pure standard library plus schema; no network. The project file is written through the running editor when there is one
 (so the editor reloads live), else directly."""
 import argparse
+import collections
 import json
 import os
 import sys
@@ -27,38 +28,64 @@ import schema
 RECOVER_EVERY = 15.0          # seconds between "sent but never announced" checks while waiting
 NOTES_MD = "NOTLAR.md"
 # ---------------------------------------------------------------- safe writes inside .kurgu/ (a shared project folder may ship symlinks there)
+IS_WINDOWS = os.name == "nt"
+SHELL_META = '&|<>^%"!'
+
+
+class KurguRefusal(OSError):
+    """Kurgu refused to do something for safety. `code` + `params` are shown to the user by the editor (i18n key reason.<code>)."""
+    def __init__(self, code, message, **params):
+        super().__init__(message)
+        self.code, self.params = code, params
+
+
+def _rel(path):
+    parts = os.path.normpath(str(path)).replace("\\", "/").split("/")
+    return "/".join(parts[parts.index(".kurgu"):]) if ".kurgu" in parts else parts[-1]
+
+
 def open_nofollow(path, mode="w"):
     """Open `path` for writing ("w" truncate / "a" append) as UTF-8 text, refusing symlinks: the file itself, and the `.kurgu` folder it lives in.
     A project folder is untrusted: `.kurgu/hook.log -> ~/.zshrc` must not turn Send into an append to the user's shell profile."""
     parent = os.path.dirname(path)
     if os.path.basename(parent) == ".kurgu" and os.path.islink(parent):
-        raise OSError(f"refusing to write: {parent} is a symbolic link")
+        raise KurguRefusal("symlink", f"refusing to write: {parent} is a symbolic link", path=".kurgu")
     flags = os.O_WRONLY | os.O_CREAT | (os.O_APPEND if mode == "a" else os.O_TRUNC) | getattr(os, "O_NOFOLLOW", 0)
     if not hasattr(os, "O_NOFOLLOW") and os.path.islink(path):
-        raise OSError(f"refusing to write: {path} is a symbolic link")
+        raise KurguRefusal("symlink", f"refusing to write: {path} is a symbolic link", path=_rel(path))
     try:
         fd = os.open(path, flags, 0o644)
     except OSError as e:
         if os.path.islink(path):
-            raise OSError(f"refusing to write: {path} is a symbolic link") from e
+            raise KurguRefusal("symlink", f"refusing to write: {path} is a symbolic link", path=_rel(path)) from e
         raise
     return os.fdopen(fd, mode, encoding="utf-8")
 
 
-SHELL_META = '&|<>^%"!'
+WATCHED = ("inbox.jsonl", "inbox.seq", "inbox.cursor", "inbox.cursor.tmp", "inbox.seq.tmp")      # a Send cannot record notes through these
+SIDE_FILES = ("hook.log", "listening.json", "listening.lock", "log.jsonl")                        # only reported (the hook / heartbeat / diagnostics skip them)
 
 
-def shim_refusal(exe, items):
-    """Windows only: an npm `.cmd` / `.bat` shim runs through cmd.exe, where these characters inside an argument can inject commands (BatBadBut).
-    Returns the reason to refuse, or None."""
-    if os.name != "nt" or not str(exe).lower().endswith((".cmd", ".bat")):
+def check_writable(d, side=False):
+    """Raise KurguRefusal(symlink) when `.kurgu` or a file Kurgu writes in it is a symbolic link. Called before a Send records anything."""
+    k = os.path.join(d, ".kurgu")
+    if os.path.islink(k):
+        raise KurguRefusal("symlink", f"refusing to write: {k} is a symbolic link", path=".kurgu")
+    for n in WATCHED + (SIDE_FILES if side else ()):
+        if os.path.islink(os.path.join(k, n)):
+            raise KurguRefusal("symlink", f"refusing to write: {os.path.join(k, n)} is a symbolic link", path=f".kurgu/{n}")
+
+
+def shim_refusal(exe, path):
+    """Windows only: an npm `.cmd` / `.bat` shim runs through cmd.exe, where these characters inside the PROJECT PATH (an argument that came from the project)
+    can inject commands (BatBadBut). `exe` itself (the launcher, e.g. a user profile called A&B) is not checked. Returns a KurguRefusal (not raised) or None."""
+    if not IS_WINDOWS or not str(exe).lower().endswith((".cmd", ".bat")):
         return None
-    for a in items:
-        bad = sorted({c for c in str(a) if c in SHELL_META})
-        if bad:
-            return (f"refusing to start {os.path.basename(str(exe))}: an argument contains {' '.join(bad)} (cmd.exe would read it as a command). "
-                    f"Rename the project folder so its path has none of {SHELL_META} and send again.")
-    return None
+    bad = sorted({c for c in str(path) if c in SHELL_META})
+    if not bad:
+        return None
+    return KurguRefusal("shell_chars", f"refusing to start {os.path.basename(str(exe))}: the project path contains {' '.join(bad)} (cmd.exe would read it as a command). "
+                        f"Move or rename the project folder so its path has none of {SHELL_META}.", chars=" ".join(bad), path=str(path))
 
 
 INBOX = os.path.join(".kurgu", "inbox.jsonl")
@@ -471,20 +498,66 @@ def _pid_alive(pid):
         return False
 
 
+class _FileLock:
+    """Cross-process lock on a sidecar file (.kurgu/listening.lock, opened without following symlinks): flock on POSIX, msvcrt.locking on Windows."""
+    def __init__(self, d):
+        self.path = os.path.join(d, ".kurgu", "listening.lock")
+        self.f = None
+
+    def __enter__(self):
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
+        self.f = open_nofollow(self.path, "a")
+        try:
+            if os.name == "nt":
+                import msvcrt
+                self.f.seek(0)
+                msvcrt.locking(self.f.fileno(), msvcrt.LK_LOCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.f.fileno(), fcntl.LOCK_EX)
+        except (OSError, ImportError):
+            pass                                          # no lock available: carry on unlocked rather than lose the heartbeat
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            if os.name == "nt":
+                import msvcrt
+                self.f.seek(0)
+                msvcrt.locking(self.f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.f.fileno(), fcntl.LOCK_UN)
+        except (OSError, ImportError):
+            pass
+        self.f.close()
+
+
+def _locked_update(d, fn):
+    """Read-modify-write of listening.json under the thread lock AND the cross-process lock. Best effort."""
+    try:
+        with _listen_lock, _FileLock(d):
+            e = _read_listeners(d)
+            fn(e)
+            _write_listeners(d, e)
+    except OSError:
+        pass
+
+
 def _beat(d, since, agent):
     pid = os.getpid()
-    with _listen_lock:
-        e = _read_listeners(d)
-        e[str(pid)] = {"pid": pid, "since": since, "beat": time.time(), **({"agent": agent} if agent else {})}
-        _write_listeners(d, e)
+    now = time.time()
+
+    def go(e):
+        for k in [k for k, v in e.items() if not isinstance(v, dict) or not _pid_alive(v.get("pid", -1)) or now - float(v.get("beat", 0) or 0) > 10 * BEAT_FRESH]:
+            if k != str(pid):
+                del e[k]                                   # dead process or long-stale entry: pruned
+        e[str(pid)] = {"pid": pid, "since": since, "beat": now, **({"agent": agent} if agent else {})}
+    _locked_update(d, go)
 
 
 def _unbeat(d):
-    pid = os.getpid()
-    with _listen_lock:
-        e = _read_listeners(d)
-        e.pop(str(pid), None)
-        _write_listeners(d, e)
+    _locked_update(d, lambda e: e.pop(str(os.getpid()), None))
 
 
 def is_listening(d, now=None):
@@ -674,13 +747,19 @@ def _log(d, text):
             f.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] {str(text).replace(chr(10), ' ')}\n")
     except OSError as e:
         print(f"kurgu: could not write {HOOK_LOG}: {e}", file=sys.stderr)
+        if isinstance(e, KurguRefusal):
+            import diag
+            diag.refusal(d, e)
 
 
-def _pump(stream, log):
+def _pump(stream, log, tail=None):
     try:
         for raw in iter(stream.readline, b""):
-            log.write("| " + raw.decode("utf-8", "replace").replace("\r", "").rstrip("\n").replace("\n", " ") + "\n")
+            line = raw.decode("utf-8", "replace").replace("\r", "").rstrip("\n").replace("\n", " ")
+            log.write("| " + line + "\n")
             log.flush()
+            if tail is not None:
+                tail.append(line)
     except (OSError, ValueError):
         pass
 
@@ -695,16 +774,21 @@ class _Runner:
         argv = expand_command(cmd, self.d, seq, count, file)
         argv[0] = resolve_exe(argv[0])
         env = dict(os.environ, KURGU_PROJECT_DIR=self.d, KURGU_SEQ=str(seq), KURGU_NOTES_COUNT=str(count), KURGU_NOTES_FILE=file)
-        why = shim_refusal(argv[0], argv)
+        why = shim_refusal(argv[0], self.d)
         if why:
-            _log(self.d, why)
+            _log(self.d, str(why))
             print(f"kurgu: {why}", file=sys.stderr)
-            raise OSError(why)
+            import diag
+            diag.refusal(self.d, why)
+            raise why
         os.makedirs(os.path.join(self.d, ".kurgu"), exist_ok=True)
         try:
             log = open_nofollow(os.path.join(self.d, HOOK_LOG), "a")
         except OSError as e:
             print(f"kurgu: {e}; the on_send hook was not started", file=sys.stderr)
+            if isinstance(e, KurguRefusal):
+                import diag
+                diag.refusal(self.d, e)
             raise
         log.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] run (send #{seq}, {count} notes): {' '.join(argv)}".replace("\n", " ") + "\n")
         log.flush()
@@ -715,7 +799,10 @@ class _Runner:
             log.write(f"  could not start: {e}\n")
             log.close()
             raise
-        p.pump = threading.Thread(target=_pump, args=(p.stdout, log), daemon=True)      # the agent's output goes in line by line, each prefixed "| ": it can never forge a log line
+        p.tail = collections.deque(maxlen=5)
+        import diag
+        diag.event(self.d, "wake", "hook run started", ctx={"seq": seq, "notes": count, "exe": os.path.basename(argv[0])})
+        p.pump = threading.Thread(target=_pump, args=(p.stdout, log, p.tail), daemon=True)      # the agent's output goes in line by line, each prefixed "| ": it can never forge a log line
         p.pump.start()
         threading.Thread(target=self._wait, args=(p, log, cmd), daemon=True).start()
 
@@ -731,6 +818,8 @@ class _Runner:
             rc = p.wait(limit)
             p.pump.join(5)
             log.write(f"  finished, exit code {rc}\n")
+            import diag
+            diag.event(self.d, "wake", "hook run finished", "info" if rc == 0 else "warn", ctx={"exit": rc, "tail": " / ".join(p.tail)})
         except subprocess.TimeoutExpired:
             try:
                 if os.name == "nt":
@@ -742,6 +831,8 @@ class _Runner:
                 pass
             p.pump.join(2)
             log.write(f"  stopped: still running after {limit:g} s\n")
+            import diag
+            diag.event(self.d, "wake", "hook run stopped (timeout)", "warn", ctx={"limit_s": limit, "tail": " / ".join(p.tail)})
         finally:
             log.close()
         with self.lock:
@@ -768,7 +859,10 @@ class _Runner:
         except OSError as e:
             with self.lock:
                 self.running = False
-            return {"hook": "error", "error": str(e)}
+            res = {"hook": "error", "error": str(e)}
+            if isinstance(e, KurguRefusal):
+                res["reason"] = {"code": e.code, "params": e.params}
+            return res
         return {"hook": "started"}
 
 
