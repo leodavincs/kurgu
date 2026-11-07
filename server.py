@@ -1237,13 +1237,16 @@ class App:
             if os.path.exists(png):
                 return png
             tmp = png + f".{secrets.token_hex(8)}.part.png"
-            r = run([sys.executable, os.path.join(ROOT, "render.py"), self.dir, "--frame", f"{t:.3f}",
-                                "--output", tmp, "--draft"], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
-            if r.returncode != 0 or not os.path.exists(tmp):
-                _drop(tmp)
-                msg = next((s[5:].strip() for s in r.stdout.splitlines() if s.startswith("ERROR")), None)
-                raise HttpError(500, msg or (r.stderr.strip().splitlines() or ["could not render frame"])[-1])
-            os.replace(tmp, png)
+            try:
+                r = run([sys.executable, os.path.join(ROOT, "render.py"), self.dir, "--frame", f"{t:.3f}",
+                                    "--output", tmp, "--draft"], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+                if r.returncode != 0 or not os.path.exists(tmp):
+                    msg = next((s[5:].strip() for s in r.stdout.splitlines() if s.startswith("ERROR")), None)
+                    raise HttpError(500, msg or (r.stderr.strip().splitlines() or ["could not render frame"])[-1])
+                os.replace(tmp, png)
+            except BaseException:
+                _drop(tmp)                             # timeout, failed render or failed replace: no .part left behind
+                raise
         return png
 
 

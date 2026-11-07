@@ -481,14 +481,29 @@ def test_a_symlinked_kurgu_folder_stops_the_server_with_a_plain_message(tmp_path
     assert r.returncode == 2 and "symbolic link" in r.stderr and "Traceback" not in r.stderr
 
 
-@pytest.mark.skipif(os.name == "nt" or (hasattr(os, "getuid") and os.getuid() == 0), reason="needs POSIX permissions and a non-root user")
-def test_a_failed_atomic_write_leaves_no_temp_file(tmp_path):
-    target = tmp_path / "sub" / "x.json"                   # the folder does not exist: the write fails
-    os.makedirs(tmp_path / "sub")
-    os.chmod(tmp_path / "sub", 0o500)
-    try:
-        with pytest.raises(OSError):
-            server.write_atomic(str(target), b"{}")
-    finally:
-        os.chmod(tmp_path / "sub", 0o700)
-    assert os.listdir(tmp_path / "sub") == []
+def test_failed_temp_writes_leave_no_random_named_file_behind(tmp_path, monkeypatch):
+    """Temp names are random now, so a failure must remove the file itself (the next attempt never reuses the name)."""
+    import ai
+    real_replace = os.replace
+
+    def boom(*a, **k):
+        raise OSError("disk says no")
+    monkeypatch.setattr(os, "replace", boom)
+    d = tmp_path / "w"
+    d.mkdir()
+    with pytest.raises(OSError):
+        server.write_atomic(str(d / "x.json"), b"{}")
+    t = ai.Threads(type("A", (), {"kurgu": str(d)})())       # writes <kurgu>/ai-threads.json
+    with pytest.raises(OSError):
+        t._save([])
+    monkeypatch.setattr(os, "replace", real_replace)
+    assert sorted(os.listdir(d)) == []
+    # the Windows retry path: PermissionError 20 times, then the error, and still nothing left
+    monkeypatch.setattr(time, "sleep", lambda s: None)
+    def perm(*a, **k):
+        raise PermissionError("in use")
+    monkeypatch.setattr(os, "replace", perm)
+    with pytest.raises(PermissionError):
+        server.write_atomic(str(d / "y.json"), b"{}")
+    monkeypatch.setattr(os, "replace", real_replace)
+    assert os.listdir(d) == []
