@@ -244,3 +244,17 @@ def test_the_launchers_route_wake():
     assert 'if [ "$1" = "wake" ]' in open(os.path.join(ROOT, "kurgu"), encoding="utf-8").read()
     cmd = open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read()
     assert 'goto wake' in cmd and 'kurgu_cli.py" wake' in cmd
+
+
+def test_send_response_tells_listening_and_wake_in_all_three_states(srv, cfg, tmp_path):
+    c, d = srv
+    st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})                            # neither
+    assert st == 200 and res["listening"] is False and res["wake"] == "none"
+    agent_notes._write_listeners(d, {"1": {"pid": os.getpid(), "since": time.time(), "beat": time.time()}})   # a listener
+    st, res = c.req("POST", "/api/notes/send", {"ids": ["n_2"]})
+    assert res["listening"] is True and res["wake"] == "none"
+    assert c.req("GET", "/api/notes/info")[1]["listening"] is True
+    set_hook(cfg, [sys.executable, "-c", "pass"])                                           # a wake hook (and the listener gone stale)
+    agent_notes._write_listeners(d, {"1": {"pid": os.getpid(), "since": 0, "beat": time.time() - 60}})
+    st, res = c.req("POST", "/api/notes/send", {"ids": ["n_3"]})
+    assert res["listening"] is False and res["wake"] == "configured" and res["hook"] in ("started", "queued")

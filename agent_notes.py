@@ -394,7 +394,101 @@ def _live(d, entries):
     return out
 
 
+# ---------------------------------------------------------------- listener heartbeat: is an agent blocked in `notes wait` right now?
+LISTENING = os.path.join(".kurgu", "listening.json")
+BEAT_EVERY = 5.0      # a waiting process refreshes its entry this often
+BEAT_FRESH = 15.0     # a listener counts as alive while its last beat is younger than this AND its pid runs
+_listen_lock = threading.Lock()
+_listen_count = {}    # (dir, pid) -> waits of this process in flight (MCP can serve several at once)
+
+
+def _read_listeners(d):
+    try:
+        with open(os.path.join(d, LISTENING), encoding="utf-8") as f:
+            v = json.load(f)
+        return v if isinstance(v, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_listeners(d, entries):
+    path = os.path.join(d, LISTENING)
+    try:
+        if not entries:
+            os.remove(path)
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(entries, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass                                           # best effort: a heartbeat must never break a wait
+
+
+def _pid_alive(pid):
+    try:
+        m = sys.modules.get("__main__")
+        if not hasattr(m, "pid_alive"):
+            import server as m
+        return bool(m.pid_alive(int(pid)))
+    except Exception:
+        return False
+
+
+def _beat(d, since, agent):
+    pid = os.getpid()
+    with _listen_lock:
+        e = _read_listeners(d)
+        e[str(pid)] = {"pid": pid, "since": since, "beat": time.time(), **({"agent": agent} if agent else {})}
+        _write_listeners(d, e)
+
+
+def _unbeat(d):
+    pid = os.getpid()
+    with _listen_lock:
+        e = _read_listeners(d)
+        e.pop(str(pid), None)
+        _write_listeners(d, e)
+
+
+def is_listening(d, now=None):
+    """True when some process is blocked in `notes wait` / notes_wait for this project: fresh beat AND a running pid."""
+    now = time.time() if now is None else now
+    for e in _read_listeners(d).values():
+        try:
+            if 0 <= now - float(e["beat"]) < BEAT_FRESH and _pid_alive(e["pid"]):
+                return True
+        except (KeyError, TypeError, ValueError):
+            continue
+    return False
+
+
+def wake_configured():
+    """A user-level on_send hook exists (the same read run_on_send does: env / user config only)."""
+    return on_send_command() is not None
+
+
 def wait_for_send(d, since=None, timeout=None, poll=0.4, cancel=None, commit=True):
+    """Blocking wait (see _wait_loop). While it blocks (timeout != 0) the process advertises itself in .kurgu/listening.json."""
+    if timeout == 0:
+        return _wait_loop(d, since, timeout, poll, cancel, commit, None)
+    key, t0 = (d, os.getpid()), time.time()
+    with _listen_lock:
+        _listen_count[key] = _listen_count.get(key, 0) + 1
+    try:
+        return _wait_loop(d, since, timeout, poll, cancel, commit, lambda: _beat(d, t0, agent_name(d) or None))
+    finally:
+        with _listen_lock:
+            _listen_count[key] -= 1
+            last = _listen_count[key] <= 0
+            if last:
+                del _listen_count[key]
+        if last:
+            _unbeat(d)
+
+
+def _wait_loop(d, since, timeout, poll, cancel, commit, beat):
     """Return the inbox entries the agent has not consumed yet (seq above `since`, default: the saved cursor), blocking until there is one.
     Only notes that are still `sent` and not `done` are returned, rebuilt from the current project. Without `since` the cursor moves to what was
     returned, so a send made while the agent was fixing the previous batch is delivered by the next call. `since` given: the cursor is neither
@@ -403,8 +497,11 @@ def wait_for_send(d, since=None, timeout=None, poll=0.4, cancel=None, commit=Tru
     use_cursor = since is None
     base = get_cursor(d) if use_cursor else int(since)
     end = None if timeout is None else time.monotonic() + timeout
-    next_recover, last_size = 0.0, -1
+    next_recover, last_size, next_beat = 0.0, -1, 0.0
     while True:
+        if beat is not None and time.monotonic() >= next_beat:
+            beat()
+            next_beat = time.monotonic() + BEAT_EVERY
         if time.monotonic() >= next_recover:           # at the start and then every 15 s: a send that never reached the inbox is found while waiting too
             recover_undelivered(d)
             next_recover, last_size = time.monotonic() + RECOVER_EVERY, -1

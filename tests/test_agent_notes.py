@@ -486,3 +486,53 @@ def test_coloured_marks_are_burned_in_named_in_the_hint_and_redrawn_when_recolou
         if open(os.path.join(d, ".kurgu", "notes", "n_a.jpg"), "rb").read() != before:
             break
     assert count("n_a", (108, 197, 146)) > 150
+
+
+def test_listener_heartbeat_is_written_refreshed_and_removed(project_dir, monkeypatch):
+    lp = os.path.join(project_dir, ".kurgu", "listening.json")
+    monkeypatch.setattr(agent_notes, "BEAT_EVERY", 0.2)
+    assert not agent_notes.is_listening(project_dir)
+    res = {}
+    th = threading.Thread(target=lambda: res.update(r=agent_notes.wait_for_send(project_dir, timeout=1.6, poll=0.05)))
+    th.start()
+    deadline = time.time() + 5
+    while not os.path.exists(lp) and time.time() < deadline:
+        time.sleep(0.02)
+    e = json.load(open(lp))[str(os.getpid())]
+    assert e["pid"] == os.getpid() and e["since"] <= e["beat"]
+    assert agent_notes.is_listening(project_dir)
+    time.sleep(0.6)
+    assert json.load(open(lp))[str(os.getpid())]["beat"] > e["beat"]                       # refreshed
+    th.join()
+    assert res["r"] is None and not os.path.exists(lp) and not agent_notes.is_listening(project_dir)   # timeout cleans up
+
+
+def test_listener_file_removed_on_interrupt_and_look_once_does_not_register(project_dir):
+    lp = os.path.join(project_dir, ".kurgu", "listening.json")
+    cancel = threading.Event()
+    th = threading.Thread(target=lambda: agent_notes.wait_for_send(project_dir, cancel=cancel, poll=0.05))
+    th.start()
+    deadline = time.time() + 5
+    while not os.path.exists(lp) and time.time() < deadline:
+        time.sleep(0.02)
+    assert os.path.exists(lp)
+    cancel.set(); th.join()
+    assert not os.path.exists(lp)
+    agent_notes.wait_for_send(project_dir, timeout=0)
+    assert not os.path.exists(lp)
+
+
+def test_listener_liveness_needs_a_fresh_beat_and_a_living_pid(project_dir):
+    now = time.time()
+    w = lambda pid, beat: agent_notes._write_listeners(project_dir, {"x": {"pid": pid, "since": now, "beat": beat}})
+    w(os.getpid(), now)
+    assert agent_notes.is_listening(project_dir)
+    w(os.getpid(), now - 20)
+    assert not agent_notes.is_listening(project_dir)                                       # stale beat
+    p = subprocess.Popen([sys.executable, "-c", "pass"]); p.wait()
+    w(p.pid, now)
+    assert not agent_notes.is_listening(project_dir)                                       # dead pid
+    agent_notes._write_listeners(project_dir, {"a": {"pid": p.pid, "beat": now}, "b": {"pid": os.getpid(), "beat": now}})
+    assert agent_notes.is_listening(project_dir)                                           # several listeners: one alive is enough
+    open(os.path.join(project_dir, ".kurgu", "listening.json"), "w").write("garbage")
+    assert not agent_notes.is_listening(project_dir)

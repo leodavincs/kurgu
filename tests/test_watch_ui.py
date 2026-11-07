@@ -99,7 +99,18 @@ def test_2_watch_mode_typing_pauses_enter_adds_and_resumes(page):
 def test_3_send_writes_notlar_inbox_frames_and_ui_marks_sent(page, server):
     page.click_sel("#b-send")
     page.wait_for("__kurgu.S.project.notes.every(n=>n.sent)", 90)
-    assert page.eval("document.querySelector('.toast.ok .toast-text').textContent").startswith("2 notes sent to the agent · NOTLAR.md")
+    assert page.eval("!document.querySelector('.toast.ok')")                    # nobody listens and no wake hook: NOT a success toast ...
+    page.wait_for("!!document.getElementById('idle-panel')")                    # ... but a persistent panel
+    assert "isn't listening" in page.eval("document.querySelector('#idle-panel .idle-title').textContent")
+    page.eval("window.__copied=[]; navigator.clipboard.writeText=t=>{window.__copied.push(t);return Promise.resolve()}")
+    page.click_sel("#idle-panel [data-k=loop] .idle-copy")                    # copy action 1: the phrase for the agent chat
+    page.click_sel("#idle-panel [data-k=once] .idle-copy")                      # the one-off phrase too
+    page.click_sel("#idle-panel [data-k=claude] .idle-copy")                    # copy action 2: the one-time wake command
+    page.click_sel("#idle-panel [data-k=codex] .idle-copy")
+    assert page.eval("window.__copied") == ["Wait for my Kurgu notes and apply them as they come", "Apply my Kurgu notes", "kurgu setup-agent --claude --wake", "kurgu setup-agent --codex --wake"]
+    assert page.eval("document.getElementById('b-send').title").endswith("No agent connected: Send only saves the notes")
+    page.click_sel("#idle-panel .idle-x")
+    assert page.eval("!document.getElementById('idle-panel')")                  # dismissible
     assert page.eval("document.getElementById('b-send').disabled")
     d = server.dir
     md = open(os.path.join(d, "NOTLAR.md"), encoding="utf-8").read()
@@ -114,8 +125,12 @@ def test_3_send_writes_notlar_inbox_frames_and_ui_marks_sent(page, server):
 
 def test_4_agent_marks_note_done_ui_shows_fixed_with_reply(page, server):
     page.eval("__kurgu.S.undo.length")                                         # (undo made the notes look unsent locally; send again)
+    import agent_notes
+    agent_notes._write_listeners(server.dir, {"1": {"pid": os.getpid(), "since": time.time(), "beat": time.time()}})   # an agent is blocked in `notes wait`
     page.click_sel("#b-send")
     page.wait_for("__kurgu.S.project.notes.every(n=>n.sent)", 90)
+    assert page.eval("[...document.querySelectorAll('.toast.ok .toast-text')].some(e=>e.textContent.endsWith('agent is listening'))")
+    assert page.eval("!document.getElementById('idle-panel')")
     nid = page.eval("__kurgu.S.project.notes[0].id")
     r = subprocess.run([sys.executable, os.path.join(ROOT, "server.py"), "notes", "done", server.dir, nid, "--reply", "Moved the title 0.8 s earlier"],
                        capture_output=True, text=True, encoding="utf-8", timeout=60)
@@ -151,3 +166,24 @@ def test_6_f_toggles_fullscreen_but_keeps_the_watch_overlay(page):
     assert page.eval("!document.getElementById('watch').hidden")                  # ... and the overlay is still there
     page.key("Escape", code="Escape")
     page.wait_for("document.getElementById('watch').hidden")
+
+
+def test_woken_toast_when_the_wake_hook_runs(chrome, monkeypatch, tmp_path):
+    monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "conf"))
+    monkeypatch.setenv("KURGU_ON_SEND", json.dumps([sys.executable, "-c", "pass"]))
+    s = cdp.Server()
+    try:
+        p = chrome.new_page()
+        p.open(s.url("/"), lang="en")
+        p.eval("__kurgu.S.t=1; __kurgu.emit('time')")
+        p.click_sel("#nb-input")
+        p.send("Input.insertText", text="wake me")
+        p.key("Enter", code="Enter")
+        p.wait_for("__kurgu.S.project.notes.length===1")
+        p.click_sel("#b-send")
+        p.wait_for("!!document.querySelector('.toast.ok')", 90)
+        assert p.eval("document.querySelector('.toast.ok .toast-text').textContent").endswith("agent woken")
+        assert p.eval("!document.getElementById('idle-panel')")
+        p.close()
+    finally:
+        s.close()

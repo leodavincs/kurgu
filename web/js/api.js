@@ -70,6 +70,7 @@ export async function exportsList() { const r = await json('/api/exports'); retu
 // watch + note (web/js/watch.js)
 let infoCache = null;
 export async function notesInfo() { if (infoCache) return infoCache; try { const r = await json('/api/notes/info'); if (r.ok) infoCache = r.data; return r.ok ? r.data : null; } catch (e) { return null; } }
+export async function notesLive() { try { const r = await json('/api/notes/info'); return r.ok ? r.data : null; } catch (e) { return null; } }   // uncached: listening / wake change while the editor is open
 export const sendNotes = ids => sendJson('/api/notes/send', 'POST', { ids });
 export const frameUrl = time => '/api/frame?t=' + time.toFixed(3) + '&v=' + encodeURIComponent(S.version || '');
 

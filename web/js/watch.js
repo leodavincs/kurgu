@@ -36,13 +36,49 @@ export async function sendNotes() {
     loadExternal(r.data.project, r.data.version);               // the server wrote project.json: one undo step
     watchSent.push(...r.data.ids);
     const woke = r.data.hook === 'started' || r.data.hook === 'queued';     // the user's on_send hook ran: the agent was started for these notes
-    toast(t(r.data.sent === 1 && getLang() === 'en' ? 'send.toast1' : 'send.toast', { n: r.data.sent, who: who() }) + (woke ? ' · ' + t('send.woke') : ''), 'ok', woke ? 6000 : 5000);
+    live = { listening: !!r.data.listening, wake: r.data.wake === 'configured' }; refreshSend();
+    if (woke || live.listening) toast(t(r.data.sent === 1 && getLang() === 'en' ? 'send.toast1' : 'send.toast', { n: r.data.sent, who: who() }) + ' · ' + t(woke ? 'send.woke' : 'send.listening'), 'ok', woke ? 6000 : 5000);
+    else if (r.data.hook !== 'error') showIdlePanel();                      // nobody will read them: not a success toast
     if (r.data.hook === 'error') toast(t('send.wakeFailed', { error: r.data.hook_error || '' }), 'warn', 9000);
     if (r.data.failed_frames && r.data.failed_frames.length) toast(t('send.noFrames', { n: r.data.failed_frames.length }), 'warn', 7000);
     return true;
   } catch (e) { toast(t('send.failed', { reason: String(e.message || e) }), 'error', 6000); return false; }
   finally { sending = false; refreshSend(); renderLists(); }
 }
+// ---------------------------------------------------------------- "the agent isn't listening" panel + live state (tooltip)
+let live = { listening: false, wake: false };
+const stateText = () => t(live.listening ? 'send.state.listening' : live.wake ? 'send.state.wake' : 'send.state.none');
+function copyText(text) {
+  try { if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text).catch(() => legacyCopy(text)); } catch (e) { /* fall through */ }
+  legacyCopy(text); return Promise.resolve();
+}
+function legacyCopy(text) { const a = document.createElement('textarea'); a.value = text; a.style.cssText = 'position:fixed;opacity:0'; document.body.append(a); a.select(); try { document.execCommand('copy'); } catch (e) { /* ignore */ } a.remove(); }
+function copyBtn(label, text) {
+  const b = el('button', 'btn idle-copy', label); b.type = 'button';
+  b.addEventListener('click', () => copyText(text).then(() => { toast(t('send.idle.copied'), 'ok', 1500); }));
+  return b;
+}
+function showIdlePanel() {
+  const old = $('idle-panel'); if (old) old.remove();
+  const p = el('div', 'idle-panel'); p.id = 'idle-panel'; p.setAttribute('role', 'alert');
+  const x = el('button', 'w-ib idle-x'); x.type = 'button'; x.title = t('send.idle.close'); x.append(icon('x')); x.addEventListener('click', () => p.remove());
+  p.append(x, el('b', 'idle-title', t('send.idle.title')));
+  const row = (k, lbl, text) => { const r = el('div', 'idle-row'); r.dataset.k = k; r.append(el('span', 'idle-lbl', lbl), copyBtn('“' + text + '”', text)); return r; };
+  const loop = row('loop', t('send.idle.copyLoop'), t('send.idle.phraseLoop')), once = row('once', t('send.idle.copyOnce'), t('send.idle.phrase'));
+  p.append(loop, once, el('small', 'idle-note', t('send.idle.setup')));
+  for (const [k, flag] of [['claude', '--claude'], ['codex', '--codex']]) {
+    const cmd = `kurgu setup-agent ${flag} --wake`;
+    const row = el('div', 'idle-row'); row.append(el('code', 'idle-cmd', cmd), copyBtn(t('send.idle.copyCmd'), cmd)); row.dataset.k = k;
+    p.append(row);
+  }
+  document.body.append(p);
+}
+async function pollLive() {
+  if (document.hidden) return;
+  const i = await API.notesLive(); if (!i) return;
+  live = { listening: !!i.listening, wake: i.wake === 'configured' }; refreshSend();
+}
+
 function refreshSend() {
   const n = S.project ? unsent().length : 0;
   for (const id of ['b-send', 'wl-send', 'rv-send']) {
@@ -50,7 +86,7 @@ function refreshSend() {
     b.disabled = n === 0 || sending; b.classList.toggle('busy', sending);
     const lab = b.querySelector('.send-label'); if (lab) lab.textContent = sendLabel();   // the count lives in the badge only
     const bd = b.querySelector('.send-badge'); if (bd) { bd.textContent = n; bd.hidden = n === 0; }
-    b.title = n ? t('send.tip') : t('send.none');
+    b.title = (n ? t('send.tip') : t('send.none')) + ' — ' + stateText();
   }
 }
 
@@ -340,8 +376,8 @@ export function startWatch({ toast: toastFn } = {}) {
   buildReview();
   placeDock();
   $('b-watch').addEventListener('click', openWatch);
-  const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; refreshSend(); renderLists(); });
-  info();
+  const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; live = { listening: !!i.listening, wake: i.wake === 'configured' }; refreshSend(); renderLists(); });
+  info(); setInterval(pollLive, 10000);
   refreshSend(); renderLists();
   return {
     project() { refreshSend(); if (isOpen) renderMarks(); if (!(watchList && watchList.editing) && !(reviewList && reviewList.editing)) renderLists(); if (isOpen) updateTime(); },

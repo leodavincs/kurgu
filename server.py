@@ -1056,7 +1056,7 @@ class App:
 
     # ------------------------------------------------------------ watch + note: send notes to the agent
     def notes_info(self):
-        return {"agent_name": agent_notes.agent_name(self.dir), "inbox": agent_notes.inbox_len(self.dir), "default_mode": agent_notes.default_mode(self.dir)}
+        return {"agent_name": agent_notes.agent_name(self.dir), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "inbox": agent_notes.inbox_len(self.dir), "default_mode": agent_notes.default_mode(self.dir)}
 
     def note_frame_jpeg(self, nid, t, marks=None, size=(1920, 1080)):
         """Render the timeline frame at `t` (same machinery as /api/frame, draft size) and store it as .kurgu/notes/<id>.jpg."""
@@ -1156,7 +1156,7 @@ class App:
             hook = agent_notes.run_on_send(self.dir, entry["seq"], len(sent_notes))
         except Exception as e:                                  # a broken hook must not fail a send
             hook = {"hook": "error", "error": f"{type(e).__name__}: {e}"}
-        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "at": stamp, "file": agent_notes.NOTES_MD,
+        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "at": stamp, "file": agent_notes.NOTES_MD,
                 "failed_frames": failed, "inbox": entry, "project": proj, "version": version}
 
     def reveal(self, rel):
