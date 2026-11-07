@@ -1,7 +1,8 @@
 """Find ffmpeg / ffprobe (and the optional hardware H.264/HEVC encoders). Stdlib only.
 
 Lookup order for each tool: env `KURGU_FFMPEG` / `KURGU_FFPROBE` (a file, or a folder that holds the tool),
-then PATH, then the usual install folders (Homebrew, MacPorts, snap, winget, Chocolatey, Scoop, ...). A GUI or
+then PATH (a system ffmpeg wins), then Kurgu's own downloaded copy (`kurgu setup-ffmpeg`, see ffmpeg_fetch.managed_dir()),
+then the usual install folders (Homebrew, MacPorts, snap, winget, Chocolatey, Scoop, ...). A GUI or
 service launch often has a thinner PATH than a terminal, hence the fallback list.
 
     media_tools.ffmpeg()      -> absolute path, or raises MediaToolError with an actionable message
@@ -16,7 +17,7 @@ import shutil
 import subprocess
 
 ENV = {"ffmpeg": "KURGU_FFMPEG", "ffprobe": "KURGU_FFPROBE"}
-INSTALL = {"Darwin": "brew install ffmpeg", "Windows": "winget install Gyan.FFmpeg"}
+INSTALL = {"Darwin": "kurgu setup-ffmpeg", "Windows": "kurgu setup-ffmpeg"}
 _cache = {}
 
 
@@ -63,6 +64,14 @@ def find(tool):
     if not found:
         found = shutil.which(tool)
     if not found:
+        try:
+            import ffmpeg_fetch
+            cand = os.path.join(ffmpeg_fetch.managed_dir(), _exe(tool))
+            if _is_exe(cand):
+                found = cand
+        except Exception:
+            pass
+    if not found:
         for d in _extra_dirs():
             cand = os.path.join(d, _exe(tool))
             if _is_exe(cand):
@@ -79,10 +88,10 @@ def reset():
 
 
 def missing_message(tool):
-    hint = INSTALL.get(platform.system(), "sudo apt install ffmpeg")
+    hint = INSTALL.get(platform.system(), "kurgu setup-ffmpeg, or: sudo apt install ffmpeg")
     env = os.environ.get(ENV.get(tool, ""), "").strip()
     bad = f" (KURGU_{tool.upper()}={env} is not an executable file)" if env else ""
-    return (f"{tool} was not found{bad}. Install it ({hint}), then restart Kurgu, "
+    return (f"{tool} was not found{bad}. Run `{hint}` (downloads a copy for Kurgu, no admin rights), then restart Kurgu, "
             f"or point Kurgu at it with the environment variable {ENV.get(tool, 'KURGU_' + tool.upper())}=/full/path/to/{tool}.")
 
 
