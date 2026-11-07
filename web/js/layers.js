@@ -364,7 +364,7 @@ function updateRow(s, l, force) {
     waves.set(l.src, null);
     waveform(l.src).then(v => { waves.set(l.src, v && v.peaks ? v : false); redraw(true); });
   }
-  const strip = l.type === 'video' && l.src && !st.failed ? filmstrip(l.src) : null;
+  const strip = l.type === 'video' && l.src && !st.failed ? filmstrip(l.src, inView(l)) : null;
   const wave = waves.get(l.src);
   const sig = JSON.stringify([l.type, Math.round(w), dpr(), l.src_in, l.end - l.start, l.fade_in, l.fade_out, l.envelope, l.volume_db, l.text, l.muted, l.start, !!wave, l.src, st.failed, l.name, isFrozen(l), strip ? strip.loaded : -1, S.media.get(l.src)?.duration || 0, themeKey(), selected, gi ? gi.hex : '', gi ? gi.kind : '']);
   if (sig !== s.sig) { s.sig = sig; drawBar(s, l, w, wave, strip, selected, gi); }
@@ -541,7 +541,7 @@ function updateClip(s, l, force) {
     if (s.label.textContent !== txt) s.label.textContent = txt;
     return;
   }
-  const strip = l.type === 'video' && l.src && !st.failed ? filmstrip(l.src) : null;
+  const strip = l.type === 'video' && l.src && !st.failed ? filmstrip(l.src, inView(l)) : null;
   const wave = waves.get(l.src);
   const sig = JSON.stringify([l.type, Math.round(w), dpr(), l.src_in, l.end - l.start, l.fade_in, l.fade_out, l.envelope, l.volume_db, l.muted, l.start, !!wave, l.src, st.failed, l.name, isFrozen(l), strip ? strip.loaded : -1, S.media.get(l.src)?.duration || 0, themeKey(), selected, gi ? gi.hex : '', gi ? gi.kind : '']);
   if (sig !== s.sig) { s.sig = sig; drawBar(s, l, w, wave, strip, selected, gi); }
@@ -755,13 +755,15 @@ function openGroupPicker(x, y, name) {
 }
 
 // ---------------------------------------------------------------- filmstrip (video thumbnails from /api/thumbs)
+/** Is any part of this layer inside the visible time window of the panel? (decides which thumbnails the server makes first) */
+function inView(l) { const b = dom.body; if (!b) return true; const x0 = b.scrollLeft - LEFT, x1 = x0 + b.clientWidth; return l.end * pps >= x0 && l.start * pps <= x1; }
 let filmTimer = null;
-function filmstrip(src) {
+function filmstrip(src, vis = false) {
   let f = filmstrips.get(src);
   if (f) return f.imgs.length ? f : null;
   f = { imgs: [], loaded: 0, failed: false };
   filmstrips.set(src, f);
-  thumbs(src, 40).then(urls => {
+  thumbs(src, 40, vis ? 0 : 1).then(urls => {
     if (!urls) { f.failed = true; return; } // endpoint unavailable: bars stay plain
     f.imgs = urls.map(u => {
       const im = new Image();

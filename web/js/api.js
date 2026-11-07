@@ -45,10 +45,11 @@ export function waveform(path) {
 }
 const thumbCache = new Map();
 /** Evenly spaced filmstrip thumbnails for a video: resolves to an array of URLs, or null when unavailable. */
-export function thumbs(path, n = 40) {
+/** `pr` 0 = on screen now (served first by the server's job queue), 1 = the rest. */
+export function thumbs(path, n = 40, pr = 1) {
   const key = path + '#' + n;
   if (!thumbCache.has(key)) {
-    thumbCache.set(key, json('/api/thumbs?path=' + encodeURIComponent(path) + '&n=' + n).then(r => {
+    thumbCache.set(key, json('/api/thumbs?path=' + encodeURIComponent(path) + '&n=' + n + (pr === 0 ? '&pr=0' : '')).then(r => {
       if (!r.ok || !r.data) return null;
       const list = Array.isArray(r.data) ? r.data : (r.data.thumbs || r.data.urls || null);
       return Array.isArray(list) && list.length ? list.map(x => (typeof x === 'string' ? x : x.url)) : null;

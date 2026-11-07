@@ -20,11 +20,14 @@ Decisions where the spec is silent:
   (mcp_server.py) can tell whether an editor is running for a directory. A file whose pid is dead is stale.
 """
 import argparse
-import array
+import concurrent.futures
+import gzip
 import hashlib
+import itertools
 import json
 import mimetypes
 import os
+import queue
 import re
 import shutil
 import signal
@@ -53,11 +56,11 @@ ROOT = os.path.dirname(os.path.realpath(__file__))
 WEB = os.path.join(kurgu_paths.data_root(), "web")
 CHUNK = 256 * 1024
 HW_PROXY_CODECS = ("hevc", "vp9", "av1")
+PROXY_WIDTH = 960             # edit proxies are this wide (the preview never shows more than ~1000 px of a clip)
+LIGHT_BITRATE = 4_000_000     # an H.264 file up to 1080p below this plays smoothly as it is: a proxy would only be bigger
 BIG_SOURCE = 1 << 30          # videos above this get their proxy on first sight
 IMPORT_CHUNK = 1024 * 1024
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
-PROXY_WIDTH = 960             # edit proxies are this wide (the preview never shows more than ~1000 px of a clip)
-LIGHT_BITRATE = 4_000_000     # an H.264 file up to 1080p below this plays smoothly as it is: a proxy would only be bigger
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"}
 AUDIO_EXT = {".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg", ".opus"}
 FONT_EXT = {".ttf", ".otf", ".ttc", ".otc"}
@@ -164,6 +167,56 @@ def reveal_in_os(path):
         pass
 
 
+def low_priority():
+    """Popen / run kwargs that make a background ffmpeg yield to the editor and the player (nice on POSIX, below-normal class on Windows)."""
+    if os.name == "nt":
+        return {"creationflags": 0x00004000}                       # BELOW_NORMAL_PRIORITY_CLASS
+    return {"preexec_fn": lambda: os.nice(10)}
+
+
+class JobQueue:
+    """A few worker threads draining a priority queue: first open must not start 20 ffmpeg processes at once on a small laptop. Jobs with the same
+    key share one run; a lower `prio` number goes first (visible clips before the rest)."""
+
+    def __init__(self, workers, name):
+        self.q, self.pending, self.lock, self.n, self.seq = queue.PriorityQueue(), {}, threading.Lock(), workers, itertools.count()
+        self.name, self.started = name, False
+
+    def submit(self, key, prio, fn):
+        with self.lock:
+            f = self.pending.get(key)
+            if f is not None:
+                return f
+            f = concurrent.futures.Future()
+            self.pending[key] = f
+            if not self.started:
+                self.started = True
+                for i in range(self.n):
+                    threading.Thread(target=self._work, name=f"{self.name}-{i}", daemon=True).start()
+            self.q.put((prio, next(self.seq), key, fn, f))
+            return f
+
+    def run(self, key, prio, fn):
+        return self.submit(key, prio, fn).result()
+
+    def _work(self):
+        while True:
+            _prio, _n, key, fn, f = self.q.get()
+            try:
+                if f.set_running_or_notify_cancel():
+                    f.set_result(fn())
+            except BaseException as e:                              # HttpError etc. travel to whoever waits on the result
+                f.set_exception(e)
+            finally:
+                with self.lock:
+                    self.pending.pop(key, None)
+
+
+GZ_CACHE = {}                 # (etag, content type) -> gzipped body of static files
+QUICK_WORKERS = 2             # thumbnails + waveforms
+PROXY_WORKERS = 1             # edit proxies (minutes each)
+
+
 class App:
     """Per-server state (kept off module globals so several servers can run in one process, e.g. tests)."""
 
@@ -175,9 +228,9 @@ class App:
         self.info_cache, self.info_lock = {}, threading.Lock()
         self.proxy_state, self.proxy_lock = {}, threading.Lock()
         self.proxy_prog, self.prewarmed = {}, set()
-        self.proxy_sem = threading.Semaphore(2)
-        self.wave_lock = threading.Lock()
-        self.thumb_lock = threading.Lock()
+        self._ver = (None, "")
+        self.quick = JobQueue(QUICK_WORKERS, "quick")
+        self.proxies = JobQueue(PROXY_WORKERS, "proxy")
         self.frame_locks = {}
         self.render = {"status": "idle", "progress": 0, "output": None, "output_path": None, "name": None, "error": None,
                        "warnings": []}
@@ -215,7 +268,18 @@ class App:
             return f.read()
 
     def version(self):
-        return sha1(self.project_bytes())
+        """sha1 of project.json, re-read only when the file's mtime / size changed (the editor asks every second)."""
+        try:
+            st = os.stat(self.project_path)
+            key = (st.st_mtime_ns, st.st_size)
+        except OSError:
+            key = None
+        c = self._ver
+        if key is not None and c[0] == key:
+            return c[1]
+        v = sha1(self.project_bytes())
+        self._ver = (key, v)
+        return v
 
     def allowed_paths(self):
         found = set()
@@ -419,70 +483,6 @@ class App:
         except media_tools.MediaToolError as e:
             raise HttpError(422, str(e))
 
-    def proxy_path(self, path):
-        return os.path.join(self.kurgu, "proxies", self.key_of(path) + ".mp4")
-
-    def proxy_cmd(self, path, tmp, hw):
-        """ffmpeg command for a 960-wide, keyframe-every-15 preview proxy; hw = hardware attempt (decode + encode)."""
-        cmd = [media_tools.ffmpeg(), "-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"]
-        venc = media_tools.hw_encoders()["h264"] if hw else None
-        if venc:
-            cmd += media_tools.hw_decode_args()
-        cmd += media_tools.input_args(path) + ["-vf", f"scale={PROXY_WIDTH}:-2"]
-        if venc:
-            cmd += media_tools.hw_video_args(venc, crf=23, gop=15)
-        else:
-            cmd += ["-c:v", "libx264", "-crf", "24", "-preset", "ultrafast", "-g", "15"]
-        return cmd + ["-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", tmp], bool(venc)
-
-    def run_proxy(self, path, tmp, key, duration, hw):
-        cmd, used_hw = self.proxy_cmd(path, tmp, hw)
-        if hw and not used_hw:
-            return None
-        errlog = tempfile.TemporaryFile()
-        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errlog, stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace")
-        t0 = time.time()
-        for line in p.stdout:
-            if line.startswith("out_time_us=") or line.startswith("out_time_ms="):     # (both are microseconds in practice)
-                try:
-                    sec = int(line.split("=", 1)[1]) / 1e6
-                except ValueError:
-                    continue
-                if duration > 0:
-                    frac = min(0.99, max(0.0, sec / duration))
-                    el = time.time() - t0
-                    with self.proxy_lock:
-                        self.proxy_prog[key] = {"p": frac, "eta": round(el * (1 - frac) / frac, 1) if frac > 0.005 else None}
-        rc = p.wait()
-        errlog.close()
-        return rc == 0
-
-    def make_proxy(self, path, target, key, duration=0.0, codec=""):
-        with self.proxy_sem:
-            tmp = target + ".part.mp4"
-            state = "error"
-            try:
-                # Hardware decode + encode only pays for codecs that are slow to decode in software (measured: H.264 is
-                # faster on the CPU, HEVC/VP9/AV1 on the GPU); a failed hardware attempt falls back to software.
-                ok = self.run_proxy(path, tmp, key, duration, True) if codec in HW_PROXY_CODECS else None
-                if not ok:
-                    ok = self.run_proxy(path, tmp, key, duration, False)
-                if ok:
-                    os.replace(tmp, target)
-                    state = "ready"
-            except Exception:
-                pass
-            if state == "error" and os.path.exists(tmp):
-                os.remove(tmp)
-            with self.proxy_lock:
-                self.proxy_state[key] = state
-                self.proxy_prog.pop(key, None)
-
-    def start_proxy(self, path, target, duration=0.0, codec=""):
-        key = os.path.basename(target)
-        with self.proxy_lock:
-            if os.path.exists(target):
-                self.proxy_state[key] = "ready"
     def proxy_mode(self):
         """"auto" (default: only when a proxy pays), "always" or "never": env KURGU_PROXY, else `proxy` in .kurgu/config.json."""
         v = os.environ.get("KURGU_PROXY", "").strip().lower()
@@ -509,13 +509,76 @@ class App:
         light = base["height"] <= 1080 and base.get("codec") == "h264" and ((base.get("bitrate") and base["bitrate"] < LIGHT_BITRATE) or (not base.get("bitrate") and size < 24 << 20))
         return not light
 
+    def proxy_path(self, path):
+        return os.path.join(self.kurgu, "proxies", self.key_of(path) + ".mp4")
+
+    def proxy_cmd(self, path, tmp, hw):
+        """ffmpeg command for a 960-wide, keyframe-every-15 preview proxy; hw = hardware attempt (decode + encode)."""
+        cmd = [media_tools.ffmpeg(), "-y", "-v", "error", "-nostdin", "-progress", "pipe:1", "-nostats"]
+        venc = media_tools.hw_encoders()["h264"] if hw else None
+        if venc:
+            cmd += media_tools.hw_decode_args()
+        cmd += media_tools.input_args(path) + ["-vf", f"scale={PROXY_WIDTH}:-2"]
+        if venc:
+            cmd += media_tools.hw_video_args(venc, crf=23, gop=15)
+        else:
+            cmd += ["-c:v", "libx264", "-crf", "24", "-preset", "ultrafast", "-g", "15"]
+        return cmd + ["-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", tmp], bool(venc)
+
+    def run_proxy(self, path, tmp, key, duration, hw):
+        cmd, used_hw = self.proxy_cmd(path, tmp, hw)
+        if hw and not used_hw:
+            return None
+        errlog = tempfile.TemporaryFile()
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=errlog, stdin=subprocess.DEVNULL, text=True, encoding="utf-8", errors="replace", **low_priority())
+        t0 = time.time()
+        for line in p.stdout:
+            if line.startswith("out_time_us=") or line.startswith("out_time_ms="):     # (both are microseconds in practice)
+                try:
+                    sec = int(line.split("=", 1)[1]) / 1e6
+                except ValueError:
+                    continue
+                if duration > 0:
+                    frac = min(0.99, max(0.0, sec / duration))
+                    el = time.time() - t0
+                    with self.proxy_lock:
+                        self.proxy_prog[key] = {"p": frac, "eta": round(el * (1 - frac) / frac, 1) if frac > 0.005 else None}
+        rc = p.wait()
+        errlog.close()
+        return rc == 0
+
+    def make_proxy(self, path, target, key, duration=0.0, codec=""):
+        tmp = target + ".part.mp4"
+        state = "error"
+        try:
+            # Hardware decode + encode only pays for codecs that are slow to decode in software (measured: H.264 is
+            # faster on the CPU, HEVC/VP9/AV1 on the GPU); a failed hardware attempt falls back to software.
+            ok = self.run_proxy(path, tmp, key, duration, True) if codec in HW_PROXY_CODECS else None
+            if not ok:
+                ok = self.run_proxy(path, tmp, key, duration, False)
+            if ok:
+                os.replace(tmp, target)
+                state = "ready"
+        except Exception:
+            pass
+        if state == "error" and os.path.exists(tmp):
+            os.remove(tmp)
+        with self.proxy_lock:
+            self.proxy_state[key] = state
+            self.proxy_prog.pop(key, None)
+
+    def start_proxy(self, path, target, duration=0.0, codec=""):
+        key = os.path.basename(target)
+        with self.proxy_lock:
+            if os.path.exists(target):
+                self.proxy_state[key] = "ready"
                 return
             if self.proxy_state.get(key) in ("running", "error"):
                 return
             self.proxy_state[key] = "running"
             self.proxy_prog[key] = {"p": 0.0, "eta": None}
         self.sub("proxies")
-        threading.Thread(target=self.make_proxy, args=(path, target, key, duration, codec), daemon=True).start()
+        self.proxies.submit(("proxy", key), 5, lambda: self.make_proxy(path, target, key, duration, codec))      # one at a time, nice'd
 
     def prewarm(self, path):
         """Huge sources (> 1 GB) get their proxy the moment they are seen (import / first file listing), not on first use."""
@@ -574,81 +637,94 @@ class App:
                 info["proxy_eta"] = pr["eta"] if pr else None
         return info
 
-    def waveform(self, path):
+    def waveform(self, path, prio=1):
         target = os.path.join(self.sub("waveforms"), self.key_of(path) + ".json")
-        with self.wave_lock:
-            if os.path.exists(target):
-                with open(target, "rb") as f:
-                    return json.load(f)
-            if not self.media_info(path)["has_audio"]:
-                return {"rate": 100, "peaks": []}
-            p = subprocess.Popen([media_tools.ffmpeg(), "-v", "error", *media_tools.input_args(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
-                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-            peaks, window, rest = [], 80, b""
-            while True:
-                b = p.stdout.read(CHUNK)
-                if not b:
-                    break
-                rest += b
-                n = len(rest) // (window * 2) * (window * 2)
-                if n:
-                    arr = array.array("h")
-                    arr.frombytes(rest[:n])
-                    rest = rest[n:]
-                    for i in range(0, len(arr), window):
-                        peaks.append(round(max(abs(x) for x in arr[i:i + window]) / 32768, 4))
-            if rest:
-                arr = array.array("h")
-                arr.frombytes(rest[:len(rest) // 2 * 2])
-                if len(arr):
-                    peaks.append(round(max(abs(x) for x in arr) / 32768, 4))
-            p.wait()
-            if p.returncode != 0 and not peaks:
-                raise HttpError(422, "could not decode audio")
-            result = {"rate": 100, "peaks": peaks}
-            write_atomic(target, json.dumps(result).encode())
-            return result
+        try:                                                           # cached: no lock, no queue
+            with open(target, "rb") as f:
+                return json.load(f)
+        except (OSError, ValueError):
+            pass
+        if not self.media_info(path)["has_audio"]:                     # answered at once: never waits behind a decode
+            return {"rate": 100, "peaks": []}
+        return self.quick.run(("wave", target), prio, lambda: self._decode_waveform(path, target))
 
-    def thumbs(self, path, n):
+    def _decode_waveform(self, path, target):
+        import numpy as np
+        if os.path.exists(target):
+            with open(target, "rb") as f:
+                return json.load(f)
+        p = subprocess.Popen([media_tools.ffmpeg(), "-v", "error", *media_tools.input_args(path), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", "-"],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, **low_priority())
+        peaks, window, rest = [], 80, b""
+
+        def window_peaks(raw):                                          # max |sample| per 80-sample window, 4 decimals (as the pure-Python loop did)
+            a = np.abs(np.frombuffer(raw, dtype="<i2").astype(np.int32))
+            full = len(a) // window * window
+            out = np.round(a[:full].reshape(-1, window).max(axis=1) / 32768.0, 4).tolist() if full else []
+            if full < len(a):
+                out.append(round(float(a[full:].max()) / 32768.0, 4))
+            return out
+        while True:
+            b = p.stdout.read(CHUNK)
+            if not b:
+                break
+            rest += b
+            n = len(rest) // (window * 2) * (window * 2)
+            if n:
+                peaks += window_peaks(rest[:n])
+                rest = rest[n:]
+        if len(rest) >= 2:
+            peaks += window_peaks(rest[:len(rest) // 2 * 2])
+        p.wait()
+        if p.returncode != 0 and not peaks:
+            raise HttpError(422, "could not decode audio")
+        result = {"rate": 100, "peaks": peaks}
+        write_atomic(target, json.dumps(result).encode())
+        return result
+
+    def thumbs(self, path, n, prio=1):
         kind = kind_of(path)
         if kind not in ("video", "image"):
             raise HttpError(400, "thumbnails are only available for video and image files")
         n = max(1, min(40, n))
         folder = os.path.join(self.sub("thumbs"), f"{self.key_of(path)}-{n}")
+        names = [f"{i:03d}.jpg" for i in range(n)]
+        if all(os.path.exists(os.path.join(folder, x)) for x in names):   # cached: no queue
+            return ["/media?path=" + quote(os.path.join(folder, x)) for x in names]
+        return self.quick.run(("thumbs", folder), prio, lambda: self._make_thumbs(path, kind, n, folder, names))
 
+    def _make_thumbs(self, path, kind, n, folder, names):
         def urls(names):
             return ["/media?path=" + quote(os.path.join(folder, x)) for x in names]
 
-        with self.thumb_lock:
-            names = [f"{i:03d}.jpg" for i in range(n)]
-            if all(os.path.exists(os.path.join(folder, x)) for x in names):
-                return urls(names)
-            os.makedirs(folder, exist_ok=True)
-            if kind == "image":
-                one = os.path.join(folder, names[0])
-                cmd = [media_tools.ffmpeg(), "-y", "-v", "error", *media_tools.input_args(path), "-vf", "scale=-2:72", "-frames:v", "1", "-q:v", "5", one]
-                if subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True).returncode != 0:
-                    raise HttpError(422, "could not read image")
-                for x in names[1:]:
-                    with open(one, "rb") as src, open(os.path.join(folder, x), "wb") as dst:
-                        dst.write(src.read())
-                return urls(names)
-            dur = self.media_info(path)["duration"] or 1.0
-            cmd = [media_tools.ffmpeg(), "-y", "-v", "error", "-ss", f"{dur / (2 * n):.4f}", *media_tools.input_args(path), "-an",
-                   "-vf", f"fps={n}/{dur:.6f},scale=-2:72", "-frames:v", str(n), "-q:v", "5",
-                   os.path.join(folder, "%03d.jpg.tmp.jpg")]
-            r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace")
-            made = sorted(x for x in os.listdir(folder) if x.endswith(".tmp.jpg"))
-            if r.returncode != 0 and not made:
-                raise HttpError(422, (r.stderr.strip().splitlines() or ["thumbnail extraction failed"])[-1])
-            # ffmpeg counts from 1; pad with the last frame if it produced fewer than n
-            for i, x in enumerate(names):
-                src = os.path.join(folder, made[min(i, len(made) - 1)])
-                with open(src, "rb") as s, open(os.path.join(folder, x), "wb") as d:
-                    d.write(s.read())
-            for x in made:
-                os.remove(os.path.join(folder, x))
+        if all(os.path.exists(os.path.join(folder, x)) for x in names):
             return urls(names)
+        os.makedirs(folder, exist_ok=True)
+        if kind == "image":
+            one = os.path.join(folder, names[0])
+            cmd = [media_tools.ffmpeg(), "-y", "-v", "error", *media_tools.input_args(path), "-vf", "scale=-2:72", "-frames:v", "1", "-q:v", "5", one]
+            if subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, **low_priority()).returncode != 0:
+                raise HttpError(422, "could not read image")
+            for x in names[1:]:
+                with open(one, "rb") as src, open(os.path.join(folder, x), "wb") as dst:
+                    dst.write(src.read())
+            return urls(names)
+        dur = self.media_info(path)["duration"] or 1.0
+        cmd = [media_tools.ffmpeg(), "-y", "-v", "error", "-ss", f"{dur / (2 * n):.4f}", *media_tools.input_args(path), "-an",
+               "-vf", f"fps={n}/{dur:.6f},scale=-2:72", "-frames:v", str(n), "-q:v", "5",
+               os.path.join(folder, "%03d.jpg.tmp.jpg")]
+        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", **low_priority())
+        made = sorted(x for x in os.listdir(folder) if x.endswith(".tmp.jpg"))
+        if r.returncode != 0 and not made:
+            raise HttpError(422, (r.stderr.strip().splitlines() or ["thumbnail extraction failed"])[-1])
+        # ffmpeg counts from 1; pad with the last frame if it produced fewer than n
+        for i, x in enumerate(names):
+            src = os.path.join(folder, made[min(i, len(made) - 1)])
+            with open(src, "rb") as s, open(os.path.join(folder, x), "wb") as d:
+                d.write(s.read())
+        for x in made:
+            os.remove(os.path.join(folder, x))
+        return urls(names)
 
     def list_files(self):
         out = []
@@ -1006,13 +1082,46 @@ class Handler(BaseHTTPRequestHandler):
         print(f"{time.strftime('%H:%M:%S')} {self.command} {unquote(self.path)[:120]} -> {code}", flush=True)
 
     # ------------------------------------------------------------ responses
-    def reply(self, code, data, ctype="application/json; charset=utf-8", extra=None, close=False):
+    GZIP_TYPES = ("json", "text/", "javascript", "svg", "xml")
+
+    def not_modified(self, etag, cache="no-cache"):
+        """304 when the browser already holds this version (ETag in If-None-Match): answers before any work is done. True when it did."""
+        inm = self.headers.get("If-None-Match")
+        if not inm or etag not in [x.strip() for x in inm.split(",")]:
+            return False
+        self.send_response(304)
+        self.send_header("ETag", etag)
+        self.send_header("Cache-Control", cache)
+        self.end_headers()
+        return True
+
+    def reply(self, code, data, ctype="application/json; charset=utf-8", extra=None, close=False, etag=None, cache="no-store"):
+        """`etag` + `cache` ("no-cache" = revalidate with a 304; "public, max-age=..., immutable" for content that never changes) are for static
+        and derived files; project / state answers keep `no-store`. Text answers over 1 KB are gzipped when the browser accepts it."""
         if not isinstance(data, bytes):
             data = json.dumps(data, ensure_ascii=False).encode()
+        if etag and code == 200 and self.not_modified(etag, cache):
+            return
+        enc = None
+        if len(data) >= 1024 and any(t in ctype for t in self.GZIP_TYPES) and "gzip" in (self.headers.get("Accept-Encoding") or ""):
+            key = (etag, ctype) if etag else None
+            gz = GZ_CACHE.get(key) if key else None
+            if gz is None:
+                gz = gzip.compress(data, 5, mtime=0)
+                if key:
+                    if len(GZ_CACHE) > 200:
+                        GZ_CACHE.pop(next(iter(GZ_CACHE)))
+                    GZ_CACHE[key] = gz
+            data, enc = gz, "gzip"
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
+        if etag:
+            self.send_header("ETag", etag)
+        if enc:
+            self.send_header("Content-Encoding", enc)
+        self.send_header("Vary", "Accept-Encoding")
         if close:
             self.send_header("Connection", "close")
             self.close_connection = True
@@ -1065,8 +1174,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.serve_media(q.get("path", ""))
                 if path == "/font-file":
                     fp, ctype = self.app.font_file(q.get("id", ""))
+                    st = os.stat(fp)
+                    etag = f'W/"{st.st_mtime_ns:x}-{st.st_size:x}"'
+                    if self.not_modified(etag):
+                        return
                     with open(fp, "rb") as f:
-                        return self.reply(200, f.read(), ctype, {"Cache-Control": "no-cache"})
+                        return self.reply(200, f.read(), ctype, etag=etag, cache="no-cache")
                 if path == "/":
                     return self.serve_file(os.path.join(WEB, "index.html"))
                 if path.startswith("/web/"):
@@ -1110,13 +1223,21 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/media-info" and method == "GET":
             return self.reply(200, app.media_info(app.media_path(q.get("path", ""))))
         elif path == "/api/waveform" and method == "GET":
-            return self.reply(200, app.waveform(app.media_path(q.get("path", ""))))
+            real = app.media_path(q.get("path", ""))
+            etag = f'W/"wave-{app.key_of(real)}"'                 # the key holds path + mtime: same key = same peaks
+            if self.not_modified(etag):
+                return
+            return self.reply(200, app.waveform(real, 0 if q.get("pr") == "0" else 1), etag=etag, cache="no-cache")
         elif path == "/api/thumbs" and method == "GET":
             try:
                 n = int(q.get("n", "10"))
             except ValueError:
                 raise HttpError(400, "n must be an integer")
-            return self.reply(200, app.thumbs(app.media_path(q.get("path", "")), n))
+            real = app.media_path(q.get("path", ""))
+            etag = f'W/"thumbs-{app.key_of(real)}-{n}"'
+            if self.not_modified(etag):
+                return
+            return self.reply(200, app.thumbs(real, n, 0 if q.get("pr") == "0" else 1), etag=etag, cache="no-cache")
         elif path == "/api/files" and method == "GET":
             return self.reply(200, app.list_files())
         elif path == "/api/fonts" and method == "GET":
@@ -1274,10 +1395,14 @@ class Handler(BaseHTTPRequestHandler):
 
     # ------------------------------------------------------------ files
     def serve_file(self, path):
+        st = os.stat(path)
+        etag = f'W/"{st.st_mtime_ns:x}-{st.st_size:x}"'                   # from the file's stat: a 304 never reads the file
+        if self.not_modified(etag):
+            return
         with open(path, "rb") as f:
             data = f.read()
         ext = os.path.splitext(path)[1].lower()
-        self.reply(200, data, MIME_EXTRA.get(ext) or mimetypes.guess_type(path)[0] or "application/octet-stream")
+        self.reply(200, data, MIME_EXTRA.get(ext) or mimetypes.guess_type(path)[0] or "application/octet-stream", etag=etag, cache="no-cache")
 
     def serve_media(self, raw):
         real = self.app.media_path(raw)
@@ -1303,7 +1428,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(length))
-        self.send_header("Cache-Control", "no-cache")
+        derived = is_under(real, os.path.join(self.app.kurgu, "thumbs")) or is_under(real, os.path.join(self.app.kurgu, "proxies"))
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable" if derived else "no-cache")   # derived files are named after path + mtime: never change
         if code == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
         self.end_headers()

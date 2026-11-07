@@ -1,8 +1,10 @@
 """ffmpeg discovery, streamed audio mix (sample-exact), playlist-source refusal, proxy progress, hardware encoders."""
+import array
 import os
 import stat
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 
