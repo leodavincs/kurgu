@@ -261,7 +261,9 @@ def wake_attempts(agent, d):
         cfg = ["-c", 'approval_policy="never"']
         return [("continue the last session", ["codex", "exec", "resume", "--last", "--json", "-c", 'sandbox_mode="workspace-write"', *cfg, prompt]),
                 ("new session", ["codex", "exec", "-s", "workspace-write", *cfg, "--skip-git-repo-check", "-C", d, "--json", prompt])]
-    common = ["--output-format", "json", "--permission-mode", "acceptEdits", "--allowedTools", CLAUDE_TOOLS]
+    # --setting-sources user: a downloaded project folder is untrusted; its .claude/settings*.json (hooks, permissions) and .mcp.json
+    # servers must not load in a non-interactive run (claude -p skips the workspace trust prompt). The user's own settings still apply.
+    common = ["--setting-sources", "user", "--output-format", "json", "--permission-mode", "acceptEdits", "--allowedTools", CLAUDE_TOOLS]
     return [("continue the last session", ["claude", "-p", prompt, "--continue", *common]), ("new session", ["claude", "-p", prompt, *common])]
 
 

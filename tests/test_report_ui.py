@@ -108,7 +108,7 @@ def test_menu_error_report_shows_the_text_and_copies_it(chrome, monkeypatch, tmp
         assert "Agent setup" in txt and "hook.log" in txt and os.path.expanduser("~") not in txt.replace("~", "")
         p.eval("window.__copied=[]; navigator.clipboard.writeText=t=>{window.__copied.push(t);return Promise.resolve()}")
         p.click_sel("#report-modal .rp-copy")
-        p.wait_for("window.__copied.length===1")
+        p.wait_for("window.__copied.length===1", cdp.STARTUP_WAIT)
         assert p.eval("window.__copied[0]") == txt                                           # what was shown is exactly what was copied
         p.click_sel("#report-modal .rp-close")
         assert p.eval("!document.getElementById('report-modal')")
@@ -136,7 +136,7 @@ def test_report_window_agent_output_checkbox_is_off_by_default(chrome, monkeypat
         p.eval("window.__copied=[]; navigator.clipboard.writeText=t=>{window.__copied.push(t);return Promise.resolve()}")
         p.wait_for("!document.querySelector('#report-modal .rp-copy').disabled")
         p.click_sel("#report-modal .rp-copy")
-        p.wait_for("window.__copied.length===1")
+        p.wait_for("window.__copied.length===1", cdp.STARTUP_WAIT)
         assert "AGENT QUOTES YOUR NOTE" in p.eval("window.__copied[0]") and p.eval("window.__copied[0]") == p.eval("document.querySelector('#report-modal .rp-text').value")
         p.click_sel("#rp-agent")                                                              # off again: the text goes back
         p.wait_for("!document.querySelector('#report-modal .rp-text').value.includes('AGENT QUOTES')", 30)

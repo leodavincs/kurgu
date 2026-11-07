@@ -324,3 +324,11 @@ def test_windows_cmd_shims_refuse_shell_metacharacters_in_the_project_path_only(
     assert "Move or rename" in capsys.readouterr().err
     monkeypatch.setattr(agent_notes, "IS_WINDOWS", False)
     assert agent_notes.shim_refusal("claude.cmd", "a&b") is None                                                  # not Windows
+
+
+def test_claude_wake_never_loads_the_project_s_own_claude_settings_or_mcp_servers():
+    """A downloaded project folder is untrusted: claude -p skips the workspace trust prompt, so the project's .claude/settings*.json hooks
+    and .mcp.json servers would run on Send. Every Claude wake attempt restricts setting sources to the user's own."""
+    for _, argv in kurgu_cli.wake_attempts("claude", "/tmp/p"):
+        i = argv.index("--setting-sources")
+        assert argv[i + 1] == "user"

@@ -450,3 +450,15 @@ def test_user_config_and_env_still_work(tmp_path, monkeypatch):
     monkeypatch.setattr(ai.sys, "platform", "win32")
     monkeypatch.setenv("APPDATA", str(tmp_path / "ad"))
     assert ai.user_config_path() == os.path.join(str(tmp_path / "ad"), "kurgu", "config.json")
+
+
+def test_claude_runs_never_load_the_project_folders_own_claude_settings(tmp_path, monkeypatch):
+    """claude -p skips the workspace trust prompt, so a downloaded project's .claude/settings*.json hooks would run.
+    The assistant and the brief summary load no settings files at all."""
+    import ai, shutil as _sh
+    monkeypatch.setattr(_sh, "which", lambda n: "/usr/bin/" + n)
+    argv, fmt = ai.build_command({}, "hi", "brief", str(tmp_path / "mcp.json"), str(tmp_path))
+    assert fmt == "claude" and argv[argv.index("--setting-sources") + 1] == ""
+    monkeypatch.setattr(ai, "has_session", lambda d: True)
+    b = ai.brief_command({}, "en", str(tmp_path))
+    assert b[b.index("--setting-sources") + 1] == ""

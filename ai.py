@@ -183,7 +183,7 @@ def build_command(cfg, prompt, brief_text, mcp_path, project_dir, resume=None, h
             # system prompt are per-invocation flags: re-passed on every turn (the brief also carries the current scope).
             argv = [exe, "-p", prompt if resume else with_history(prompt, history), "--output-format", "stream-json", "--verbose",
                     "--mcp-config", mcp_path, "--strict-mcp-config", "--allowedTools", ALLOWED, "--tools", "",
-                    "--setting-sources", "project",  # skip the user's own hooks/plugins/language settings
+                    "--setting-sources", "",  # no settings files: not the user's hooks/plugins, and never the project's own .claude/settings*.json (an untrusted folder; -p skips the trust prompt)
                     "--append-system-prompt", brief_text]
             if resume:
                 argv += ["--resume", resume]
@@ -323,7 +323,7 @@ def brief_command(cfg, lang, project_dir):
         raise AiError("no_session", "no Claude Code conversation found in this folder")
     # --continue --fork-session: read the latest conversation of this folder in a NEW session; the user's live one is untouched.
     return [exe, "-p", prompt, "--continue", "--fork-session", "--model", "haiku", "--tools", "",
-            "--output-format", "json", "--no-session-persistence", "--setting-sources", "project"]
+            "--output-format", "json", "--no-session-persistence", "--setting-sources", ""]   # never the project's .claude/settings*.json hooks
 
 
 def clean_brief(text):
