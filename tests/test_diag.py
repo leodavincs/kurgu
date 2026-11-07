@@ -122,7 +122,8 @@ def test_server_start_and_stop_are_logged(project_dir):
     finally:
         p.terminate()
         p.wait(10)
-    assert any(e["msg"] == "server stopped" for e in events(project_dir))
+    if os.name != "nt":                         # Windows terminate() is TerminateProcess: no shutdown code runs, so nothing can be logged
+        assert any(e["msg"] == "server stopped" for e in events(project_dir))
 
 
 def test_client_error_endpoint_is_rate_limited(srv):
