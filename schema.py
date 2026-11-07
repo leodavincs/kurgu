@@ -414,15 +414,25 @@ def mark_problems(m):
             probs.append(f"{k} must be a number")
     if m.get("layers") is not None and not isinstance(m.get("layers"), list):
         probs.append("layers must be a list")
+    if "color" in m and not (isinstance(m["color"], str) and GROUP_COLOR_RE.match(m["color"])):
+        probs.append("color must be #rrggbb")
     return probs
 
 
 def normalize_marks(marks):
-    """Keep the valid marks of a note (invalid ones are dropped; validate() reports them)."""
+    """Keep the valid marks of a note (invalid ones are dropped; validate() reports them). A bad `color` is not worth losing the drawing for: it is
+    removed (= the default yellow), a good one is lowercased."""
     out = []
     for m in marks if isinstance(marks, list) else []:
-        if not mark_problems(m):
-            mm = dict(m)
+        if not isinstance(m, dict):
+            continue
+        mm = dict(m)
+        if "color" in mm:
+            if isinstance(mm["color"], str) and GROUP_COLOR_RE.match(mm["color"]):
+                mm["color"] = mm["color"].lower()
+            else:
+                mm.pop("color")
+        if not mark_problems(mm):
             mm["layers"] = [l for l in (m.get("layers") or []) if isinstance(l, dict)]
             out.append(mm)
     return out

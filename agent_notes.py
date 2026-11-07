@@ -112,7 +112,18 @@ def set_cursor(d, seq):
 
 # ---------------------------------------------------------------- marks (circles / boxes / arrows drawn on the frame to say WHERE)
 MARK_TYPES = ("ellipse", "rect", "arrow")
-MARK_COLOR = (243, 195, 75)          # cue yellow, same as the editor's --note
+MARK_COLOR = (243, 195, 75)          # cue yellow, same as the editor's --note (the default of a mark without `color`)
+MARK_DEFAULT = "#f3c34b"
+COLOR_NAMES = {"#f3c34b": ("sarı", "yellow"), "#ff5446": ("kırmızı", "red"), "#ffffff": ("beyaz", "white"), "#2ec4b6": ("turkuaz", "cyan"), "#6cc592": ("yeşil", "green")}
+
+
+def mark_color(m):
+    c = str(m.get("color") or "").lower()
+    return c if len(c) == 7 and c[0] == "#" and all(x in "0123456789abcdef" for x in c[1:]) else MARK_DEFAULT
+
+
+def hex_rgb(c):
+    return tuple(int(c[i:i + 2], 16) for i in (1, 3, 5))
 
 
 def _r(v, n=0):
@@ -162,7 +173,9 @@ def mark_view(m, W, H, proj=None, t=0.0):
     """One mark for agents: pixel + normalised coordinates (project space W x H), a plain-language hint and the layers under it (topmost first)."""
     typ = m.get("type")
     W, H = max(1.0, float(W)), max(1.0, float(H))
-    out = {"type": typ}
+    col = mark_color(m)
+    cname_tr, cname_en = COLOR_NAMES.get(col, (col, col))
+    out = {"type": typ, "color": col, "color_name": cname_en}
     def pick(nk, pk, size):   # the stored normalised value wins (it survives a resolution change); pixels are then recomputed from the current size
         v = m.get(nk)
         return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else float(m.get(pk, 0)) / size
@@ -170,14 +183,14 @@ def mark_view(m, W, H, proj=None, t=0.0):
         n1, m1, n2, m2 = pick("nx1", "x1", W), pick("ny1", "y1", H), pick("nx2", "x2", W), pick("ny2", "y2", H)
         x1, y1, x2, y2 = n1 * W, m1 * H, n2 * W, m2 * H
         out.update(x1=_r(x1), y1=_r(y1), x2=_r(x2), y2=_r(y2), nx1=_r(n1, 4), ny1=_r(m1, 4), nx2=_r(n2, 4), ny2=_r(m2, 4))
-        out["hint"] = f"işaret: ok, ({_r(x1)}, {_r(y1)}) noktasından ({_r(x2)}, {_r(y2)}) noktasına — ucu {_region(x2 / W, y2 / H)}"
+        out["hint"] = f"işaret: {cname_tr} ok, ({_r(x1)}, {_r(y1)}) noktasından ({_r(x2)}, {_r(y2)}) noktasına — ucu {_region(x2 / W, y2 / H)}"
     else:
         nx, ny, nw, nh = pick("nx", "x", W), pick("ny", "y", H), pick("nw", "w", W), pick("nh", "h", H)
         x, y, w, h = nx * W, ny * H, nw * W, nh * H
         cx, cy = x + w / 2, y + h / 2
         out.update(x=_r(x), y=_r(y), w=_r(w), h=_r(h), nx=_r(nx, 4), ny=_r(ny, 4), nw=_r(nw, 4), nh=_r(nh, 4), center=[_r(cx), _r(cy)])
         name = "elips" if typ == "ellipse" else "dikdörtgen"
-        out["hint"] = f"işaret: {name}, merkez ({_r(cx)}, {_r(cy)}), {_r(w)}x{_r(h)} px — {_region(cx / W, cy / H)}"
+        out["hint"] = f"işaret: {cname_tr} {name}, merkez ({_r(cx)}, {_r(cy)}), {_r(w)}x{_r(h)} px — {_region(cx / W, cy / H)}"
     lays = [l.get("name") or l.get("id") for l in (m.get("layers") or []) if isinstance(l, dict)]
     if not lays and proj is not None:     # the mark came without the editor's hit test (agent / pipeline / older client): work it out here
         if typ == "arrow":
@@ -192,23 +205,31 @@ def mark_view(m, W, H, proj=None, t=0.0):
 
 
 def burn_marks(im, views):
-    """Draw the marks (as `mark_view` dicts) onto a PIL image in cue yellow, 3 px at 1000 px wide, no fill."""
-    from PIL import ImageDraw
-    d = ImageDraw.Draw(im)
+    """Draw the marks (as `mark_view` dicts) onto a PIL image, no fill: each in its own colour (default cue yellow, 3 px at 1000 px wide) over a thin dark
+    outline (~50 % black), so every colour reads on light and dark frames."""
+    import math
+    from PIL import Image, ImageDraw
     w, h = im.size
     lw = max(3, round(w * 0.004))
-    for v in views:
+    over = Image.new("RGBA", im.size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(over)
+
+    def strokes(v, fill, width):
         if v["type"] == "arrow":
             x1, y1, x2, y2 = v["nx1"] * w, v["ny1"] * h, v["nx2"] * w, v["ny2"] * h
-            d.line([(x1, y1), (x2, y2)], fill=MARK_COLOR, width=lw)
-            import math
+            d.line([(x1, y1), (x2, y2)], fill=fill, width=width)
             a = math.atan2(y2 - y1, x2 - x1)
             L = max(12, lw * 5)
             for da in (2.6, -2.6):
-                d.line([(x2, y2), (x2 + L * math.cos(a + da), y2 + L * math.sin(a + da))], fill=MARK_COLOR, width=lw)
+                d.line([(x2, y2), (x2 + L * math.cos(a + da), y2 + L * math.sin(a + da))], fill=fill, width=width)
         else:
             box = [v["nx"] * w, v["ny"] * h, (v["nx"] + v["nw"]) * w, (v["ny"] + v["nh"]) * h]
-            (d.ellipse if v["type"] == "ellipse" else d.rectangle)(box, outline=MARK_COLOR, width=lw)
+            (d.ellipse if v["type"] == "ellipse" else d.rectangle)(box, outline=fill, width=width)
+    for v in views:
+        strokes(v, (0, 0, 0, 128), lw + 2)
+    for v in views:
+        strokes(v, hex_rgb(mark_color(v)) + (255,), lw)
+    im.paste(Image.alpha_composite(im.convert("RGBA"), over).convert("RGB"))
     return im
 
 

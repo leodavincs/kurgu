@@ -634,5 +634,10 @@
   "mark.clear": "Çizimi temizle",
   "mark.only": "Burası",
   "send.woke": "ajan uyandırıldı",
-  "send.wakeFailed": "Notlar gitti ama ajan başlatılamadı: {error} (bkz. .kurgu/hook.log)"
+  "send.wakeFailed": "Notlar gitti ama ajan başlatılamadı: {error} (bkz. .kurgu/hook.log)",
+  "mark.color.yellow": "Sarı",
+  "mark.color.red": "Kırmızı",
+  "mark.color.white": "Beyaz",
+  "mark.color.teal": "Turkuaz",
+  "mark.color.green": "Yeşil"
 }

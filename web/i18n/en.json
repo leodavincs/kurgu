@@ -634,5 +634,10 @@
   "mark.clear": "Clear drawing",
   "mark.only": "Here",
   "send.woke": "agent woken",
-  "send.wakeFailed": "The notes went out, but the agent could not be started: {error} (see .kurgu/hook.log)"
+  "send.wakeFailed": "The notes went out, but the agent could not be started: {error} (see .kurgu/hook.log)",
+  "mark.color.yellow": "Yellow",
+  "mark.color.red": "Red",
+  "mark.color.white": "White",
+  "mark.color.teal": "Cyan",
+  "mark.color.green": "Green"
 }

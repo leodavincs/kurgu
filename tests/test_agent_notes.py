@@ -285,10 +285,10 @@ def test_send_burns_marks_in_and_writes_hint_layers_and_both_coordinate_systems(
     entry = json.loads(open(os.path.join(d, ".kurgu", "inbox.jsonl"), encoding="utf-8").read().splitlines()[0])
     mk = [n for n in entry["notes"] if n["id"] == "n_a"][0]["marks"][0]
     assert mk["x"] == 1080 and mk["w"] == 260 and mk["center"] == [1210, 430] and mk["nx"] == 0.5625 and mk["nw"] == 0.1354 and mk["layers"] == ["Big title", "Clip A"]
-    assert "işaret: elips, merkez (1210, 430), 260x180 px — sağ üst çeyrek" in mk["hint"] and "Big title, Clip A" in mk["hint"]
+    assert "işaret: sarı elips, merkez (1210, 430), 260x180 px — sağ üst çeyrek" in mk["hint"] and mk["color"] == "#f3c34b" and mk["color_name"] == "yellow" and "Big title, Clip A" in mk["hint"]
     assert "marks" not in [n for n in entry["notes"] if n["id"] == "n_b"][0]
     md = open(os.path.join(d, "NOTLAR.md"), encoding="utf-8").read()
-    assert "işaret: elips, merkez (1210, 430)" in md and "nx=0.5625" in md and "drawn on it in yellow" in md
+    assert "işaret: sarı elips, merkez (1210, 430)" in md and "nx=0.5625" in md and "drawn on it in" in md
 
 
 def test_arrow_hint_and_cli_json_shows_marks(project_dir):
@@ -296,7 +296,7 @@ def test_arrow_hint_and_cli_json_shows_marks(project_dir):
     n = json.loads(cli("list", project_dir, "--json").stdout)["notes"][0]
     assert n["marks"][0]["x2"] == 300 and n["marks"][0]["nx2"] == 0.1562
     assert "ok" in n["marks"][0]["hint"] and "sol alt çeyrek" in n["marks"][0]["hint"]
-    assert "işaret: ok" in cli("list", project_dir).stdout
+    assert "işaret: sarı ok" in cli("list", project_dir).stdout
 
 
 # ------------------------------------------------------------------ robustness of the inbox / cursor
@@ -430,3 +430,43 @@ def test_marks_without_layers_get_them_from_the_server(project_dir):
     assert "altındaki katmanlar (üstten alta): " in mk["hint"] and mk["hint"].endswith("A clip")
     a = agent_notes.layers_under_mark({"width": 1920, "height": 1080, "layers": [{"id": "v", "name": "Scene", "type": "video", "start": 0, "end": 5}]}, 1.0, [(10, 10)])
     assert a == ["Scene"]                                                           # a full-frame video without any box counts as covering the frame
+
+
+# ------------------------------------------------------------------ mark colours
+def test_mark_colour_schema_default_and_validation():
+    import schema
+    base = {"type": "ellipse", "x": 1, "y": 2, "w": 3, "h": 4}
+    n = schema.normalize({"notes": [{"id": "a", "t": 1, "marks": [dict(base, color="#FF5446"), dict(base), dict(base, color="red"), dict(base, color="#12345")]}]})["notes"][0]
+    assert [m.get("color") for m in n["marks"]] == ["#ff5446", None, None, None]               # lowercased; absent / invalid = the default yellow
+    probs = schema.validate({"width": 10, "height": 10, "fps": 30, "duration": 1, "layers": [], "notes": [{"id": "a", "t": 1, "marks": [dict(base, color="red")]}]})
+    assert any("color must be #rrggbb" in x for x in probs)
+    assert not any("color" in x for x in schema.validate({"width": 10, "height": 10, "fps": 30, "duration": 1, "layers": [], "notes": [{"id": "a", "t": 1, "marks": [dict(base, color="#2ec4b6")]}]}))
+
+
+def test_coloured_marks_are_burned_in_named_in_the_hint_and_redrawn_when_recoloured(srv):
+    c, d = srv
+    red = {"type": "ellipse", "x": 600, "y": 300, "w": 700, "h": 400, "color": "#ff5446"}
+    seed(d, [dict(NOTES[0], marks=[red]), dict(NOTES[1], t=1.0, marks=[dict(red, color="#ffffff")])])
+    assert c.req("POST", "/api/notes/send", {})[0] == 200
+    from PIL import Image
+
+    def count(nid, rgb, tol=40):
+        im = Image.open(os.path.join(d, ".kurgu", "notes", nid + ".jpg")).convert("RGB")
+        return sum(1 for p in getattr(im, "get_flattened_data", im.getdata)() if all(abs(p[i] - rgb[i]) < tol for i in range(3)))
+    assert count("n_a", (255, 84, 70)) > 150 and count("n_a", (255, 84, 70)) > count("n_b", (255, 84, 70)) + 100      # red on the first, not on the white one
+    assert count("n_b", (255, 255, 255), 12) > count("n_a", (255, 255, 255), 12) + 100
+    entry = json.loads(open(os.path.join(d, ".kurgu", "inbox.jsonl"), encoding="utf-8").read().splitlines()[0])
+    m = [n for n in entry["notes"] if n["id"] == "n_a"][0]["marks"][0]
+    assert m["color"] == "#ff5446" and m["color_name"] == "red" and "işaret: kırmızı elips, merkez" in m["hint"]
+    assert "işaret: beyaz elips" in open(os.path.join(d, "NOTLAR.md"), encoding="utf-8").read()
+    # changing the colour of a sent note redraws its picture (the colour is part of the signature)
+    before = open(os.path.join(d, ".kurgu", "notes", "n_a.jpg"), "rb").read()
+    st, data = c.req("GET", "/api/project")
+    p = data["project"]
+    [n for n in p["notes"] if n["id"] == "n_a"][0]["marks"][0]["color"] = "#6cc592"
+    assert c.req("PUT", "/api/project", {"project": p, "summary": ["x"], "base_version": data["version"]})[0] == 200
+    for _ in range(100):
+        time.sleep(0.3)
+        if open(os.path.join(d, ".kurgu", "notes", "n_a.jpg"), "rb").read() != before:
+            break
+    assert count("n_a", (108, 197, 146)) > 150

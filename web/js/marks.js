@@ -8,7 +8,10 @@ import { el, icon } from './dom.js';
 import { cv } from './theme.js';
 import { viewGeom, layersUnder, pause } from './preview.js';
 
-const st = { tool: 'ellipse', active: false, draft: [], cur: null };
+const PALETTE = [['yellow', '#f3c34b'], ['red', '#ff5446'], ['white', '#ffffff'], ['teal', '#2ec4b6'], ['green', '#6cc592']];   // cue yellow (--note), tally red, white, cyan / teal, green
+const colorKey = 'kurgu.markColor';
+const savedColor = () => { try { const v = localStorage.getItem(colorKey); return PALETTE.some(([, h]) => h === v) ? v : PALETTE[0][1]; } catch (e) { return PALETTE[0][1]; } };
+const st = { tool: 'ellipse', active: false, draft: [], cur: null, color: savedColor() };
 let canvas, ctx, raf = 0;
 const rows = new Set();          // every tool row (Review dock, watch mode) is kept in sync
 export const drawing = () => st.active;
@@ -18,13 +21,13 @@ const r4 = v => Math.round(v * 10000) / 10000;
 
 // ---------------------------------------------------------------- shapes
 function finish(sh, W, H) {   // -> stored mark
-  const rd = Math.round;
+  const rd = Math.round, color = sh.color || st.color;
   if (sh.type === 'arrow') {
-    const m = { type: 'arrow', x1: rd(sh.x1), y1: rd(sh.y1), x2: rd(sh.x2), y2: rd(sh.y2), nx1: r4(sh.x1 / W), ny1: r4(sh.y1 / H), nx2: r4(sh.x2 / W), ny2: r4(sh.y2 / H) };
+    const m = { type: 'arrow', x1: rd(sh.x1), y1: rd(sh.y1), x2: rd(sh.x2), y2: rd(sh.y2), nx1: r4(sh.x1 / W), ny1: r4(sh.y1 / H), nx2: r4(sh.x2 / W), ny2: r4(sh.y2 / H), color };
     m.layers = layersUnder([{ x: sh.x2, y: sh.y2 }, { x: (sh.x1 + sh.x2) / 2, y: (sh.y1 + sh.y2) / 2 }]).map(l => ({ id: l.id, name: l.name || l.id })); return m;
   }
   const x = Math.min(sh.x1, sh.x2), y = Math.min(sh.y1, sh.y2), w = Math.abs(sh.x2 - sh.x1), h = Math.abs(sh.y2 - sh.y1);
-  const m = { type: sh.type, x: rd(x), y: rd(y), w: rd(w), h: rd(h), nx: r4(x / W), ny: r4(y / H), nw: r4(w / W), nh: r4(h / H) };
+  const m = { type: sh.type, x: rd(x), y: rd(y), w: rd(w), h: rd(h), nx: r4(x / W), ny: r4(y / H), nw: r4(w / W), nh: r4(h / H), color };
   const cx = x + w / 2, cy = y + h / 2;
   m.layers = layersUnder([{ x: cx, y: cy }, { x: x + w * .25, y: y + h * .25 }, { x: x + w * .75, y: y + h * .25 }, { x: x + w * .25, y: y + h * .75 }, { x: x + w * .75, y: y + h * .75 }]).map(l => ({ id: l.id, name: l.name || l.id }));
   return m;
@@ -41,7 +44,10 @@ function strokeMark(c, m, g) {   // m: a stored mark or a live shape in project 
     if (m.type === 'ellipse') c.ellipse(X(x + w / 2), Y(y + h / 2), Math.max(1, w * g.vz / 2), Math.max(1, h * g.vz / 2), 0, 0, Math.PI * 2);
     else c.rect(X(x), Y(y), w * g.vz, h * g.vz);
   }
-  c.stroke();
+  c.save();
+  c.lineWidth = 5; c.strokeStyle = 'rgba(0,0,0,.5)'; c.stroke();            // a thin dark outline under the colour: visible on light and dark frames
+  c.lineWidth = 3; c.strokeStyle = m.color || cv('--note') || '#f3c34b'; c.stroke();
+  c.restore();
 }
 function shown() {   // saved marks of the note the playhead rests on
   if (!S.project || S.playing) return [];
@@ -52,7 +58,7 @@ function redraw() {
   const d = dpr(), w = canvas.clientWidth, h = canvas.clientHeight;
   if (canvas.width !== Math.round(w * d) || canvas.height !== Math.round(h * d)) { canvas.width = Math.round(w * d); canvas.height = Math.round(h * d); }
   ctx.setTransform(d, 0, 0, d, 0, 0); ctx.clearRect(0, 0, w, h);
-  ctx.strokeStyle = cv('--note') || '#f3c34b'; ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
   const g = viewGeom();
   for (const m of shown()) strokeMark(ctx, m, g);
   for (const m of st.draft) strokeMark(ctx, m, g);
@@ -76,12 +82,14 @@ export function endDraw(keep = false) {
 }
 export function takeDraft() { const d = draftMarks(); st.draft = []; schedule(); syncRows(); return d; }
 function setTool(k) { st.tool = k; syncRows(); }
+function setColor(h) { st.color = h; try { localStorage.setItem(colorKey, h); } catch (e) { /* ignore */ } syncRows(); }
 function undoLast() { st.draft.pop(); syncRows(); schedule(); }
 function clearAll() { st.draft = []; syncRows(); schedule(); }
 /** Alt shortcuts while writing: Alt+O ellipse, Alt+B rectangle, Alt+A arrow, Alt+Z undo last, Alt+X clear. Returns true when handled. */
 export function markKey(e) {
   if (!st.active || !e.altKey || e.metaKey || e.ctrlKey) return false;
   const map = { KeyO: () => setTool('ellipse'), KeyB: () => setTool('rect'), KeyA: () => setTool('arrow'), KeyZ: undoLast, KeyX: clearAll };
+  PALETTE.forEach(([, h], i) => { map['Digit' + (i + 1)] = () => setColor(h); });                 // Alt+1 ... Alt+5: colour
   const f = map[e.code]; if (!f) return false;
   e.preventDefault(); e.stopPropagation(); f(); return true;
 }
@@ -91,6 +99,7 @@ function syncRows() {
   for (const r of rows) {
     r.el.hidden = !st.active;
     for (const b of r.el.querySelectorAll('[data-tool]')) { const on = b.dataset.tool === st.tool; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
+    for (const b of r.el.querySelectorAll('[data-color]')) { const on = b.dataset.color === st.color; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); }
     r.el.querySelector('[data-act=undo]').disabled = !st.draft.length; r.el.querySelector('[data-act=clear]').disabled = !st.draft.length;
     r.count.textContent = st.draft.length ? String(st.draft.length) : '';
   }
@@ -102,6 +111,8 @@ export function makeToolRow() {
   box.append(btn('', 'm-ellipse', t('mark.ellipse') + ' (Alt+O)', { tool: 'ellipse' }, () => setTool('ellipse')),
     btn('', 'm-rect', t('mark.rect') + ' (Alt+B)', { tool: 'rect' }, () => setTool('rect')),
     btn('', 'm-arrow', t('mark.arrow') + ' (Alt+A)', { tool: 'arrow' }, () => setTool('arrow')),
+    el('span', 'dt-sep'),
+    ...PALETTE.map(([name, hex], i) => { const b = el('button', 'dt-sw'); b.type = 'button'; b.dataset.color = hex; b.style.setProperty('--sw', hex); b.title = t('mark.color.' + name) + ' (Alt+' + (i + 1) + ')'; b.setAttribute('aria-label', b.title); b.addEventListener('mousedown', e => e.preventDefault()); b.addEventListener('click', () => setColor(hex)); return b; }),
     el('span', 'dt-sep'),
     btn('', 'undo-2', t('mark.undo') + ' (Alt+Z)', { act: 'undo' }, undoLast),
     btn('', 'trash-2', t('mark.clear') + ' (Alt+X)', { act: 'clear' }, clearAll));
@@ -119,7 +130,7 @@ function bind() {
     const g = viewGeom(), r = canvas.getBoundingClientRect();
     const pt = ev => ({ x: clamp((ev.clientX - r.left - g.vox) / g.vz, 0, g.W), y: clamp((ev.clientY - r.top - g.voy) / g.vz, 0, g.H) });
     const a = pt(e), sx = e.clientX, sy = e.clientY;
-    st.cur = { type: st.tool, x1: a.x, y1: a.y, x2: a.x, y2: a.y };
+    st.cur = { type: st.tool, x1: a.x, y1: a.y, x2: a.x, y2: a.y, color: st.color };
     const move = ev => { const p = pt(ev); st.cur.x2 = p.x; st.cur.y2 = p.y; schedule(); };
     const up = ev => {
       canvas.removeEventListener('pointermove', move); canvas.removeEventListener('pointerup', up); canvas.removeEventListener('pointercancel', up);

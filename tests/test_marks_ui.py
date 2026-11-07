@@ -102,3 +102,30 @@ def test_draw_an_ellipse_in_watch_mode(page):
     assert abs(n["t"] - 2.5) < 0.1
     page.key("Escape", code="Escape")
     page.wait_for("document.getElementById('watch').hidden")
+
+
+def test_colour_row_picks_red_and_the_ellipse_is_stored_red(page):
+    page.eval("localStorage.removeItem('kurgu.markColor')")
+    page.click_sel("#nb-input")
+    page.wait_for("!document.querySelector('#note-dock .dt').hidden")
+    assert page.eval("document.querySelectorAll('#note-dock .dt-sw').length") == 5
+    assert page.eval("document.querySelector('#note-dock .dt-sw.on').dataset.color") == "#f3c34b"          # yellow is the default
+    page.click_sel("#note-dock .dt-sw[data-color='#ff5446']")
+    page.wait_for("document.querySelector('#note-dock .dt-sw.on').dataset.color==='#ff5446'")
+    assert page.eval("document.activeElement.id") == "nb-input"                                           # picking a colour keeps the note box focused
+    (x0, y0), (x1, y1) = stage_point(page, 0.30, 0.25), stage_point(page, 0.50, 0.55)
+    page.drag(x0, y0, x1, y1, steps=6)
+    page.key("2", code="Digit2", modifiers=1)                                                              # Alt+2 = red as well (idempotent) ...
+    page.key("3", code="Digit3", modifiers=1)                                                              # ... Alt+3 = white for the next shape
+    page.wait_for("document.querySelector('#note-dock .dt-sw.on').dataset.color==='#ffffff'")
+    page.drag(*stage_point(page, 0.6, 0.6), *stage_point(page, 0.8, 0.8), steps=6)
+    page.send("Input.insertText", text="red and white")
+    page.key("Enter", code="Enter")
+    page.wait_for("__kurgu.S.project.notes.some(n=>n.text==='red and white')")
+    marks = [x for x in page.eval("__kurgu.S.project.notes") if x["text"] == "red and white"][0]["marks"]
+    assert [m["color"] for m in marks] == ["#ff5446", "#ffffff"]
+    assert page.eval("localStorage.getItem('kurgu.markColor')") == "#ffffff"                              # remembered for the next mark
+    page.eval("__kurgu.S.t=0; __kurgu.emit('time'); __kurgu.S.t=1.5; __kurgu.emit('time')")
+    time.sleep(0.4)
+    px = page.eval("(()=>{const c=document.getElementById('mark-canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let r=0;for(let i=0;i<d.length;i+=4)if(d[i+3]>200&&d[i]>230&&d[i+1]<120&&d[i+2]<110)r++;return r})()")
+    assert px > 100                                                                                         # the saved red mark is redrawn in red
