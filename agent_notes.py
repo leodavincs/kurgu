@@ -23,6 +23,7 @@ from datetime import datetime
 
 import schema
 
+RECOVER_EVERY = 15.0          # seconds between "sent but never announced" checks while waiting
 NOTES_MD = "NOTLAR.md"
 INBOX = os.path.join(".kurgu", "inbox.jsonl")
 FRAMES = os.path.join(".kurgu", "notes")
@@ -94,11 +95,10 @@ def cursor_path(d):
 
 
 def get_cursor(d):
-    try:
-        with open(cursor_path(d), encoding="utf-8") as f:
-            return int(f.read().strip() or 0)
-    except (OSError, ValueError):
-        return 0
+    """The saved cursor. One above the highest seq that exists means the inbox was deleted / truncated by hand: reset to 0, so what is still
+    sent (and not done) is delivered again instead of every later send being swallowed."""
+    c = _read_int(cursor_path(d))
+    return c if c <= inbox_len(d) else 0
 
 
 def set_cursor(d, seq):
@@ -131,14 +131,19 @@ def mark_view(m, W, H):
     typ = m.get("type")
     W, H = max(1.0, float(W)), max(1.0, float(H))
     out = {"type": typ}
+    def pick(nk, pk, size):   # the stored normalised value wins (it survives a resolution change); pixels are then recomputed from the current size
+        v = m.get(nk)
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else float(m.get(pk, 0)) / size
     if typ == "arrow":
-        x1, y1, x2, y2 = (float(m.get(k, 0)) for k in ("x1", "y1", "x2", "y2"))
-        out.update(x1=_r(x1), y1=_r(y1), x2=_r(x2), y2=_r(y2), nx1=_r(x1 / W, 4), ny1=_r(y1 / H, 4), nx2=_r(x2 / W, 4), ny2=_r(y2 / H, 4))
+        n1, m1, n2, m2 = pick("nx1", "x1", W), pick("ny1", "y1", H), pick("nx2", "x2", W), pick("ny2", "y2", H)
+        x1, y1, x2, y2 = n1 * W, m1 * H, n2 * W, m2 * H
+        out.update(x1=_r(x1), y1=_r(y1), x2=_r(x2), y2=_r(y2), nx1=_r(n1, 4), ny1=_r(m1, 4), nx2=_r(n2, 4), ny2=_r(m2, 4))
         out["hint"] = f"işaret: ok, ({_r(x1)}, {_r(y1)}) noktasından ({_r(x2)}, {_r(y2)}) noktasına — ucu {_region(x2 / W, y2 / H)}"
     else:
-        x, y, w, h = (float(m.get(k, 0)) for k in ("x", "y", "w", "h"))
+        nx, ny, nw, nh = pick("nx", "x", W), pick("ny", "y", H), pick("nw", "w", W), pick("nh", "h", H)
+        x, y, w, h = nx * W, ny * H, nw * W, nh * H
         cx, cy = x + w / 2, y + h / 2
-        out.update(x=_r(x), y=_r(y), w=_r(w), h=_r(h), nx=_r(x / W, 4), ny=_r(y / H, 4), nw=_r(w / W, 4), nh=_r(h / H, 4), center=[_r(cx), _r(cy)])
+        out.update(x=_r(x), y=_r(y), w=_r(w), h=_r(h), nx=_r(nx, 4), ny=_r(ny, 4), nw=_r(nw, 4), nh=_r(nh, 4), center=[_r(cx), _r(cy)])
         name = "elips" if typ == "ellipse" else "dikdörtgen"
         out["hint"] = f"işaret: {name}, merkez ({_r(cx)}, {_r(cy)}), {_r(w)}x{_r(h)} px — {_region(cx / W, cy / H)}"
     lays = [l.get("name") or l.get("id") for l in (m.get("layers") or []) if isinstance(l, dict)]
@@ -192,6 +197,16 @@ def note_view(d, n, proj):
     return out
 
 
+def note_sig(n, proj):
+    """What the note's frame JPEG depends on: its time, its marks and the frame size (the project's visuals are not tracked)."""
+    import hashlib
+    return hashlib.sha1(json.dumps([n.get("t"), n.get("marks") or [], proj.get("width"), proj.get("height")], sort_keys=True).encode()).hexdigest()[:16]
+
+
+def sig_path(d, nid):
+    return os.path.join(d, FRAMES, nid + ".sig")
+
+
 def load_notes(d):
     """(normalised project, notes sorted by time, each note normalised)."""
     proj = schema.normalize(json.load(open(schema.project_path(d), encoding="utf-8")))
@@ -234,21 +249,52 @@ def write_notes_md(d, proj=None):
     return path
 
 
+def seq_path(d):
+    return os.path.join(d, ".kurgu", "inbox.seq")
+
+
+def _read_int(path):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return int(f.read().strip() or 0)
+    except (OSError, ValueError):
+        return 0
+
+
+def _write_int(path, v):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(str(int(v)))
+    os.replace(tmp, path)
+
+
 def append_inbox(d, proj, notes, sent_at, recovered=False):
-    """One JSON line per send; the line is the wake-up signal for `notes wait`. `seq` grows by one per line."""
+    """One JSON line per send; the line is the wake-up signal for `notes wait`. `seq` only ever grows: the high-water mark lives in
+    .kurgu/inbox.seq, so deleting or truncating inbox.jsonl cannot make it restart below the agent's cursor."""
     os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
-    seq = max([e["seq"] for e in read_inbox(d)] or [0]) + 1
+    seq = max([e["seq"] for e in read_inbox(d)] + [_read_int(seq_path(d))]) + 1
     entry = {"seq": seq, "sent": sent_at, "project": proj.get("name") or os.path.basename(d), "dir": d,
              "notes": [note_view(d, n, proj) for n in notes]}
     if recovered:
         entry["recovered"] = True
+    lead = ""
+    try:                                              # a crash mid-write can leave a last line without its newline: never glue onto it
+        with open(inbox_path(d), "rb") as f:
+            f.seek(0, os.SEEK_END)
+            if f.tell():
+                f.seek(-1, os.SEEK_END)
+                lead = "" if f.read(1) == b"\n" else "\n"
+    except OSError:
+        pass
     with open(inbox_path(d), "a", encoding="utf-8") as f:
-        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        f.write(lead + json.dumps(entry, ensure_ascii=False) + "\n")
+    _write_int(seq_path(d), seq)
     return entry
 
 
 def inbox_len(d):
-    return max([e["seq"] for e in read_inbox(d)] or [0])
+    return max([e["seq"] for e in read_inbox(d)] + [_read_int(seq_path(d))])
 
 
 def recover_undelivered(d, grace=10.0):
@@ -274,46 +320,55 @@ def recover_undelivered(d, grace=10.0):
 
 
 def _live(d, entries):
-    """Entries reduced to the notes that still need the agent (sent, not done, still in the project); empty entries dropped."""
+    """Entries reduced to the notes that still need the agent (sent, not done, still in the project), each note rebuilt from the CURRENT project
+    (text / time / marks as they are now; seq and sent time stay the entry's); empty entries are dropped."""
     try:
-        _p, notes = load_notes(d)
+        proj, notes = load_notes(d)
     except (OSError, ValueError):
         return entries
-    todo = {n["id"] for n in notes if n.get("sent") and not n.get("done")}
+    now = {n["id"]: n for n in notes if n.get("sent") and not n.get("done")}
     out = []
     for e in entries:
-        keep = [n for n in e.get("notes", []) if n["id"] in todo]
+        keep = [note_view(d, now[n["id"]], proj) for n in e.get("notes", []) if n["id"] in now]
         if keep:
             out.append(dict(e, notes=keep))
     return out
 
 
-def wait_for_send(d, since=None, timeout=None, poll=0.4, cancel=None):
+def wait_for_send(d, since=None, timeout=None, poll=0.4, cancel=None, commit=True):
     """Return the inbox entries the agent has not consumed yet (seq above `since`, default: the saved cursor), blocking until there is one.
-    Only notes that are still `sent` and not `done` are returned. Without `since` the cursor is advanced to what was returned, so a send made
-    while the agent was fixing the previous batch is delivered by the next call. `since` given: the cursor is neither read nor moved.
-    timeout None = wait forever, 0 = look once, N = N seconds; returns None on timeout (or when `cancel`, a threading.Event, is set)."""
+    Only notes that are still `sent` and not `done` are returned, rebuilt from the current project. Without `since` the cursor moves to what was
+    returned, so a send made while the agent was fixing the previous batch is delivered by the next call. `since` given: the cursor is neither
+    read nor moved. timeout None = wait forever, 0 = look once, N = N seconds; None comes back on timeout or when `cancel` (a threading.Event) is
+    set. `commit=False` leaves the cursor alone and returns (entries, commit_fn): the caller moves it only once the answer is really delivered."""
     use_cursor = since is None
     base = get_cursor(d) if use_cursor else int(since)
     end = None if timeout is None else time.monotonic() + timeout
-    recover_undelivered(d)
-    last_size = -1
+    next_recover, last_size = 0.0, -1
     while True:
+        if time.monotonic() >= next_recover:           # at the start and then every 15 s: a send that never reached the inbox is found while waiting too
+            recover_undelivered(d)
+            next_recover, last_size = time.monotonic() + RECOVER_EVERY, -1
         try:
             size = os.path.getsize(inbox_path(d))
         except OSError:
             size = 0
-        if size != last_size:                       # only re-parse the file when it changed
+        if size != last_size:                          # only re-parse the file when it changed
             last_size = size
             pending = [e for e in read_inbox(d) if e["seq"] > base]
             if pending:
                 top = max(e["seq"] for e in pending)
-                if use_cursor:
-                    set_cursor(d, top)
                 base = top
                 live = _live(d, pending)
                 if live:
-                    return live
+                    if not use_cursor:
+                        return (live, lambda: None) if not commit else live
+                    if commit:
+                        set_cursor(d, top)
+                        return live
+                    return live, (lambda top=top: set_cursor(d, top))
+                if use_cursor:
+                    set_cursor(d, top)                 # nothing live in it (all done meanwhile): consumed
         if end is not None and time.monotonic() >= end:
             return None
         if cancel is not None:

@@ -797,8 +797,15 @@ def tool_notes_wait(a, ctx):
         raise ToolError("timeout must be a number of seconds >= 0 (0 = look once).")
     timeout = min(float(timeout), 600.0)
     since = a.get("since")
-    since = since if isinstance(since, int) and not isinstance(since, bool) else None
-    entries = agent_notes.wait_for_send(d, since, timeout, cancel=ctx.get("cancel"))
+    if since is not None and (isinstance(since, bool) or not isinstance(since, int) or since < 0):
+        raise ToolError("since must be an integer seq >= 0 (the inbox position of an earlier notes_wait).")
+    cancel = ctx.get("cancel")
+    got = agent_notes.wait_for_send(d, since, timeout, cancel=cancel, commit=False)
+    if got is not None and cancel is not None and cancel.is_set():
+        got = None                                      # the client gave up: the response is dropped, so the batch must stay unconsumed
+    entries, commit = got if got is not None else (None, None)
+    if commit is not None:
+        commit()                                        # only now is the cursor moved
     if entries is None:
         return [text(json.dumps({"timeout": True, "inbox": agent_notes.inbox_len(d),
                                  "hint": "Nothing new was sent. Call notes_wait again (the cursor remembers what you already got)."}))]

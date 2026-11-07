@@ -90,7 +90,7 @@ export function focusNote() { if (nbInput) { nbInput.focus(); nbInput.select(); 
 
 // ---------------------------------------------------------------- watch mode
 let root, stageHost, stageHome, stageNext, seekEl, fillEl, headEl, marksEl, playBtn, tcNow, tcDur, wInput, wChip, wTime, wPaused, countEl, sceneEl;
-let isOpen = false, usedFullscreen = false, savedZoom = 'fit', noteAt = null, resumeAfter = false;
+let isOpen = false, usedFullscreen = false, togglingFs = false, savedZoom = 'fit', noteAt = null, resumeAfter = false;
 let watchSent = [];                                   // ids sent while this mode was open (kept in the list as "sent")
 export const watchOpen = () => isOpen;
 
@@ -146,7 +146,10 @@ function build() {
   wInput.addEventListener('keydown', onInputKey);
   wInput.addEventListener('blur', () => { if (!wInput.value) endType(false); });
   window.addEventListener('keydown', onKey, true);
-  document.addEventListener('fullscreenchange', () => { if (isOpen && usedFullscreen && !document.fullscreenElement) closeWatch(true); });
+  document.addEventListener('fullscreenchange', () => {
+    if (togglingFs) { togglingFs = false; usedFullscreen = false; return; }          // F left fullscreen on purpose: the overlay stays
+    if (isOpen && usedFullscreen && !document.fullscreenElement) closeWatch(true);   // the browser's own Esc: leave the mode too
+  });
   applyText();
 }
 function applyText() {
@@ -226,7 +229,7 @@ function onKey(e) {
   else if (k === ' ') { eat(); if (!e.repeat) togglePlay(); }
   else if (k === 'n' || k === 'N') { eat(); focusInput(); }
   else if (k === 'ArrowLeft' || k === 'ArrowRight') { eat(); setTime(S.t + (k === 'ArrowRight' ? 1 : -1)); }
-  else if (k === 'f' || k === 'F') { eat(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); else if (root.requestFullscreen) root.requestFullscreen().then(() => { usedFullscreen = true; }).catch(() => {}); }
+  else if (k === 'f' || k === 'F') { eat(); if (document.fullscreenElement) { togglingFs = true; document.exitFullscreen().catch(() => { togglingFs = false; }); } else if (root.requestFullscreen) root.requestFullscreen().then(() => { usedFullscreen = true; }).catch(() => {}); }
   else if (k.length === 1 && /\S/.test(k) && !(e.target.closest && e.target.closest('input, textarea, select, [contenteditable]'))) { startType(); wInput.focus(); }   // only when no other field has the focus   // any letter: start a note (the character lands in the box)
   else e.stopPropagation();
 }
@@ -292,7 +295,6 @@ function renderLists() {
   if (watchList && isOpen) { watchList.render(); countEl.textContent = countText(watchList.notes()); }
   if (reviewList) { reviewList.render(); reviewCount.textContent = countText(reviewList.notes()); }
 }
-const renderList = renderLists;
 function updateTime() {
   if (!root || !isOpen) return;
   const d = S.project.duration || 1, f = clamp(S.t / d, 0, 1) * 100;

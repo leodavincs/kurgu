@@ -267,7 +267,7 @@ def test_send_burns_marks_in_and_writes_hint_layers_and_both_coordinate_systems(
     from PIL import Image
     def yellow(nid):
         im = Image.open(os.path.join(d, ".kurgu", "notes", nid + ".jpg")).convert("RGB")
-        return sum(1 for r, g, b in im.getdata() if r > 200 and 150 < g < 235 and b < 130)
+        return sum(1 for r, g, b in getattr(im, 'get_flattened_data', im.getdata)() if r > 200 and 150 < g < 235 and b < 130)
     assert yellow("n_a") > yellow("n_b") + 100                            # the ellipse is burned in; the same frame without marks has far less yellow
     assert open(os.path.join(d, ".kurgu", "notes", "n_a.jpg"), "rb").read() != open(os.path.join(d, ".kurgu", "notes", "n_b.jpg"), "rb").read()
     entry = json.loads(open(os.path.join(d, ".kurgu", "inbox.jsonl"), encoding="utf-8").read().splitlines()[0])
@@ -285,3 +285,114 @@ def test_arrow_hint_and_cli_json_shows_marks(project_dir):
     assert n["marks"][0]["x2"] == 300 and n["marks"][0]["nx2"] == 0.1562
     assert "ok" in n["marks"][0]["hint"] and "sol alt çeyrek" in n["marks"][0]["hint"]
     assert "işaret: ok" in cli("list", project_dir).stdout
+
+
+# ------------------------------------------------------------------ robustness of the inbox / cursor
+def test_seq_never_goes_backwards_when_the_inbox_is_deleted(srv):
+    c, d = srv
+    c.req("POST", "/api/notes/send", {"ids": ["n_a"]})
+    assert agent_notes.wait_for_send(d, timeout=0)[0]["seq"] == 1 and agent_notes.get_cursor(d) == 1
+    os.remove(os.path.join(d, ".kurgu", "inbox.jsonl"))                      # the file is gone but the high-water mark is not
+    c.req("POST", "/api/notes/send", {"ids": ["n_b"]})
+    got = agent_notes.wait_for_send(d, timeout=0)
+    assert got and got[0]["seq"] == 2 and [n["id"] for n in got[0]["notes"]] == ["n_b"]
+    os.remove(os.path.join(d, ".kurgu", "inbox.jsonl")); os.remove(os.path.join(d, ".kurgu", "inbox.seq"))      # everything gone, cursor still 2
+    c.req("POST", "/api/notes/send", {"ids": ["n_a"]})
+    got = agent_notes.wait_for_send(d, timeout=0)
+    assert got and [n["id"] for n in got[0]["notes"]] == ["n_a"]             # a cursor above the highest seq is reset: new sends still arrive
+
+
+def test_a_partial_last_line_does_not_swallow_the_next_send(srv):
+    c, d = srv
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    with open(os.path.join(d, ".kurgu", "inbox.jsonl"), "w", encoding="utf-8") as f:
+        f.write('{"seq": 1, "sent": "x", "project": "p", "dir": "d", "notes": [{"id": "n_zz"')     # crash mid-write: no closing, no newline
+    c.req("POST", "/api/notes/send", {"ids": ["n_a"]})
+    assert [e["notes"][0]["id"] for e in agent_notes.read_inbox(d)] == ["n_a"]     # the broken line is skipped, the new one is intact
+    got = agent_notes.wait_for_send(d, timeout=0)
+    assert got and got[0]["notes"][0]["id"] == "n_a"
+
+
+def test_wait_looks_for_unannounced_sends_while_it_waits(project_dir, monkeypatch):
+    seed(project_dir)
+    monkeypatch.setattr(agent_notes, "RECOVER_EVERY", 0.3)
+    def late():
+        time.sleep(0.6)
+        seed(project_dir, [dict(NOTES[0], sent="2026-11-07T10:05:00"), NOTES[1]])   # a send that stamped the project but never wrote its inbox line
+    threading.Thread(target=late, daemon=True).start()
+    got = agent_notes.wait_for_send(project_dir, timeout=10, poll=0.1)
+    assert got and got[0].get("recovered") and got[0]["notes"][0]["id"] == "n_a"
+
+
+def test_cursor_moves_only_when_the_caller_commits(srv):
+    c, d = srv
+    c.req("POST", "/api/notes/send", {"ids": ["n_a"]})
+    entries, commit = agent_notes.wait_for_send(d, timeout=0, commit=False)
+    assert entries and agent_notes.get_cursor(d) == 0                         # a cancelled MCP call never reaches commit(): the batch stays unconsumed
+    assert agent_notes.wait_for_send(d, timeout=0, commit=False) is not None
+    commit()
+    assert agent_notes.get_cursor(d) == 1 and agent_notes.wait_for_send(d, timeout=0) is None
+
+
+def test_wait_shows_the_note_as_it_is_now_not_as_it_was_sent(srv):
+    c, d = srv
+    c.req("POST", "/api/notes/send", {"ids": ["n_a"]})
+    st, data = c.req("GET", "/api/project")
+    p = data["project"]
+    [n for n in p["notes"] if n["id"] == "n_a"][0]["text"] = "title appears 2 s too late (edited)"
+    assert c.req("PUT", "/api/project", {"project": p, "summary": ["x"], "base_version": data["version"]})[0] == 200
+    got = agent_notes.wait_for_send(d, timeout=0)
+    assert got[0]["notes"][0]["text"] == "title appears 2 s too late (edited)"
+
+
+def test_the_frame_picture_is_redrawn_when_a_sent_note_moves(srv):
+    c, d = srv
+    c.req("POST", "/api/notes/send", {"ids": ["n_a"]})
+    jpg = os.path.join(d, ".kurgu", "notes", "n_a.jpg")
+    before = open(jpg, "rb").read()
+    st, data = c.req("GET", "/api/project")
+    p = data["project"]
+    [n for n in p["notes"] if n["id"] == "n_a"][0]["t"] = 6.5                  # the pipeline moved the note to another second
+    assert c.req("PUT", "/api/project", {"project": p, "summary": ["x"], "base_version": data["version"]})[0] == 200
+    sig = os.path.join(d, ".kurgu", "notes", "n_a.sig")
+    for _ in range(100):
+        time.sleep(0.3)
+        if open(jpg, "rb").read() != before:
+            break
+    assert open(jpg, "rb").read() != before
+    assert open(sig, encoding="utf-8").read()
+
+
+def test_marks_follow_the_normalised_coordinates_when_the_resolution_changes():
+    m = {"type": "ellipse", "x": 100, "y": 100, "w": 50, "h": 50, "nx": 0.5, "ny": 0.25, "nw": 0.1, "nh": 0.2}
+    v = agent_notes.mark_view(m, 1280, 720)                                     # the project was resized after the note was written
+    assert (v["x"], v["y"], v["w"], v["h"]) == (640, 180, 128, 144) and v["center"] == [704, 252] and v["nx"] == 0.5
+    a = agent_notes.mark_view({"type": "arrow", "x1": 1, "y1": 1, "x2": 2, "y2": 2, "nx1": 0.1, "ny1": 0.2, "nx2": 0.5, "ny2": 0.5}, 1000, 500)
+    assert (a["x1"], a["y1"], a["x2"], a["y2"]) == (100, 100, 500, 250)
+    assert agent_notes.mark_view({"type": "rect", "x": 10, "y": 20, "w": 30, "h": 40}, 100, 200)["nx"] == 0.1   # pixels only: normalised is derived
+
+
+def test_mcp_notes_wait_rejects_a_bad_since_and_leaves_the_cursor(project_dir):
+    seed(project_dir)
+    m = Mcp(project_dir)
+    try:
+        assert m.tool("notes_wait", since="abc", timeout=0)["isError"] and m.tool("notes_wait", since=1.5, timeout=0)["isError"]
+        assert agent_notes.get_cursor(project_dir) == 0
+    finally:
+        m.close()
+
+
+def test_launcher_prefers_a_python_310_and_cmd_keeps_long_argument_lists(tmp_path, project_dir):
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "python3.13").write_text("#!/bin/sh\nexit 1\n")                     # an interpreter that fails the version guard
+    (fake / "python3.13").chmod(0o755)
+    (fake / "python3.12").symlink_to(sys.executable)
+    seed(project_dir)
+    env = dict(os.environ, PATH=str(fake) + os.pathsep + os.environ["PATH"])
+    r = subprocess.run(["bash", LAUNCHER, "notes", "list", project_dir, "--all"], capture_output=True, text=True, env=env, timeout=60)
+    assert r.returncode == 0 and "title appears too late" in r.stdout
+    text = open(LAUNCHER, encoding="utf-8").read()
+    assert "python3.10" in text and "sys.version_info >= (3, 10)" in text and "needs Python 3.10" in text
+    cmd = open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read()
+    assert "NARGS" in cmd and "%1 %2" not in cmd and "sys.version_info >= (3, 10)" in cmd and "nopython" in cmd

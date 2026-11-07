@@ -139,3 +139,15 @@ def test_5_a_letter_typed_in_another_field_does_not_start_a_note(page):
     page.key("Escape", code="Escape")
     page.key("Escape", code="Escape")
     page.wait_for("document.getElementById('watch').hidden")
+
+
+def test_6_f_toggles_fullscreen_but_keeps_the_watch_overlay(page):
+    page.click_sel("#b-watch")
+    page.wait_for("!document.getElementById('watch').hidden")
+    page.key("f", code="KeyF", text="f")
+    time.sleep(0.8)
+    page.key("f", code="KeyF", text="f")                                          # leaves fullscreen (when the headless browser granted it) ...
+    time.sleep(0.8)
+    assert page.eval("!document.getElementById('watch').hidden")                  # ... and the overlay is still there
+    page.key("Escape", code="Escape")
+    page.wait_for("document.getElementById('watch').hidden")

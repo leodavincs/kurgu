@@ -593,8 +593,6 @@
   "watch.status": "{n} notes · {u} not sent yet",
   "watch.allSent": "{n} notes · all sent",
   "watch.empty": "No notes yet. Start typing, or press N.",
-  "watch.sendN": "{label} ({n} notes)",
-  "watch.sendN1": "{label} (1 note)",
   "watch.sendHint": "Notes go with their second, scene name and a picture of that frame",
   "watch.keys": "Space play · N note · Enter add · ← → 1 s · Esc exit",
   "watch.sentMark": "sent ✓",

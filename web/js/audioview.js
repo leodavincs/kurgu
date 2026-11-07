@@ -267,7 +267,8 @@ export function mountAudio(host) {
   host.append(dom.over, dom.scenes, dom.main, dom.words);
   dom.scenes.addEventListener('pointerdown', e => { const r = dom.scenes.getBoundingClientRect(), tt = xt(e.clientX - r.left, r.width), q = buildScenes().find(z => tt >= z.a && tt < z.b); setTime(clamp(q ? q.a : tt, 0, dur())); });
   bind();
-  new ResizeObserver(() => schedule(true)).observe(host);
+  if (dom.ro) dom.ro.disconnect();                    // the panel is rebuilt on a language change: do not stack observers
+  dom.ro = new ResizeObserver(() => schedule(true)); dom.ro.observe(host);
   mixSig = ''; wordSig = ''; sceneSig = ''; sceneDirty = wordDirty = true;
 }
 export function setAudioActive(on) {

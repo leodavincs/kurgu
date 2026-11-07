@@ -593,8 +593,6 @@
   "watch.status": "{n} not · {u} tanesi henüz gönderilmedi",
   "watch.allSent": "{n} not · hepsi gönderildi",
   "watch.empty": "Henüz not yok. Yazmaya başla ya da N'ye bas.",
-  "watch.sendN": "{label} ({n} not)",
-  "watch.sendN1": "{label} ({n} not)",
   "watch.sendHint": "Notlar saniyesi, sahne adı ve o anın karesiyle gider",
   "watch.keys": "Boşluk oynat · N not · Enter ekle · ← → 1 sn · Esc çık",
   "watch.sentMark": "gönderildi ✓",

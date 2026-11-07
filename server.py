@@ -357,6 +357,9 @@ class App:
             after = project.get("notes") or []
             if before != after and (os.path.exists(os.path.join(self.dir, agent_notes.NOTES_MD)) or any(isinstance(n, dict) and n.get("sent") for n in after)):
                 agent_notes.write_notes_md(self.dir, schema.normalize(json.loads(json.dumps(project))))
+            stale = self.stale_frames(project)
+            if stale:                                      # re-draw their pictures in the background (a render takes seconds; the save must not wait)
+                threading.Thread(target=self.refresh_frames, args=(stale,), daemon=True).start()
         except Exception:                                  # a derived file must never fail a save
             pass
 
@@ -845,6 +848,30 @@ class App:
         os.replace(tmp, out)
         return out
 
+    def stale_frames(self, project):
+        """Sent notes whose picture no longer matches their time / marks (edited by the agent or a pipeline after the send)."""
+        proj = schema.normalize(json.loads(json.dumps(project)))
+        out = []
+        for n in proj["notes"]:
+            if not n.get("sent") or not os.path.exists(os.path.join(self.dir, agent_notes.FRAMES, n["id"] + ".jpg")):
+                continue
+            try:
+                same = open(agent_notes.sig_path(self.dir, n["id"]), encoding="utf-8").read() == agent_notes.note_sig(n, proj)
+            except OSError:
+                same = False
+            if not same:
+                out.append((n, proj))
+        return out
+
+    def refresh_frames(self, stale):
+        for n, proj in stale:
+            try:
+                self.note_frame_jpeg(n["id"], n["t"], n.get("marks"), (proj.get("width") or 1920, proj.get("height") or 1080))
+                with open(agent_notes.sig_path(self.dir, n["id"]), "w", encoding="utf-8") as f:
+                    f.write(agent_notes.note_sig(n, proj))
+            except Exception:
+                pass
+
     def notes_send(self, body):
         """POST /api/notes/send {ids?}: hand notes to the agent. Without ids: every note of the human that is neither sent nor done.
         Stamps `sent` in project.json (one write, one changes.md line, the editor takes it as one undo step), saves a frame
@@ -866,6 +893,8 @@ class App:
         def one(n):
             try:
                 self.note_frame_jpeg(n["id"], n["t"], n.get("marks"), (raw.get("width") or 1920, raw.get("height") or 1080))
+                with open(agent_notes.sig_path(self.dir, n["id"]), "w", encoding="utf-8") as f:
+                    f.write(agent_notes.note_sig(n, raw))
             except Exception as e:                      # a frame that cannot be drawn must not block the note
                 failed.append(f'{n["id"]}: {e}')
         with ThreadPoolExecutor(3) as ex:
