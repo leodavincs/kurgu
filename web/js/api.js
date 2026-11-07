@@ -151,7 +151,10 @@ export async function saveAndWait() {
 export const savePending = () => saving || S.saveState === 'dirty';
 
 // ---------- external change polling ----------
-export function startPolling() { setInterval(checkExternal, 1000); }
+export function startPolling() {
+  setInterval(() => { if (!document.hidden) checkExternal(); }, 1000);       // nothing to watch while the tab is in the background ...
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkExternal(); });   // ... but look at once when it comes back
+}
 /** Look for a changed project.json now (the AI panel also calls this when a job ends). Every reload is one undo step. */
 export async function checkExternal() {
   if (!S.project || saving || S.saveState === 'dirty') return;

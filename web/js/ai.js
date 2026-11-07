@@ -62,7 +62,7 @@ const briefErrText = () => t('ai.brief.err.' + (['no_session', 'unsupported', 'n
 
 function renderAll() { for (const v of [...views]) { if (!v.root.isConnected) views.delete(v); else v.render(); } }
 onLang(() => renderAll());
-setInterval(() => { phIndex = (phIndex + 1) % PLACEHOLDERS; for (const v of views) if (v.root.isConnected) v.placeholder(); }, 4000);
+setInterval(() => { if (document.hidden || !views.size) return; phIndex = (phIndex + 1) % PLACEHOLDERS; for (const v of views) if (v.root.isConnected) v.placeholder(); }, 4000);
 
 // ---------------------------------------------------------------- job control
 async function post(url, body) {

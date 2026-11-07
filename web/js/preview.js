@@ -13,8 +13,10 @@ let ctx, ovl, octx, W = 1920, H = 1080, rs = 1;
 // viewer geometry (css px): zoom vz, frame size fw×fh, frame origin (vox, voy) inside the stage, stage size stW×stH
 let vz = 1, fitZ = 1, fw = 0, fh = 0, vox = 0, voy = 0, stW = 0, stH = 0, dpr = 1;
 export const ZOOMS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 4];
-let dirty = true;
-export const requestRedraw = () => { dirty = true; };
+let dirty = true, looping = false;
+/** The frame loop runs only while something moves (playing, shuttle, a pending redraw) and sleeps otherwise: an idle editor costs no CPU. */
+const kick = () => { if (!looping) { looping = true; requestAnimationFrame(loop); } };
+export const requestRedraw = () => { dirty = true; kick(); };
 
 // ---------------------------------------------------------------- media elements
 const entries = new Map(); // layer id -> entry
@@ -183,8 +185,8 @@ export function shuttle(dir) {
 }
 
 function loop(now) {
-  requestAnimationFrame(loop);
-  if (!S.project) return;
+  looping = false;
+  if (!S.project) { kick(); return; }
   if (S.playing) {
     // playhead moved by someone else (drag, click, key) → the clock follows it; while dragging it holds still
     if (S.scrubbing || S.t !== lastClockT) { clockStart = S.t; clockT0 = now; }
@@ -202,6 +204,7 @@ function loop(now) {
     sync(); dirty = true;
   }
   if (dirty) { dirty = false; try { draw(); } catch (e) { console.error('draw error', e); } drawOverlay(); }
+  if (S.playing || rev || dirty) kick();
 }
 
 // ---------------------------------------------------------------- drawing
@@ -752,12 +755,9 @@ function layout() {
   Object.assign(dom.frame.style, { left: vox + 'px', top: voy + 'px', width: fw + 'px', height: fh + 'px' });
   const ow = Math.round(stW * dpr), oh = Math.round(stH * dpr);
   if (ovl.width !== ow || ovl.height !== oh) { ovl.width = ow; ovl.height = oh; }
+  applyScale(false);
   requestRedraw();
 }
-function resize() { const z = vz, f = fitZ; layout(); if (z !== vz || f !== fitZ) emit('view'); }
-  applyScale(false);
-export function applyProjectSize() {
-  W = S.project.width; H = S.project.height;
 /** The internal canvas only needs the pixels that are shown: on-screen frame size x devicePixelRatio, at most ~1 MP in the fit view. At 100 % zoom and
  *  more, and in real-frame mode, it is the full resolution (still capped at 2.5 MP). Drawing is in project pixels either way (the context is scaled by rs). */
 function wantScale() {
@@ -771,6 +771,9 @@ function applyScale(force) {
   dom.canvas.width = Math.round(W * rs); dom.canvas.height = Math.round(H * rs);
   grainTile.pattern = null;
 }
+function resize() { const z = vz, f = fitZ; layout(); if (z !== vz || f !== fitZ) emit('view'); }
+export function applyProjectSize() {
+  W = S.project.width; H = S.project.height;
   ctx = dom.canvas.getContext('2d', { alpha: false });
   view.px = view.py = 0;
   layout(); applyScale(true); emit('view');
@@ -793,8 +796,8 @@ export function startPreview(d) {
   onFontLoaded(() => requestRedraw());
   const signature = () => S.project.layers.map(l => l.id + l.src + l.type).join();
   let lastSig = signature();
-  requestAnimationFrame(loop);
-  setInterval(pollProxies, 3000);
+  kick();
+  setInterval(() => { if (!document.hidden) pollProxies(); }, 3000);
   return {
     project() { const s = signature(); if (s !== lastSig) { lastSig = s; syncMedia(); } if (S.project.width !== W || S.project.height !== H) applyProjectSize(); if (!S.playing) { sync(); requestRealFrame(); } requestRedraw(); },
     time() { if (!S.playing) { sync(); requestRealFrame(); } requestRedraw(); },

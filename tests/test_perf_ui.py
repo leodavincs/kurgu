@@ -67,3 +67,24 @@ def test_marks_still_line_up_with_the_smaller_canvas(page):
     assert abs(g["fw"] - g["gw"]) < 1.5                                                # overlays use project px x zoom: unchanged by the canvas size
 
 
+def test_the_frame_loop_sleeps_when_idle_and_wakes_on_change(page):
+    page.eval("window.__raf=0;const o=window.requestAnimationFrame.bind(window);window.requestAnimationFrame=f=>{window.__raf++;return o(f)}")
+    time.sleep(1.5)
+    assert page.eval("window.__raf") < 15                                              # a free-running loop would be ~90 here
+    page.eval("window.__raf=0; __kurgu.S.t=3; __kurgu.emit('time')")
+    time.sleep(0.5)
+    assert page.eval("window.__raf") >= 1                                              # a change wakes it up and the frame is drawn
+    page.eval("window.__raf=0")
+    page.key(" ", code="Space", text=" ")
+    time.sleep(0.6)
+    assert page.eval("__kurgu.S.playing") and page.eval("window.__raf") > 20           # playing: one callback per frame
+    page.key(" ", code="Space", text=" ")
+
+
+def test_a_hidden_tab_does_not_poll_the_server(page):
+    page.eval("Object.defineProperty(document,'hidden',{configurable:true,get:()=>true}); performance.clearResourceTimings()")
+    time.sleep(2.5)
+    assert page.eval("performance.getEntriesByType('resource').filter(r=>r.name.includes('/api/version')).length") == 0
+    page.eval("Object.defineProperty(document,'hidden',{configurable:true,get:()=>false}); document.dispatchEvent(new Event('visibilitychange'))")
+    time.sleep(1.5)
+    assert page.eval("performance.getEntriesByType('resource').filter(r=>r.name.includes('/api/version')).length") >= 1

@@ -287,6 +287,7 @@ function watchProxy(rec, info) {
   const t0 = Date.now();
   const tick = async () => {
     if (items.get(f.path) !== rec || Date.now() - t0 > 30 * 60 * 1000) return;
+    if (document.hidden) { setTimeout(tick, 1500); return; }                 // no polling for a background tab
     const i = await API.mediaInfo(f.path);
     if (items.get(f.path) !== rec) return;
     if (i) S.media.set(f.path, i);
