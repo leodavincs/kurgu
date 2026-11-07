@@ -229,7 +229,7 @@ Everything is in [SPEC.md](SPEC.md): layer types and fields, effects, fonts, the
 
 ## Something wrong? / Sorun mu var?
 
-Run `kurgu report` in a terminal (add the project folder, or `-o` to save it as `.kurgu/report-<time>.txt`), or open the editor's menu and choose **Hata raporu / Error report**. You get ONE plain-text report: versions of Kurgu, your system, ffmpeg and Chrome, the doctor check, whether an agent is set up and listening (never the command itself), the last events from `.kurgu/log.jsonl` and the end of `.kurgu/hook.log`. Your home folder is shown as `~`, e-mails as `<email>`, anything that looks like a key or token as `<redacted>`; note texts and project content are never in it. The editor shows the text first and only copies it when you press Copy; nothing is sent anywhere. Paste it to whoever is helping you.
+Run `kurgu report` in a terminal (add the project folder, or `-o` to save it as `.kurgu/report-<time>.txt`), or open the editor's menu and choose **Hata raporu / Error report**. You get ONE plain-text report: versions of Kurgu, your system, ffmpeg and Chrome, the doctor check, whether an agent is set up and listening (never the command itself), the last events from `.kurgu/log.jsonl` and Kurgu's own lines from `.kurgu/hook.log`. Your home folder is shown as `~`, e-mails as `<email>`, anything that looks like a key or token as `<redacted>`; note texts and project content are never in it, and neither is the agent's output (it can quote your notes): add it only if you choose to, with `kurgu report --include-agent-output` or the checkbox in the editor's window. The editor shows the text first and only copies it when you press Copy; nothing is sent anywhere. Paste it to whoever is helping you.
 
 ## Privacy
 

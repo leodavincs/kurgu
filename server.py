@@ -1057,16 +1057,18 @@ class App:
 
     # ------------------------------------------------------------ watch + note: send notes to the agent
     CLIENT_ERRORS_PER_MIN = 10
+    _client_lock = threading.Lock()
 
     def client_error(self, body):
         """POST /api/diag/client {message, source, line, col}: a browser error (window.onerror / unhandledrejection) into the event log. Rate limited;
         no stack, no note text: the message is clipped and the source reduced to its file name."""
         now = time.time()
-        recent = [t for t in getattr(self, "_client_err", []) if now - t < 60]
-        if len(recent) >= self.CLIENT_ERRORS_PER_MIN:
-            self._client_err = recent
-            return 429, {"error": "too many error reports"}
-        self._client_err = recent + [now]
+        with self._client_lock:
+            recent = [t for t in getattr(self, "_client_err", []) if now - t < 60]
+            if len(recent) >= self.CLIENT_ERRORS_PER_MIN:
+                self._client_err = recent
+                return 429, {"error": "too many error reports"}
+            self._client_err = recent + [now]
         if not isinstance(body, dict):
             return 400, {"error": "object expected"}
         src = str(body.get("source") or "").split("?")[0].rsplit("/", 1)[-1][:80]
@@ -1384,7 +1386,7 @@ class Handler(BaseHTTPRequestHandler):
                 code, data = app.save_project(self.read_json())
                 return self.reply(code, data)
         elif path == "/api/report" and method == "GET":
-            return self.reply(200, {"text": diag.build_report(app.dir)})
+            return self.reply(200, {"text": diag.build_report(app.dir, q.get("agent_output") == "1")})
         elif path == "/api/diag/client" and method == "POST":
             return self.reply(*app.client_error(self.read_json()))
         elif path == "/api/version" and method == "GET":

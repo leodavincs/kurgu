@@ -115,3 +115,31 @@ def test_menu_error_report_shows_the_text_and_copies_it(chrome, monkeypatch, tmp
         p.close()
     finally:
         s.close()
+
+
+def test_report_window_agent_output_checkbox_is_off_by_default(chrome, monkeypatch, tmp_path):
+    s = new_server(monkeypatch, tmp_path)
+    try:
+        os.makedirs(os.path.join(s.dir, ".kurgu"), exist_ok=True)
+        open(os.path.join(s.dir, ".kurgu", "hook.log"), "w").write("[2026-01-01T00:00:00] run (send #1)\n| AGENT QUOTES YOUR NOTE\n  finished, exit code 0\n")
+        p = chrome.new_page()
+        p.open(s.url("/"), lang="en")
+        p.click_sel("#b-menu")
+        p.wait_for("!![...document.querySelectorAll('#main-menu .mm-item')].find(b => b.textContent.includes('Error report'))")
+        p.eval("[...document.querySelectorAll('#main-menu .mm-item')].find(b => b.textContent.includes('Error report')).click()")
+        p.wait_for("document.querySelector('#report-modal .rp-text') && document.querySelector('#report-modal .rp-text').value.startsWith('Kurgu report')", 60)
+        assert p.eval("document.getElementById('rp-agent').checked") is False
+        assert "may quote your notes" in p.eval("document.querySelector('#report-modal .rp-opt').textContent")
+        assert "AGENT QUOTES" not in p.eval("document.querySelector('#report-modal .rp-text').value")
+        p.click_sel("#rp-agent")
+        p.wait_for("document.querySelector('#report-modal .rp-text').value.includes('AGENT QUOTES YOUR NOTE')", 30)
+        p.eval("window.__copied=[]; navigator.clipboard.writeText=t=>{window.__copied.push(t);return Promise.resolve()}")
+        p.wait_for("!document.querySelector('#report-modal .rp-copy').disabled")
+        p.click_sel("#report-modal .rp-copy")
+        p.wait_for("window.__copied.length===1")
+        assert "AGENT QUOTES YOUR NOTE" in p.eval("window.__copied[0]") and p.eval("window.__copied[0]") == p.eval("document.querySelector('#report-modal .rp-text').value")
+        p.click_sel("#rp-agent")                                                              # off again: the text goes back
+        p.wait_for("!document.querySelector('#report-modal .rp-text').value.includes('AGENT QUOTES')", 30)
+        p.close()
+    finally:
+        s.close()

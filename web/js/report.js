@@ -11,6 +11,7 @@ export async function openReport() {
   const box = el('div', 'rp-box');
   const ta = el('textarea', 'rp-text'); ta.readOnly = true; ta.spellcheck = false; ta.value = t('report.loading');
   const copy = el('button', 'btn primary rp-copy', t('report.copy')); copy.type = 'button'; copy.disabled = true;
+  const opt = el('label', 'rp-opt'); const chk = el('input'); chk.type = 'checkbox'; chk.id = 'rp-agent'; opt.append(chk, el('span', '', t('report.agent')));
   const close = el('button', 'btn rp-close', t('report.close')); close.type = 'button';
   const done = () => { copy.textContent = t('report.copied'); setTimeout(() => { copy.textContent = t('report.copy'); }, 1500); };
   copy.addEventListener('click', () => {
@@ -21,15 +22,20 @@ export async function openReport() {
   close.addEventListener('click', closeReport);
   back.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Escape') closeReport(); });
   back.addEventListener('pointerdown', e => { if (e.target === back) closeReport(); });
-  box.append(el('h2', 'rp-title', t('report.title')), el('p', 'rp-hint', t('report.hint')), ta, el('div', 'rp-actions', ''));
+  box.append(el('h2', 'rp-title', t('report.title')), el('p', 'rp-hint', t('report.hint')), opt, ta, el('div', 'rp-actions', ''));
   box.lastChild.append(copy, close);
   back.append(box); document.body.append(back); open = back; close.focus();
-  try {
-    const r = await fetch('/api/report', { cache: 'no-store' });
-    const d = await r.json();
-    if (!r.ok) throw new Error(d.error || r.status);
-    ta.value = d.text; copy.disabled = false;
-  } catch (e) { ta.value = t('report.failed', { reason: String(e.message || e) }); }
+  const load = async () => {
+    copy.disabled = true; ta.value = t('report.loading');
+    try {
+      const r = await fetch('/api/report' + (chk.checked ? '?agent_output=1' : ''), { cache: 'no-store' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || r.status);
+      ta.value = d.text; copy.disabled = false;
+    } catch (e) { ta.value = t('report.failed', { reason: String(e.message || e) }); }
+  };
+  chk.addEventListener('change', load);
+  await load();
 }
 
 let sent = [];

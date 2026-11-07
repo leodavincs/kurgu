@@ -768,6 +768,13 @@ class _Runner:
     def __init__(self, d):
         self.d, self.lock, self.running, self.pending = d, threading.Lock(), False, None
 
+    @staticmethod
+    def _shown(cmd, argv):
+        """The command as written to hook.log: the default `kurgu wake <agent> <dir> <seq>` in full (no secrets in it), a custom on_send only as exe + argument count."""
+        if "wake" in cmd[:-1] and cmd[cmd.index("wake") + 1] in ("claude", "codex"):
+            return " ".join(argv)
+        return f"{os.path.basename(argv[0])} (custom on_send, {len(argv) - 1} arguments)"
+
     def _spawn(self, cmd, seq, count):
         import subprocess
         file = os.path.join(self.d, NOTES_MD)
@@ -790,7 +797,7 @@ class _Runner:
                 import diag
                 diag.refusal(self.d, e)
             raise
-        log.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] run (send #{seq}, {count} notes): {' '.join(argv)}".replace("\n", " ") + "\n")
+        log.write(f"[{datetime.now().replace(microsecond=0).isoformat()}] run (send #{seq}, {count} notes): {self._shown(cmd, argv)}".replace("\n", " ") + "\n")
         log.flush()
         kw = {"creationflags": 0x00000200} if os.name == "nt" else {"start_new_session": True}      # its own process group: stoppable as a whole
         try:
@@ -819,7 +826,7 @@ class _Runner:
             p.pump.join(5)
             log.write(f"  finished, exit code {rc}\n")
             import diag
-            diag.event(self.d, "wake", "hook run finished", "info" if rc == 0 else "warn", ctx={"exit": rc, "tail": " / ".join(p.tail)})
+            diag.event(self.d, "wake", "hook run finished", "info" if rc == 0 else "warn", ctx={"exit": rc, "cause": diag.cause_from(p.tail)})
         except subprocess.TimeoutExpired:
             try:
                 if os.name == "nt":
@@ -832,7 +839,7 @@ class _Runner:
             p.pump.join(2)
             log.write(f"  stopped: still running after {limit:g} s\n")
             import diag
-            diag.event(self.d, "wake", "hook run stopped (timeout)", "warn", ctx={"limit_s": limit, "tail": " / ".join(p.tail)})
+            diag.event(self.d, "wake", "hook run stopped (timeout)", "warn", ctx={"limit_s": limit, "cause": diag.cause_from(p.tail)})
         finally:
             log.close()
         with self.lock:

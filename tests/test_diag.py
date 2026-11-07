@@ -94,7 +94,7 @@ def test_events_for_send_refusal_error_frontend_and_wake_without_note_text(srv, 
     os.symlink(os.path.join(d, "project.json"), os.path.join(d, ".kurgu", "inbox.seq"))
     assert c.req("POST", "/api/notes/send", {"ids": ["n_2"]})[0] == 409
     os.remove(os.path.join(d, ".kurgu", "inbox.seq"))
-    (cfg / "config.json").write_text(json.dumps({"on_send": [sys.executable, "-c", "import sys; print('a'); print('err line', file=sys.stderr); sys.exit(3)"]}))
+    (cfg / "config.json").write_text(json.dumps({"on_send": [sys.executable, "-c", "import sys; print('a'); print('Not logged in - please run /login', file=sys.stderr); sys.exit(3)"]}))
     c.req("POST", "/api/notes/send", {"ids": ["n_3"]})                                                  # a wake run
     wait_for(lambda: any(e["kind"] == "wake" and e["msg"] == "hook run finished" for e in events(d)))
     ev = events(d)
@@ -108,7 +108,7 @@ def test_events_for_send_refusal_error_frontend_and_wake_without_note_text(srv, 
     fe = next(e for e in ev if e["kind"] == "frontend")
     assert fe["ctx"]["source"] == "main.js" and fe["ctx"]["line"] == 12
     fin = next(e for e in ev if e["msg"] == "hook run finished")
-    assert fin["ctx"]["exit"] == 3 and "err line" in fin["ctx"]["tail"] and next(e for e in ev if e["msg"] == "hook run started")["ctx"]["exe"]
+    assert fin["ctx"]["exit"] == 3 and fin["ctx"]["cause"] == "not_logged_in" and "tail" not in fin["ctx"] and "login" not in json.dumps(fin).lower() and next(e for e in ev if e["msg"] == "hook run started")["ctx"]["exe"]
     assert NOTE_TEXT not in open(os.path.join(d, ".kurgu", "log.jsonl"), encoding="utf-8").read()
     assert NOTE_TEXT not in diag.build_report(d)
 
@@ -149,11 +149,11 @@ def test_report_has_the_facts_the_log_and_the_hook_log_and_is_redacted(srv, cfg)
     (cfg / "config.json").write_text(json.dumps({"on_send": ["/secret/path/kurgu", "wake", "claude", "{dir}", "{seq}"]}))
     diag.event(d, "test", f"contact me@example.com from {os.path.expanduser('~')}")
     os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
-    open(os.path.join(d, ".kurgu", "hook.log"), "w").write("\n".join(f"line {i}" for i in range(80)) + "\n")
+    open(os.path.join(d, ".kurgu", "hook.log"), "w").write("\n".join(f"own line {i}" for i in range(80)) + "\n| agent says hi\n")
     text = diag.build_report(d)
-    for part in ("Kurgu report", "kurgu:", "python:", "ffmpeg:", "chrome:", "Agent setup", "wake:      configured (claude)", "listening: no", "Doctor", "Last events", "hook.log (last 50 lines)"):
+    for part in ("Kurgu report", "kurgu:", "python:", "ffmpeg:", "chrome:", "Agent setup", "wake:      configured (claude)", "listening: no", "Doctor", "Last events", "hook.log (last 50 lines, agent output left out)"):
         assert part in text, part
-    assert "/secret/path" not in text and "me@example.com" not in text and "<email>" in text and "line 79" in text and "line 20" not in text
+    assert "/secret/path" not in text and "me@example.com" not in text and "<email>" in text and "own line 79" in text and "own line 20" not in text and "agent says hi" not in text
     assert c.req("GET", "/api/report")[1]["text"].startswith("Kurgu report")
 
 
@@ -240,3 +240,53 @@ def test_beat_prunes_dead_pids(project_dir):
     agent_notes._write_listeners(project_dir, {"x": {"pid": dead.pid, "since": 0, "beat": time.time()}, "y": {"pid": os.getpid(), "since": 0, "beat": time.time()}})
     agent_notes._beat(project_dir, time.time(), None)
     assert sorted(agent_notes._read_listeners(project_dir)) == sorted(["y", str(os.getpid())])
+
+
+# ---------------------------------------------------------------- agent output stays out of the report unless asked for
+def test_note_text_in_agent_output_is_only_in_the_opt_in_report(srv, cfg):
+    c, d, s = srv
+    code = f"print({NOTE_TEXT!r}); print('Permission denied')"
+    (cfg / "config.json").write_text(json.dumps({"on_send": [sys.executable, "-c", code, "--token=SUPERSECRETVALUE"]}))
+    c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
+    wait_for(lambda: any(e["msg"] == "hook run finished" for e in events(d)))
+    default, opt_in = diag.build_report(d), diag.build_report(d, include_agent_output=True)
+    assert NOTE_TEXT not in default and "| " + NOTE_TEXT not in default and NOTE_TEXT in opt_in
+    assert NOTE_TEXT not in open(os.path.join(d, ".kurgu", "log.jsonl"), encoding="utf-8").read()
+    fin = next(e for e in events(d) if e["msg"] == "hook run finished")
+    assert fin["ctx"] == {"exit": 0, "cause": "permission_denied"}                                  # a code from a fixed list, never the lines
+    log = open(os.path.join(d, ".kurgu", "hook.log"), encoding="utf-8").read()
+    assert "custom on_send, 3 arguments" in log and "SUPERSECRETVALUE" not in log and NOTE_TEXT in log          # custom argv is not logged; the agent's lines are (prefixed)
+    assert "SUPERSECRETVALUE" not in default and "SUPERSECRETVALUE" not in opt_in
+    assert c.req("GET", "/api/report?agent_output=1")[1]["text"].count(NOTE_TEXT) == 1 and NOTE_TEXT not in c.req("GET", "/api/report")[1]["text"]
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "kurgu_cli.py"), "report", d, "--include-agent-output"], capture_output=True, text=True, encoding="utf-8")
+    assert NOTE_TEXT in r.stdout
+
+
+def test_default_wake_argv_is_logged_in_full_custom_only_as_a_count():
+    shown = agent_notes._Runner._shown
+    assert shown(["/x/kurgu", "wake", "claude", "{dir}", "{seq}"], ["/x/kurgu", "wake", "claude", "/p", "3"]) == "/x/kurgu wake claude /p 3"
+    assert shown(["/x/tool", "--key", "abc"], ["/x/tool", "--key", "abc"]) == "tool (custom on_send, 2 arguments)"
+
+
+def test_causes_come_from_a_fixed_list():
+    assert diag.cause_from(["x", "Error: command not found: claude"]) == "command_not_found"
+    assert diag.cause_from(["PolicyProblem: blocked"]) == "policy_problem" and diag.cause_from(["just some text with a note"]) == ""
+
+
+def test_home_redaction_is_case_insensitive_for_windows_and_generic_for_other_users():
+    out = diag.redact("c:\\users\\leo\\Videos\\a.mp4 and C:/Users/LEO/b.mp4", home="C:\\Users\\Leo")
+    assert out == "~\\Videos\\a.mp4 and ~/b.mp4"
+    out = diag.redact("/Users/other/x /home/bob/y D:\\Users\\Zed\\z /srv/keep/me", home="/nobody")
+    assert "other" not in out and "bob" not in out and "Zed" not in out and out.count("<user-home>") == 3 and "/srv/keep/me" in out
+
+
+def test_reading_through_a_symlinked_kurgu_folder_is_refused(project_dir, tmp_path):
+    other = tmp_path / "other"
+    (other).mkdir()
+    (other / "log.jsonl").write_text(json.dumps({"ts": "t", "kind": "x", "level": "info", "msg": "LEAK"}) + "\n")
+    (other / "hook.log").write_text("LEAK\n")
+    shutil.rmtree(os.path.join(project_dir, ".kurgu"), ignore_errors=True)
+    os.symlink(other, os.path.join(project_dir, ".kurgu"))
+    assert diag.read_events(project_dir) == []
+    text = diag.build_report(project_dir, include_agent_output=True)
+    assert "refused: .kurgu is a symbolic link" in text and "refused: hook.log is a symbolic link" in text and "LEAK" not in text

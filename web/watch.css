@@ -146,3 +146,4 @@ body[data-mode=review] #note-dock > #note-bar { min-width: 0; }
 .rp-title { margin: 0; font-size: 16px; } .rp-hint { margin: 0; color: var(--t2); }
 .rp-text { flex: 1; min-height: 280px; resize: none; font-family: var(--mono); font-size: var(--fs-cap); background: var(--sunken); color: var(--t1); border: 1px solid var(--line2); border-radius: var(--r-md); padding: 8px; }
 .rp-actions { display: flex; gap: var(--s-3); justify-content: flex-end; }
+.rp-opt { display: flex; gap: var(--s-3); align-items: center; color: var(--t2); }

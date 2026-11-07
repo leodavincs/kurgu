@@ -1,7 +1,9 @@
 """Diagnostics: a small per-project event log (.kurgu/log.jsonl) and `kurgu report`, ONE plain-text report a user can paste when something does not work.
 
-Events are {ts, kind, level, code?, msg, ctx?}. Never logged: note texts, project content, tokens, environment variables, full argv with prompts.
-Nothing is sent anywhere: the report is printed (or written with -o) and the editor shows it in a window with a Copy button."""
+Events are {ts, kind, level, code?, msg, ctx?}. Never logged: note texts, project content, tokens, environment variables, full argv with prompts, and the agent's output (only a cause code from a fixed list).
+The report holds Kurgu's own lines from hook.log; the agent's output (lines starting "| ", which may quote your notes) only with include_agent_output
+(`kurgu report --include-agent-output`, or the checkbox in the editor's report window, off by default). Nothing is sent anywhere: the report is printed
+(or written with -o) and the editor shows it in a window with a Copy button."""
 import argparse
 import json
 import os
@@ -32,19 +34,42 @@ def _mixed(m):
     return "<redacted>" if re.search(r"[a-z]", s) and re.search(r"[A-Z]", s) and re.search(r"[0-9]", s) else s     # file names rarely mix all three
 
 
+_OTHER_HOME = re.compile(r"(?i)(?:[A-Za-z]:)?[\\/](?:Users|home)[\\/][^\\/\s\"']+")
+
+
 def redact(text, home=None):
-    """The home folder becomes ~, emails <email>, tokens / keys <redacted>. Project and file names stay."""
+    """The home folder becomes ~ (case-insensitive for Windows paths and drive letters), any other /Users/<name>, /home/<name> or C:\\Users\\<name>
+    becomes <user-home>, emails <email>, tokens / keys <redacted>. Project and file names stay."""
     text = str(text)
     homes = {h for h in (home, os.path.expanduser("~"), os.path.realpath(os.path.expanduser("~"))) if h and h not in ("/", "~")}
     for h in sorted(homes, key=len, reverse=True):
-        for form in (h, h.replace("\\", "/"), h.replace("/", "\\")):
-            text = text.replace(form, "~")
+        win = os.name == "nt" or bool(re.match(r"^[A-Za-z]:", h))
+        forms = {h, h.replace("\\", "/"), h.replace("/", "\\")}
+        for form in forms:
+            text = re.sub(re.escape(form), "~", text, flags=re.I if win else 0)
+    text = _OTHER_HOME.sub("<user-home>", text)
     text = _EMAIL.sub("<email>", text)
     text = _BEARER.sub("Bearer <redacted>", text)
     text = _ASSIGN.sub(lambda m: f"{m.group(1)}{m.group(2)}<redacted>", text)
     text = _SK.sub("<redacted>", text)
     text = _HEX.sub("<redacted>", text)
     return _LONG.sub(_mixed, text)
+
+
+# Known causes of a failed wake run, matched LOCALLY on the agent's last output lines. Only the code is stored / reported, never the lines.
+CAUSES = (("not_logged_in", r"not logged in|please run /login|/login|invalid api key|authentication"), ("command_not_found", r"command not found|not found on path|no such file or directory"),
+          ("permission_denied", r"permission denied|operation not permitted"), ("untrusted_directory", r"not inside a trusted directory"),
+          ("policy_problem", r"policyproblem|policy problem"), ("rate_limited", r"rate limit|too many requests|usage limit"),
+          ("network", r"could not resolve|connection (?:refused|reset|error)|network is unreachable|timed? ?out"))
+
+
+def cause_from(lines):
+    """A code from CAUSES for the output lines, or ''."""
+    blob = "\n".join(str(l) for l in lines).lower()
+    for code, pat in CAUSES:
+        if re.search(pat, blob):
+            return code
+    return ""
 
 
 def _clip(v, n=200):
@@ -92,8 +117,14 @@ def refusal(d, err):
     event(d, "refusal", str(err), "warn", code=getattr(err, "code", None), ctx=getattr(err, "params", None))
 
 
+def kurgu_is_link(d):
+    return os.path.islink(os.path.join(d, ".kurgu"))
+
+
 def read_events(d, n=200):
     out = []
+    if kurgu_is_link(d):
+        return out
     path = os.path.join(d, LOG)
     for p in (f"{path}.2", f"{path}.1", path):
         try:
@@ -150,7 +181,7 @@ def _chrome():
     return "not found"
 
 
-def build_report(d):
+def build_report(d, include_agent_output=False):
     import agent_notes
     d = os.path.realpath(d)
     ver, commit = _kurgu_version()
@@ -179,30 +210,36 @@ def build_report(d):
     except Exception as e:
         L.append(f"(doctor failed: {type(e).__name__})")
     L += ["", "Last events (newest last)", "-------------------------"]
-    ev = read_events(d, 200)
-    L += [json.dumps(e, ensure_ascii=False) for e in ev] or ["(none)"]
-    L += ["", "hook.log (last 50 lines)", "------------------------"]
+    if kurgu_is_link(d):
+        L.append("(refused: .kurgu is a symbolic link)")
+    else:
+        L += [json.dumps(e, ensure_ascii=False) for e in read_events(d, 200)] or ["(none)"]
+    L += ["", "hook.log (last 50 lines" + (", with the agent's output" if include_agent_output else ", agent output left out") + ")", "-" * 30]
     try:
         p = os.path.join(d, agent_notes.HOOK_LOG)
-        if os.path.islink(p):
+        if kurgu_is_link(d) or os.path.islink(p):
             raise OSError("symbolic link")
         with open(p, encoding="utf-8", errors="replace") as f:
-            L += [l.rstrip("\n") for l in f.readlines()[-50:]] or ["(empty)"]
-    except OSError:
-        L.append("(no hook.log)")
+            lines = [l.rstrip("\n") for l in f.readlines()]
+        if not include_agent_output:
+            lines = [l for l in lines if not l.startswith("| ")]          # the agent's output may quote the user's notes
+        L += lines[-50:] or ["(empty)"]
+    except OSError as e:
+        L.append("(refused: hook.log is a symbolic link)" if os.path.islink(os.path.join(d, ".kurgu")) or "symbolic" in str(e) else "(no hook.log)")
     return redact("\n".join(L), home=os.path.expanduser("~")) + "\n"
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="kurgu report", description="Print one plain-text report to paste when something does not work. Nothing is sent anywhere.")
     ap.add_argument("project_dir", nargs="?", default=".")
+    ap.add_argument("--include-agent-output", action="store_true", help="also add the last lines of the agent's output from hook.log (it may quote your notes)")
     ap.add_argument("-o", "--output", action="store_true", help="write it to <project>/.kurgu/report-<time>.txt instead of printing")
     a = ap.parse_args(argv)
     d = os.path.realpath(os.path.expanduser(a.project_dir))
     if not os.path.isdir(d):
         print(f"error: {d} is not a folder", file=sys.stderr)
         return 1
-    text = build_report(d)
+    text = build_report(d, a.include_agent_output)
     if a.output:
         import agent_notes
         path = os.path.join(d, ".kurgu", f"report-{time.strftime('%Y%m%d-%H%M%S')}.txt")
