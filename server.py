@@ -1734,13 +1734,10 @@ def main(argv=None):
     print(f"Kurgu: {url}  (project: {srv.app.dir})", flush=True)
     if not a.no_open:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
-    diag.event(srv.app.dir, "server", "server started", ctx={"version": diag._kurgu_version()[0], "port": srv.server_address[1], "pid": os.getpid()})
     info_path = os.path.join(srv.app.kurgu, "server.json")
-    info = {"port": srv.server_address[1], "pid": os.getpid(), "started": datetime.now().replace(microsecond=0).isoformat()}
-    write_atomic(info_path, json.dumps(info).encode())
     stop = threading.Event()
-    threading.Thread(target=watch_idle, args=(srv, stop), daemon=True).start()
 
+    # handlers first: a stop that arrives right after start must still run the cleanup below (it raised past it before)
     def on_term(*_):
         raise KeyboardInterrupt
     for name in ("SIGTERM", "SIGBREAK"):                     # SIGBREAK = Ctrl+Break on Windows
@@ -1757,6 +1754,10 @@ def main(argv=None):
         except Exception:
             pass
     try:
+        diag.event(srv.app.dir, "server", "server started", ctx={"version": diag._kurgu_version()[0], "port": srv.server_address[1], "pid": os.getpid()})
+        info = {"port": srv.server_address[1], "pid": os.getpid(), "started": datetime.now().replace(microsecond=0).isoformat()}
+        write_atomic(info_path, json.dumps(info).encode())
+        threading.Thread(target=watch_idle, args=(srv, stop), daemon=True).start()
         srv.serve_forever()
     except KeyboardInterrupt:
         print("\nshutting down")
