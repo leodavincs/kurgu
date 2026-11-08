@@ -384,6 +384,11 @@ def normalize(project):
         if isinstance(n, dict):
             notes.append(normalize_note(n, i))
     p["notes"] = notes
+    # A note's `t` follows its `anchor` (the content it was written on). This read step is where every Python reader gets it, so none can see a
+    # note that did not follow; the rule itself lives in note_anchor.follow (twin: web/js/anchor.js, which runs in the editor's own read step and
+    # in change()). Notes without an anchor are not touched.
+    import note_anchor
+    note_anchor.follow(p)
     stamp_requires(p)
     return p
 
@@ -441,6 +446,12 @@ def normalize_note(n, i=0):
             nn.pop(k, None)
     if nn["done"]:
         nn.pop("asked", None)
+    if "anchor" in n:                              # what the note was written on (note_anchor.py); a broken one is dropped, validate() reports it
+        import note_anchor
+        if note_anchor.valid(n.get("anchor")):
+            nn["anchor"] = dict(n["anchor"])
+        else:
+            nn.pop("anchor", None)
     if "marks" in n:
         marks = normalize_marks(n.get("marks"))
         if marks:
@@ -631,6 +642,10 @@ def validate(project, font_ids=None):
                 probs.append(f'{tag}: author must be "user" or "agent"')
             if n.get("done") is not None and not isinstance(n.get("done"), bool):
                 probs.append(f"{tag}: done must be true or false")
+            if "anchor" in n:
+                import note_anchor
+                if not note_anchor.valid(n["anchor"]):
+                    probs.append(f'{tag}: anchor must be {{"unit", "frame"}} or {{"layer", "dt"}} (see SPEC 1.0 Anchors)')
             if "marks" in n:
                 if not isinstance(n["marks"], list):
                     probs.append(f"{tag}: marks must be a list")

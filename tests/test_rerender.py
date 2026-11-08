@@ -901,3 +901,29 @@ def test_after_a_unit_moved_its_element_map_holds_the_new_range(tmp_path, cfg):
     fr = frames()
     assert fr[0] == 36 and fr[-1] == 59 and all(36 <= x < 60 for x in fr), fr                 # nothing left from the old range [24, 48)
     assert "(frames 36-60)" in (out / "scenes.md").read_text()
+
+
+@NEED
+def test_notes_follow_a_unit_that_got_longer_and_the_scene_shifted_after_it(tmp_path, cfg):
+    """SPEC 1.0 anchors, end to end: a note on scene b of a film keeps pointing at the same picture when scene a is re-rendered longer and the agent
+    shifts b as the rerender output says; a note on a stays on a's frame although a was re-pointed at its own file (src, src_in 0)."""
+    import mcp_server
+    f, out = _two_scene_film(tmp_path)
+    d = str(out)
+    for t, txt in ((0.5, "on a"), (1.25, "on b")):
+        mcp_server.tool_add_note({"project_dir": d, "t": t, "text": txt}, None)
+    lst = json.loads((f / "scenes.json").read_text(encoding="utf-8"))
+    lst["scenes"][0].update(start_frame=0, end_frame=36)                                               # a is 0.5 s longer, b moves to [36, 60)
+    lst["scenes"][1].update(start_frame=36, end_frame=60)
+    (f / "scenes.json").write_text(json.dumps(lst), encoding="utf-8")
+    res = RA.rerender(d, "a")
+    assert any("shift" in w and "+0.5" in w and "shot-b" in w for w in res["warnings"])
+    notes = {n["text"]: n for n in json.loads((out / "project.json").read_text(encoding="utf-8"))["notes"]}
+    assert notes["on a"]["t"] == 0.5 and notes["on b"]["t"] == 1.25                                  # b has not moved yet: neither has its note
+    lb = [l for l in json.loads((out / "project.json").read_text(encoding="utf-8"))["layers"] if l["id"] == "shot-b"][0]
+    mcp_server.tool_edit_project({"project_dir": d, "update": [{"id": "shot-b", "set": {"start": lb["start"] + 0.5, "end": lb["end"] + 0.5}}]}, None)
+    notes = {n["text"]: n for n in json.loads((out / "project.json").read_text(encoding="utf-8"))["notes"]}
+    assert notes["on a"]["t"] == 0.5 and notes["on b"]["t"] == pytest.approx(1.75)
+    RA.rerender(d, "b")                                                                                # b now owns film.b.mp4 starting at source frame 36
+    notes = {n["text"]: n for n in json.loads((out / "project.json").read_text(encoding="utf-8"))["notes"]}
+    assert notes["on b"]["t"] == pytest.approx(1.75) and not notes["on b"]["anchor"].get("stale")

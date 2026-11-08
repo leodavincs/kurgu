@@ -1,6 +1,7 @@
 // state.js — project state, normalisation (SPEC v2 §1), undo/redo, selection, layer operations, shared helpers.
 // Every edit goes through change(): it snapshots for undo, schedules an autosave and notifies the UI.
 import { t } from './i18n.js';
+import { follow as followNotes, valid as validAnchor, layerAnchor } from './anchor.js';
 
 export const S = {
   project: null,
@@ -150,8 +151,11 @@ export function normalizeProject(p) {
     const done = n.done === true;
     return { ...n, id: n.id || 'n_' + Math.random().toString(36).slice(2, 6), t: num(n.t, 0), text: String(n.text ?? ''), created: n.created || '',
       done, author: n.author === 'agent' ? 'agent' : 'user', resolved_at: done && typeof n.resolved_at === 'string' ? n.resolved_at : '',
-      layer_ids: Array.isArray(n.layer_ids) ? n.layer_ids.filter(x => typeof x === 'string') : [], reply: typeof n.reply === 'string' ? n.reply : '', sent: typeof n.sent === 'string' ? n.sent : '' };
+      layer_ids: Array.isArray(n.layer_ids) ? n.layer_ids.filter(x => typeof x === 'string') : [], reply: typeof n.reply === 'string' ? n.reply : '', sent: typeof n.sent === 'string' ? n.sent : '',
+      ...('anchor' in n ? { anchor: validAnchor(n.anchor) ? { ...n.anchor } : undefined } : {}) };
   });
+  for (const n of p.notes) if ('anchor' in n && n.anchor === undefined) delete n.anchor;   // a broken anchor is dropped, like schema.normalize_note
+  followNotes(p);   // the note follows its anchor on every load / reload / undo (the same rule as schema.normalize: anchor.js <-> note_anchor.py)
   const lastEnd = p.layers.reduce((m, l) => Math.max(m, l.end || 0), 0);
   p.duration = num(p.duration, 0) > 0 ? num(p.duration, 0) : Math.max(lastEnd, 1);
   return p;
@@ -232,6 +236,7 @@ export function change(fn, { key = null } = {}) {
   if (!S.project) return false;
   const before = JSON.stringify(S.project);
   fn(S.project);
+  followNotes(S.project);   // notes anchored to what this edit moved move with it, inside the SAME undo step (SPEC 1.0 Anchors)
   const after = JSON.stringify(S.project);
   if (before === after) return false;
   const now = performance.now();
@@ -343,7 +348,11 @@ export function splitLayers(ids, time) {
       if (a.locked || time <= a.start + 0.02 || time >= a.end - 0.02) continue;
       const b = clone(a); b.id = newId('l');
       if (a.type === 'video' || a.type === 'audio') b.src_in = a.src_in + (time - a.start);
+      const end0 = a.end;
       b.start = time; a.end = time;
+      // notes anchored on the second half now belong to b, the same media continued (b.src_in covers the offset): point them at b itself,
+      // never at whatever else is on screen there (b is not in the list yet, and a logo / title / music bed must not catch them)
+      for (const n of p.notes || []) if (n.anchor && n.anchor.layer === a.id && !n.anchor.stale && n.t >= time && n.t < end0) n.anchor = layerAnchor(b, n.t);
       a.fade_out = 0; b.fade_in = 0; // fade-in stays with the first half, fade-out with the second
       if (b.link) { if (!links.has(b.link)) links.set(b.link, newLinkId(p)); b.link = links.get(b.link); }   // second halves of a pair form a new pair
       p.layers.splice(i, 0, b); fresh.push(b.id);

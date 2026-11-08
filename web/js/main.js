@@ -1,6 +1,6 @@
 // main.js — boot, top bar, transport, shortcuts, add-layer menu, notes, render progress, language switch. (watch + note: watch.js)
 import * as LK from './links.js';
-import { S, aspectLabel, onChange, emit, change, select, setTime, layer, selectedLayers, undo, redo, addLayer, removeLayers, duplicateLayers, splitLayers, canSplit, rippleDelete, copyPayload, parsePayload, pasteLayers, newLayer, newId, loadExternal, timecode, clamp, VISUAL, basename } from './state.js';
+import { S, aspectLabel, onChange, emit, change, select, setTime, layer, selectedLayers, undo, redo, addLayer, removeLayers, duplicateLayers, splitLayers, canSplit, rippleDelete, copyPayload, parsePayload, pasteLayers, newLayer, newId, loadExternal, timecode, clamp, VISUAL, basename, normalizeLayer } from './state.js';
 import * as API from './api.js';
 import { initI18n, t, fmt, getLang, setLang, onLang, applyStatic } from './i18n.js';
 import { refreshFonts } from './fonts.js';
@@ -75,7 +75,7 @@ async function boot() {
   window.addEventListener('pagehide', () => { if (API.savePending()) API.save({ leaving: true }); });   // closed without the prompt (mobile, bfcache): same
   window.addEventListener('pointerdown', startAudio, { once: true });
   window.addEventListener('keydown', startAudio, { once: true });
-  window.__kurgu = { S, change, saveAndWait: API.saveAndWait, debugInfo, viewGeom, setLang, emit, viewInfo, setZoom, zoomStep, layerBox, layerBounds, LK, select, splitLayers, removeLayers, duplicateLayers, rippleDelete, abState, toggleAB };  // debugging / tests
+  window.__kurgu = { S, change, saveAndWait: API.saveAndWait, debugInfo, viewGeom, setLang, emit, viewInfo, setZoom, zoomStep, layerBox, layerBounds, LK, select, splitLayers, removeLayers, duplicateLayers, rippleDelete, normalizeLayer, abState, toggleAB };  // debugging / tests
   const q = new URLSearchParams(location.search); // tests only: ?t=5&sel=l_1
   if (q.has('t')) setTime(parseFloat(q.get('t')));
   if (q.has('sel')) select(q.get('sel').split(','));

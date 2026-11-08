@@ -775,6 +775,8 @@ def apply_layer_updates(d, plan, res, warnings):
                  and isinstance(l.get("source"), dict)]
         warnings.append(f"unit {plan['unit']} is now {plan['frames']} frames ({want:g} s): layer(s) {', '.join(sorted(ids))} end was updated; the scene layers after it "
                         f"({', '.join(later) or 'none'}) were NOT moved: shift their start/end by {shift:+g} s if the cut should stay gapless.")
+    import note_anchor
+    note_anchor.follow(raw)                                       # notes on the re-pointed unit stay on their source frame (SPEC 1.0 Anchors)
     _write_project(d, raw)
 
 

@@ -27,5 +27,5 @@ kurgu-mcp = "mcp_server:main"
 kurgu-notes = "agent_notes:main"
 
 [tool.setuptools]
-py-modules = ["media_tools", "server", "render", "schema", "fonts", "anim", "presets", "ai", "exports", "transcribe", "captions", "mcp_server", "kurgu_paths", "agent_notes", "audio_facts", "source_map", "elements", "scene_import", "versions", "render_adaptors", "ocr_boxes", "codex_policy", "diag", "kurgu_cli", "doctor", "ffmpeg_fetch", "guidance_gen"]
+py-modules = ["media_tools", "server", "render", "schema", "fonts", "anim", "presets", "ai", "exports", "transcribe", "captions", "mcp_server", "kurgu_paths", "agent_notes", "audio_facts", "source_map", "note_anchor", "elements", "scene_import", "versions", "render_adaptors", "ocr_boxes", "codex_policy", "diag", "kurgu_cli", "doctor", "ffmpeg_fetch", "guidance_gen"]
 license-files = ["LICENSE"]

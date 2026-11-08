@@ -8,6 +8,8 @@
 
 {{rules/source#full}}
 
+{{rules/anchors#full}}
+
 {{rules/strip#full}}
 
 {{rules/audio#full}}

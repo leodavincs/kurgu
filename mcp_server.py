@@ -55,6 +55,7 @@ import media_tools
 import captions
 import presets
 import kurgu_paths
+import note_anchor
 import schema
 import server as kserver
 import transcribe as stt
@@ -780,8 +781,12 @@ def tool_add_note(a, ctx):
         nid = "n_" + uuid.uuid4().hex[:4]
         while nid in ids:
             nid = "n_" + uuid.uuid4().hex[:6]
-        n = schema.normalize_note({"id": nid, "t": round(float(t), 2), "text": body.strip(), "created": _now_iso(),
-                                   "author": "agent", "layer_ids": [l["id"] for l in _layers_under(proj, float(t))]})
+        n = {"id": nid, "t": round(float(t), 2), "text": body.strip(), "created": _now_iso(),
+             "author": "agent", "layer_ids": [l["id"] for l in _layers_under(proj, float(t))]}
+        a = note_anchor.anchor_at(proj, n["t"])                    # the note follows what is on screen there (SPEC 1.0 Anchors)
+        if a:
+            n["anchor"] = a
+        n = schema.normalize_note(n)
         notes.append(n)
         return n
 

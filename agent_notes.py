@@ -445,8 +445,8 @@ def fmt_bounds(b):
     return f"left {b['left']:g}, top {b['top']:g}, right {b['right']:g}, bottom {b['bottom']:g} ({b['w']:g}x{b['h']:g})"
 
 
-def layers_under_mark(proj, t, pts, d=None):
-    """Names of the visual layers active at `t` whose box contains one of `pts` (project pixels), front-most first; layers hit by the first point
+def layers_under_mark(proj, t, pts, d=None, key="name"):
+    """Names (key="id": ids) of the visual layers active at `t` whose box contains one of `pts` (project pixels), front-most first; layers hit by the first point
     (the shape's centre / an arrow's tip) come before the others. Colour and audio layers are left out."""
     W, H = float(proj.get("width", 1920)), float(proj.get("height", 1080))
     hits = []
@@ -456,7 +456,7 @@ def layers_under_mark(proj, t, pts, d=None):
         x0, y0, x1, y1 = _box_of(l, W, H, t, d)
         idx = next((j for j, (px, py) in enumerate(pts) if x0 <= px <= x1 and y0 <= py <= y1), None)
         if idx is not None:
-            hits.append((0 if idx == 0 else 1, i, l.get("name") or l.get("id")))
+            hits.append((0 if idx == 0 else 1, i, l.get("id") if key == "id" else l.get("name") or l.get("id")))
     return [n for _f, _i, n in sorted(hits)]
 
 
@@ -1673,6 +1673,16 @@ def add_user_note(d, t, text, rect, writer):
              "layer_ids": [l["id"] for l in proj.get("layers", []) if l.get("start", 0) <= t < l.get("end", 0)]}
         if mark:
             n["marks"] = [dict(mark, nx=mark["x"] / W, ny=mark["y"] / H, nw=mark["w"] / W, nh=mark["h"] / H)]
+        import note_anchor
+        under = []
+        if mark:                                                   # what the user pointed at: the layers under the rectangle, top first (as the editor stores them)
+            x, y, w, h = mark["x"], mark["y"], mark["w"], mark["h"]
+            pts = [(x + w / 2, y + h / 2), (x + w * .25, y + h * .25), (x + w * .75, y + h * .25), (x + w * .25, y + h * .75), (x + w * .75, y + h * .75)]
+            under = layers_under_mark(proj, n["t"], pts, d, key="id")
+            n["marks"][0]["layers"] = [{"id": i, "name": next((l.get("name") or i for l in proj.get("layers", []) if l.get("id") == i), i)} for i in under]
+        a = note_anchor.anchor_at(proj, n["t"], under)             # the note follows it when layers move (SPEC 1.0 Anchors)
+        if a:
+            n["anchor"] = a
         n = schema.normalize_note(n)
         notes.append(n)
         return n

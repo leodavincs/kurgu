@@ -130,7 +130,9 @@ class Server:
                 tail = open(self.log, encoding="utf-8", errors="replace").read()[-1500:]
             except OSError:
                 tail = ""
-            raise RuntimeError("%s (server exit code %s)\n%s" % (e, self.proc.poll(), tail))
+            code = self.proc.poll()
+            self.close()               # the caller never gets this object: stop the server we started here, or it outlives the test run
+            raise RuntimeError("%s (server exit code %s)\n%s" % (e, code, tail))
 
     def url(self, path="/"):
         return "http://127.0.0.1:%d%s" % (self.port, path)
@@ -154,7 +156,11 @@ class Chrome:
         self.port = free_port()
         self.proc = subprocess.Popen([find_chrome()] + chrome_flags(self.port, self.tmp, width, height, ["--autoplay-policy=no-user-gesture-required", "--hide-scrollbars=false"]),
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        wait_http("http://127.0.0.1:%d/json/version" % self.port)
+        try:
+            wait_http("http://127.0.0.1:%d/json/version" % self.port)
+        except Exception:
+            stop_chrome(self.proc, self.port, self.tmp)      # the caller never gets this object: quit the Chrome we started before re-raising
+            raise
         self.width, self.height, self.scale = width, height, scale
 
     def new_page(self):

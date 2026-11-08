@@ -47,6 +47,7 @@ import agent_notes
 import diag
 import ai
 import media_tools
+import note_anchor
 import exports
 import fonts
 import presets
@@ -686,6 +687,7 @@ class App:
         agent_notes.check_writable(self.dir)                   # every project write (save, preset, ...) refuses a shipped link BEFORE anything is written
         self.backup(old)
         project = schema.stamp_requires(dict(project, version=schema.VERSION))
+        note_anchor.follow(project)                            # the file on disk carries the followed note times too (a no-op for the editor's own saves)
         new = schema.dumps(project).encode()
         write_atomic(self.project_path, new)
         self.write_changes(summary if isinstance(summary, list) else [summary])

@@ -3,6 +3,7 @@
 // and shows up in the change summary. Also exports addNote (used by the N box), jumpNote (Alt+→ / Alt+←) and toggleNotes (Shift+N).
 // Styling: web/notes.css (Lumen tokens with fallbacks). Icons: ic() below uses the Lumen sprite when present, else a plain glyph.
 import { S, change, newId, setTime, select, clamp } from './state.js';
+import { anchorAt } from './anchor.js';
 import { pause, layerBounds } from './preview.js';
 import { revealPlayhead } from './layers.js';
 import { askAbout } from './ai.js';
@@ -63,7 +64,8 @@ export function addNote(text, at, marks) {
   text = String(text || '').trim(); if (!text && !(marks && marks.length)) return null;
   const id = newId('n'); at = rnd(at);
   const bounds = boundsFor(at, marks);
-  change(p => { p.notes.push({ id, t: at, text, created: nowIso(), done: false, author: 'user', resolved_at: '', layer_ids: layersAt(p, at).map(l => l.id), reply: '', ...(Object.keys(bounds).length ? { bounds } : {}), ...(marks && marks.length ? { marks } : {}) }); });
+  change(p => { const anchor = anchorAt(p, at, ((marks && marks[0] && marks[0].layers) || []).map(l => l && l.id));   // what the user pointed at (the mark), else the scene: the note follows it (SPEC 1.0 Anchors)
+    p.notes.push({ id, t: at, text, created: nowIso(), done: false, author: 'user', resolved_at: '', layer_ids: layersAt(p, at).map(l => l.id), reply: '', ...(anchor ? { anchor } : {}), ...(Object.keys(bounds).length ? { bounds } : {}), ...(marks && marks.length ? { marks } : {}) }); });
   st.reveal = id; if (st.filter === 'done') setFilter('all');
   return id;
 }
