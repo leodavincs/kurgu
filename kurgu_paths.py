@@ -206,6 +206,20 @@ def open_append_fd(path):
     return os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0), 0o600)
 
 
+def replace_retry(src, dst, seconds=5.0):
+    """os.replace, retried on PermissionError for up to `seconds`: Windows refuses to replace a file that another handle is reading (the editor
+    streaming the clip that is being re-rendered); the reader lets go within moments. Elsewhere the first attempt succeeds."""
+    import time
+    end = time.monotonic() + seconds
+    while True:
+        try:
+            return os.replace(src, dst)
+        except PermissionError:
+            if time.monotonic() >= end:
+                raise
+            time.sleep(0.05)
+
+
 def tmp_path(path, suffix=".tmp"):
     """A temp file name for `path` that nobody can plant a symlink on in advance: `<path>.<16 random hex><suffix>`. A downloaded project folder
     may contain `film.json.part` -> ~/.ssh/x; with a predictable name an atomic write would follow it."""

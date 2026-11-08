@@ -715,7 +715,7 @@ def run_plan(plan, log=None):
             except Exception as e:                       # keeping a copy is a convenience; never lose the new render over it
                 if log:
                     log(f"  (could not keep the old version: {type(e).__name__})")
-        os.replace(part, plan["media"])
+        kurgu_paths.replace_retry(part, plan["media"])       # Windows: the editor may be streaming the old clip right now
     finally:
         if os.path.exists(part):
             try:

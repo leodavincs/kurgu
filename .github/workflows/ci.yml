@@ -48,7 +48,9 @@ jobs:
       - name: Install Chrome
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce  # v1
         with:
-          chrome-version: stable   # Chrome, not the default Chromium snapshot: Chromium cannot decode H.264, the codec of every rendered clip
+          # Linux/Windows: Chrome (the Chromium snapshot cannot decode H.264, the codec of every rendered clip). macOS: the Chromium snapshot,
+          # because Chrome for Testing made the browser tests ~10x slower there; the H.264 tests skip themselves on it (tests/cdp.py require_h264).
+          chrome-version: ${{ runner.os == 'macOS' && 'latest' || 'stable' }}
         continue-on-error: true
         id: chrome
 

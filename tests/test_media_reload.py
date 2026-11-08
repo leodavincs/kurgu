@@ -17,6 +17,7 @@ import cdp  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
+import kurgu_paths  # noqa: E402
 import media_tools  # noqa: E402
 
 try:
@@ -35,7 +36,7 @@ def make_clip(path, color, secs=20):
     tmp = path + ".tmp.mp4"
     subprocess.run([media_tools.ffmpeg(), "-y", "-v", "error", "-f", "lavfi", "-i", f"color=c={color}:s=640x360:r=10:d={secs}", "-pix_fmt", "yuv420p",
                     "-c:v", "libx264", "-g", "5", tmp], check=True)
-    os.replace(tmp, path)
+    kurgu_paths.replace_retry(tmp, path)              # Windows: the editor may be streaming the clip right now (as with `kurgu rerender`)
 
 
 def make_png(path, color):
@@ -79,6 +80,7 @@ def server():
 def page(chrome, server):
     p = chrome.new_page()
     p.open(server.url("/"), lang="en", mode="edit", ready=READY)
+    cdp.require_h264(p)
     yield p
     p.close()
 

@@ -1,6 +1,8 @@
 import os
 import sys
 
+import pytest
+
 import kurgu_paths
 
 
@@ -42,3 +44,23 @@ def test_kurgu_config_may_name_the_folder_or_the_config_file(tmp_path, monkeypat
     assert kurgu_paths.config_file() == str(f) and kurgu_paths.config_dir() == str(tmp_path)
     import agent_notes
     assert agent_notes.on_send_command() == ["echo", "x"]
+
+
+def test_replace_retry_waits_out_a_windows_reader(tmp_path, monkeypatch):
+    import kurgu_paths
+    src, dst = tmp_path / "a", tmp_path / "b"
+    src.write_text("new")
+    dst.write_text("old")
+    real, n = os.replace, []
+
+    def busy(a, b):                                   # the first two attempts meet a reader holding the file (Windows)
+        n.append(1)
+        if len(n) < 3:
+            raise PermissionError("in use")
+        return real(a, b)
+    monkeypatch.setattr(os, "replace", busy)
+    kurgu_paths.replace_retry(str(src), str(dst))
+    assert dst.read_text() == "new" and len(n) == 3
+    monkeypatch.setattr(os, "replace", lambda a, b: (_ for _ in ()).throw(PermissionError("in use")))
+    with pytest.raises(PermissionError):
+        kurgu_paths.replace_retry(str(src), str(dst), seconds=0.1)

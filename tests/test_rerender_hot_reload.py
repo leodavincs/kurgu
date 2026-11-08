@@ -56,6 +56,7 @@ def test_the_editor_shows_the_new_clip_after_rerender(tmp_path, wide):
         cdp.wait_http(f"http://127.0.0.1:{port}/api/project")
         p = c.new_page()
         p.open(f"http://127.0.0.1:{port}/", lang="en", view=None, mode="edit", ready="window.__kurgu && __kurgu.S.project && document.querySelector('#canvas')")
+        cdp.require_h264(p)
         p.eval("__kurgu.S.t=0.5; __kurgu.emit('time')")
         p.wait_for("(()=>{const x=%s;return x[0]>150&&x[1]<80&&x[2]<80})()" % PIX, 15)
         with open(os.path.join(d, "gen", "page.html"), "w") as f:

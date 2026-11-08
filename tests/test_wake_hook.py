@@ -215,10 +215,13 @@ def test_wake_codex_falls_back_to_a_new_session_when_there_is_nothing_to_resume(
     assert r.returncode == 0 and len(calls) == 2 and "new session" in r.stdout
     first, second = calls
     assert first[:3] == ["exec", "resume", "--last"] and "--json" in first and "sandbox_mode=workspace-write" in first and "approval_policy=never" in first
-    assert not any('"' in a for a in first[:-1])                                    # nothing cmd.exe would read as a quote toggle (codex.cmd)
+    assert not any('"' in a for a in first if "kurgu notes wait" not in a)                                    # nothing cmd.exe would read as a quote toggle (codex.cmd)
     assert second[:3] == ["exec", "-s", "workspace-write"] and "--skip-git-repo-check" in second and "-C" in second
     assert second[second.index("-C") + 1] == os.path.abspath(project_dir) and "--json" in second and "resume" not in second
-    assert "kurgu notes wait " + os.path.abspath(project_dir) in first[-1] and "{dir}" not in first[-1]       # the prompt carries the real folder
+    if os.name == "nt":                                                           # a .cmd shim: the prompt goes on stdin, never on the command line
+        assert not any("kurgu notes wait" in a for a in first)
+    else:
+        assert "kurgu notes wait " + os.path.abspath(project_dir) in first[-1] and "{dir}" not in first[-1]       # the prompt carries the real folder
 
 
 def test_wake_codex_uses_one_call_when_resume_works(tmp_path, project_dir):

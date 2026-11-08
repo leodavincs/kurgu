@@ -30,6 +30,14 @@ LIVE_SERVERS = []      # every Server started by this process: a page timeout pr
 STARTUP_WAIT = 60 if CI else 20      # seconds a spawned server / Chrome gets to come up
 
 
+def require_h264(page):
+    """Skip the calling test when this browser cannot decode H.264 (the Chromium snapshot CI uses on macOS; Chrome itself can).
+    Rendered clips are H.264, so these tests run wherever a real Chrome is installed."""
+    import pytest
+    if not page.eval("document.createElement('video').canPlayType('video/mp4; codecs=avc1.42E01E')"):
+        pytest.skip("this browser cannot decode H.264 (Chromium); run with Google Chrome")
+
+
 def find_chrome():
     """KURGU_CHROME / CHROME_PATH / CHROME_BIN (what browser-actions/setup-chrome exposes), then well-known places, then PATH."""
     for var in ("KURGU_CHROME", "CHROME_PATH", "CHROME_BIN"):
