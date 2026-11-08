@@ -173,3 +173,27 @@ def test_stop_children_ends_tracked_processes():
     t0 = time.time()
     server.stop_children()
     assert p.poll() is not None and q.poll() is not None and time.time() - t0 < 10
+
+
+def test_the_idle_stop_waits_while_an_agent_listens_or_sent_notes_are_open(project_dir, monkeypatch):
+    """T6: a trial's `send` got connection refused because the server stopped 10 minutes after the last tab closed, with notes pending."""
+    import agent_notes
+    import json
+    import os
+    import server
+    app = server.App(project_dir)
+    assert app.busy() is False
+    monkeypatch.setattr(agent_notes, "is_listening", lambda d: True)
+    assert app.busy() is True                                                    # an agent is blocked in `notes wait`
+    monkeypatch.setattr(agent_notes, "is_listening", lambda d: False)
+    p = json.load(open(os.path.join(project_dir, "project.json")))
+    from datetime import datetime, timedelta
+    p["notes"] = [{"id": "n_1", "t": 1.0, "text": "x", "sent": datetime.now().replace(microsecond=0).isoformat()}]
+    json.dump(p, open(os.path.join(project_dir, "project.json"), "w"))
+    assert app.busy() is True                                                    # a sent note is not done yet
+    p["notes"][0]["sent"] = (datetime.now() - timedelta(hours=3)).replace(microsecond=0).isoformat()
+    json.dump(p, open(os.path.join(project_dir, "project.json"), "w"))
+    assert app.busy() is False                                                   # ... but not forever
+    p["notes"][0].update(sent=datetime.now().replace(microsecond=0).isoformat(), done=True)
+    json.dump(p, open(os.path.join(project_dir, "project.json"), "w"))
+    assert app.busy() is False

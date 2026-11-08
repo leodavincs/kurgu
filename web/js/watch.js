@@ -7,9 +7,12 @@ import { t, getLang } from './i18n.js';
 import { $, el, icon } from './dom.js';
 import { play, pause, togglePlay, setZoom, viewInfo, viewGeom } from './preview.js';
 import { isReview } from './mode.js';
-import { startDraw, endDraw, takeDraft, draftMarks, markKey, makeToolRow } from './marks.js';
+import { startDraw, endDraw, takeDraft, draftMarks, markKey, makeToolRow, setFocusNote, setHoverNote, drawBadge } from './marks.js';
 import { addNote, layersAt } from './notes.js';
 import { dative } from './dative.js';
+import { answerBlock } from './answer.js';
+import { abNoteButton } from './ab.js';
+import { wakeBlock, wakeWorking, wakeKick } from './wake.js';
 
 { const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/web/watch.css'; document.head.append(link); }
 
@@ -42,14 +45,20 @@ export async function sendNotes() {
     const woke = r.data.hook === 'started' || r.data.hook === 'queued';     // the user's on_send hook ran: the agent was started for these notes
     live = { listening: !!r.data.listening, wake: r.data.wake === 'configured' }; refreshSend();
     if (r.data.hook_reason) showReason(r.data.hook_reason);                  // the notes are saved, but the agent was not started: say why
-    else if (woke || live.listening) toast(t(r.data.sent === 1 && getLang() === 'en' ? 'send.toast1' : 'send.toast', { n: r.data.sent, who: who() }) + ' · ' + t(woke ? 'send.woke' : 'send.listening'), 'ok', woke ? 6000 : 5000);
+    else if (woke || live.listening) toast(t(r.data.sent === 1 && getLang() === 'en' ? 'send.toast1' : 'send.toast', { n: r.data.sent, who: who() }) + ' · ' + (woke ? wokeText(r.data.wake_route) : t('send.listening')), 'ok', woke ? 6000 : 5000);
     else if (r.data.hook !== 'error') showIdlePanel();                      // nobody will read them: not a success toast
+    if (r.data.hook !== 'error' && !r.data.hook_reason) { const np = $('notice-panel'); if (np) np.remove(); shownProblem = ''; }          // this send went through: an older refusal notice is stale
+    if (woke) wakeKick(true);
     if (r.data.hook === 'error' && !r.data.hook_reason) toast(t('send.wakeFailed', { error: r.data.hook_error || '' }), 'warn', 9000);
     if (r.data.failed_frames && r.data.failed_frames.length) toast(t('send.noFrames', { n: r.data.failed_frames.length }), 'warn', 7000);
     return true;
   } catch (e) { toast(t('send.failed', { reason: String(e.message || e) }), 'error', 6000); return false; }
   finally { sending = false; refreshSend(); renderLists(); }
 }
+
+const wokeText = wr => (wr && wr.route === 'session'
+  ? t('send.wokeSession', { agent: wr.agent === 'codex' ? 'Codex' : 'Claude', bg: wr.agent === 'claude' ? t('send.bgWatch') : '' }) : t('send.woke'));
+
 // ---------------------------------------------------------------- "the agent isn't listening" panel + live state (tooltip)
 let live = { listening: false, wake: false };
 const stateText = () => t(live.listening ? 'send.state.listening' : live.wake ? 'send.state.wake' : 'send.state.none');
@@ -92,8 +101,9 @@ let shownProblem = '';
 async function pollLive() {
   if (document.hidden) return;
   const i = await API.notesLive(); if (!i) return;
-  live = { listening: !!i.listening, wake: i.wake === 'configured' }; refreshSend();
+  live = { listening: !!i.listening, wake: i.wake_configured === 'configured' }; refreshSend();
   noteProblem(i.problem);
+  if (live.listening || live.wake) { const ip = $('idle-panel'); if (ip) ip.remove(); }          // somebody (or a wake hook) is there now: the "nobody listens" panel is stale
 }
 function noteProblem(pr) { const c = pr ? pr.code : ''; if (c && c !== shownProblem) showReason(pr); shownProblem = c; }
 
@@ -140,6 +150,7 @@ export function focusNote() { if (nbInput) { nbInput.focus(); nbInput.select(); 
 
 // ---------------------------------------------------------------- watch mode
 let root, stageHost, stageHome, stageNext, seekEl, fillEl, headEl, marksEl, playBtn, tcNow, tcDur, wInput, wChip, wTime, wPaused, countEl, sceneEl;
+let ready = true, typedEarly = '', wantNote = false;   // keys that arrive while the mode is still opening (fullscreen transition) are kept, not lost
 let isOpen = false, usedFullscreen = false, togglingFs = false, savedZoom = 'fit', noteAt = null, resumeAfter = false;
 let watchSent = [];                                   // ids sent while this mode was open (kept in the list as "sent")
 export const watchOpen = () => isOpen;
@@ -214,21 +225,26 @@ function applyText() {
 export async function openWatch() {
   if (isOpen || !S.project) return;
   if (!root) build();
-  isOpen = true; watchSent = [];
+  isOpen = true; watchSent = []; ready = false; typedEarly = ''; wantNote = false;
   savedZoom = viewInfo().zoom === 'fit' ? 'fit' : viewInfo().z;
   stageHome = $('stage').parentNode; stageNext = $('stage').nextSibling;
   stageHost.append($('stage')); root.append($('toasts')); document.body.classList.add('watching');   // toasts must live inside the full-screen element to be seen
   root.hidden = false;
   setZoom('fit');
   try { if (root.requestFullscreen) { await root.requestFullscreen(); usedFullscreen = true; if (navigator.keyboard && navigator.keyboard.lock) navigator.keyboard.lock(['Escape']).catch(() => {}); } } catch (e) { usedFullscreen = false; }
+  if (!isOpen) return;                                  // Esc / the exit button during the transition
   noteAt = null; resumeAfter = false;
   applyText(); renderMarks(); renderLists(); updateTime(); updatePlay(); refreshSend();
-  wInput.blur();
   window.dispatchEvent(new Event('resize'));
+  ready = true;
+  if (typedEarly || wantNote) {                         // the person was already typing: the note box gets it all, focused, caret at the end
+    const early = typedEarly; typedEarly = ''; wantNote = false;
+    startType(); wInput.focus(); wInput.value += early; wInput.setSelectionRange(wInput.value.length, wInput.value.length);
+  } else if (document.activeElement === wInput && !wInput.value) wInput.blur();
 }
 export function closeWatch(fromFullscreen = false) {
   if (!isOpen) return;
-  isOpen = false;
+  isOpen = false; ready = true; typedEarly = '';
   endDraw(false);
   if (S.playing) pause();
   endType(false); wInput.value = '';
@@ -275,8 +291,15 @@ function onKey(e) {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   const k = e.key;
   const eat = () => { e.preventDefault(); e.stopPropagation(); };
+  if (!ready && k !== 'Escape') {                       // still opening: keep what is typed, hand it to the note box once it is up
+    if (k === 'Backspace') { eat(); typedEarly = typedEarly.slice(0, -1); }
+    else if (k.length === 1 && (typedEarly || wantNote || (k !== ' ' && !'nN'.includes(k) && /\S/.test(k)))) { eat(); typedEarly += k; }
+    else if (k === 'n' || k === 'N') { eat(); wantNote = true; }
+    else eat();
+    return;
+  }
   if (k === 'Escape') { eat(); closeWatch(); }
-  else if (k === ' ') { eat(); if (!e.repeat) togglePlay(); }
+  else if (k === ' ') { eat(); if (noteAt !== null) { startType(); wInput.focus(); wInput.setRangeText(' ', wInput.selectionStart, wInput.selectionEnd, 'end'); wInput.dispatchEvent(new Event('input')); } else if (!e.repeat) togglePlay(); }
   else if (k === 'n' || k === 'N') { eat(); focusInput(); }
   else if (k === 'ArrowLeft' || k === 'ArrowRight') { eat(); setTime(S.t + (k === 'ArrowRight' ? 1 : -1)); }
   else if (k === 'f' || k === 'F') { eat(); if (document.fullscreenElement) { togglingFs = true; document.exitFullscreen().catch(() => { togglingFs = false; }); } else if (root.requestFullscreen) root.requestFullscreen().then(() => { usedFullscreen = true; }).catch(() => {}); }
@@ -287,7 +310,7 @@ function onKey(e) {
 // ---- rendering
 function watchVisible() {   // this round: not sent yet, or sent while this mode was open
   const keep = new Set(watchSent);
-  return S.project.notes.filter(n => n.author === 'user' && ((!n.sent && !n.done) || keep.has(n.id))).sort((a, b) => a.t - b.t);
+  return S.project.notes.filter(n => n.author === 'user' && ((!n.sent && !n.done) || n.asked || keep.has(n.id))).sort((a, b) => a.t - b.t);
 }
 const reviewVisible = () => S.project.notes.filter(n => n.author === 'user').sort((a, b) => a.t - b.t);
 function renderMarks() {
@@ -295,7 +318,7 @@ function renderMarks() {
   const d = S.project.duration || 1;
   marksEl.replaceChildren(...S.project.notes.map(n => {
     const m = el('button', 'w-mark' + (n.sent || n.done ? ' sent' : '')); m.type = 'button'; m.style.left = (n.t / d * 100) + '%'; m.title = `${tcShort(n.t)} ${n.text}`;
-    m.addEventListener('click', e => { e.stopPropagation(); setTime(n.t); }); return m;
+    m.addEventListener('click', e => { e.stopPropagation(); setTime(n.t); setFocusNote(n.id); }); return m;
   }));
 }
 /** A list of notes (timecode chip, text, scene, sent / fixed state, reply; click = seek, hover = edit / delete). `visible()` says which notes. */
@@ -309,9 +332,10 @@ function makeList(visible) {
     render() {
       if (!S.project) return;
       const list = visible();
-      if (!list.length) { host.replaceChildren(el('div', 'w-empty', t('watch.empty'))); return; }
-      host.replaceChildren(...list.map(n => {
-        const row = el('div', 'w-note' + (n.done ? ' done' : n.sent ? ' sent' : '') + (Math.abs(S.t - n.t) < 0.3 ? ' near' : '')); row.dataset.id = n.id; row.setAttribute('role', 'listitem');
+      const wb = wakeBlock();
+      if (!list.length) { host.replaceChildren(...(wb ? [wb] : []), el('div', 'w-empty', t('watch.empty'))); return; }
+      host.replaceChildren(...(wb ? [wb] : []), ...list.map(n => {
+        const row = el('div', 'w-note' + (n.done ? ' done' : n.asked ? ' asked' : n.sent ? ' sent' : '') + (Math.abs(S.t - n.t) < 0.3 ? ' near' : '')); row.dataset.id = n.id; row.setAttribute('role', 'listitem');
         row.append(el('span', 'w-ntc', tcShort(n.t)));
         const body = el('div', 'w-nbody');
         if (editing === n.id) {
@@ -321,9 +345,14 @@ function makeList(visible) {
         } else body.append(el('p', '', n.text));
         const meta = el('small', 'w-nmeta', sceneAt(n.t));
         if (n.done) meta.append(el('span', 'w-state fixed', ' · ' + t('watch.fixed') + ' ✓'));
+        else if (n.asked) meta.append(el('span', 'w-state asked', ' · ' + t('ask.badge')));
+        else if (wakeWorking(n)) meta.append(el('span', 'w-state wk-working', ' · ' + t('wake.working')));
         else if (n.sent) meta.append(el('span', 'w-state', ' · ' + t('watch.sentMark')));
+        { const db = drawBadge(n, 'w-draw'); if (db) meta.append(' ', db); }
         body.append(meta);
+        { const ab = answerBlock(n, toast); if (ab) body.append(ab); }
         if (n.reply) body.append(el('small', 'w-reply', n.reply));
+        { const ab = abNoteButton(n, 'w-ab'); if (ab) body.append(ab); }
         row.append(body);
         if (!n.sent && !n.done) {
           const acts = el('div', 'w-acts');
@@ -331,7 +360,8 @@ function makeList(visible) {
           const db = el('button', 'w-ib del'); db.type = 'button'; db.title = t('watch.delete'); db.append(icon('trash-2')); db.addEventListener('click', e => { e.stopPropagation(); change(p => { p.notes = p.notes.filter(q => q.id !== n.id); }); });
           acts.append(eb, db); row.append(acts);
         }
-        row.addEventListener('click', () => { if (S.playing) pause(); setTime(n.t); });
+        row.addEventListener('click', () => { if (S.playing) pause(); setTime(n.t); setFocusNote(n.id); });
+        row.addEventListener('pointerenter', () => setHoverNote(n.id)); row.addEventListener('pointerleave', () => setHoverNote(null));
         return row;
       }));
     },
@@ -394,10 +424,13 @@ export function startWatch({ toast: toastFn } = {}) {
   buildReview();
   placeDock();
   $('b-watch').addEventListener('click', openWatch);
-  const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; live = { listening: !!i.listening, wake: i.wake === 'configured' }; noteProblem(i.problem); refreshSend(); renderLists(); });
+  const info = () => API.notesInfo().then(i => { if (!i) { setTimeout(info, 1500); return; } agentName = i.agent_name || ''; live = { listening: !!i.listening, wake: i.wake_configured === 'configured' }; noteProblem(i.problem); refreshSend(); renderLists(); });
   info(); setInterval(pollLive, 10000);
+  wakeKick();
+  window.addEventListener('kurgu-wake', () => { if (!(watchList && watchList.editing) && !(reviewList && reviewList.editing)) renderLists(); });
   refreshSend(); renderLists();
   return {
+    media() { if (!(watchList && watchList.editing) && !(reviewList && reviewList.editing)) renderLists(); },
     project() { refreshSend(); if (isOpen) renderMarks(); if (!(watchList && watchList.editing) && !(reviewList && reviewList.editing)) renderLists(); if (isOpen) updateTime(); },
     time() { if (nbInput && nbAt === null) nbTime.textContent = tcShort(S.t); if (isOpen) updateTime(); if (reviewList) reviewList.near(); },
     playing() { updatePlay(); },

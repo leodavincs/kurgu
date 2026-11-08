@@ -190,6 +190,7 @@ function drawWords() {
   });
 }
 function drawAll() { drawScenes(); drawWave(); drawTop(); drawOver(); drawWords(); }
+window.addEventListener('kurgu:media', e => { loading.delete(e.detail.src); mixSig = ''; mix = null; schedule(true); });   // a clip was re-rendered: peaks are stale
 function schedule(full) {
   if (!st.active || !dom.root) return;
   if (full) schedule.full = true;

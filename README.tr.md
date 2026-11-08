@@ -44,7 +44,11 @@ Tek komut. Gerekirse [uv](https://docs.astral.sh/uv/)'yi, kendine ait bir Python
 | macOS / Linux | `curl -LsSf https://raw.githubusercontent.com/leodavincs/kurgu/main/install.sh \| sh` |
 | Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/leodavincs/kurgu/main/install.ps1 \| iex"` |
 
-Sonra **yeni** bir terminal aç ve `kurgu proje/klasoru` yaz. `kurgu doctor` makineyi denetler (Python, ffmpeg, donanım kodlayıcıları, boş disk; ajanlar için `--json`, eksik ffmpeg'i indirmek için `--fix`).
+Sonra **yeni** bir terminal aç ve `kurgu proje/klasoru` yaz. `kurgu --help` bütün komutları sıralar. `kurgu doctor` makineyi denetler (Python, ffmpeg, donanım kodlayıcıları, boş disk; ajanlar için `--json`, eksik ffmpeg'i indirmek için `--fix`).
+
+**Klondan kurulum** (bir dalı ya da kendi değişikliklerini denemek için): `KURGU_SOURCE=/kurgu/klasorun sh install.sh`. `KURGU_SOURCE` bir klasör, bir adres ya da `git+https://...` olabilir; kodu değiştirince komutu yeniden çalıştır.
+
+Chrome (ya da Chromium) yalnızca kodla video araçları için gerekir: `kurgu elements` ve `kurgu rerender`. Editörün kendisi onsuz çalışır. Kurgu Chrome'unu bulamazsa `KURGU_CHROME=/chrome/yolu` ver.
 
 ### Kullanıcın için kurulum (kodlama ajanı için: Claude Code, Codex, ...)
 
@@ -69,6 +73,8 @@ Bir şey ters giderse:
 Sıra: `KURGU_FFMPEG` / `KURGU_FFPROBE` (dosya ya da klasör) → PATH'teki `ffmpeg` (sistemdeki her zaman önce gelir) → `kurgu setup-ffmpeg`'in Kurgu'nun veri klasörüne indirdiği kopya (`%LOCALAPPDATA%\Kurgu\ffmpeg`, `~/Library/Application Support/Kurgu/ffmpeg`, `~/.local/share/kurgu/ffmpeg`) → bilinen kurulum klasörleri (Homebrew, winget, Chocolatey, Scoop, ...). Editör kendiliğinden hiçbir şey indirmez; yalnız kurulum betiği, `kurgu setup-ffmpeg` ya da `kurgu doctor --fix` indirir. İndirme SHA-256 ile ve `-version` çalıştırılarak doğrulanır.
 
 Kullanılan statik derlemeler (hepsi FFmpeg'in GPL derlemesi, özgür yazılım; senin makinene iner, Kurgu'nun içinde gelmez; bkz. https://ffmpeg.org/legal.html): Windows ve Linux için [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), macOS için [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de/). Kendininkini istersen `brew install ffmpeg`, `sudo apt install ffmpeg` ya da `winget install Gyan.FFmpeg` de olur.
+
+**FFmpeg uyumluluğu.** CI, ffmpeg'e dayanan testleri (dışa aktarma, proxy, dalga biçimi, ses seviyesi, şeritler, kare eşleşmesi) Linux'ta ffmpeg 6.1, 7.1 ve 8.1 ile çalıştırır; tüm testler de her çalıştırıcının kendi ffmpeg'iyle koşar. `kurgu doctor` sürümünü gösterir ve 6.1'in altındaysa uyarır.
 
 ### Diğer yollar
 
@@ -122,22 +128,38 @@ Kurgu **İnceleme kipinde** açılır: büyük önizleme, altında kelimeleriyle
 1. **İzle.** *İzle + not* ile tam ekrana geç. Yazmaya başlayınca video durur; `Enter` notu o saniyeye ekler, video kaldığı yerden devam eder.
 2. **Göster.** Yeri tarif edemiyor musun? Karenin üstüne çiz: elips, dikdörtgen ya da ok, beş renkte (`Alt+O/B/A`, `Alt+1…5`). Çizim projenin kendi pikseliyle saklanır; ajanın eline "sağ üst bir yer" değil, tam koordinat geçer.
 3. **Gönder.** *Ajana gönder* düğmesine bir tık. Her not saniyesi, altındaki sahne ve katmanlar, çizdiğin işaretler (renk, konum, boyut, altındaki katmanlar) ve işaretlerin işlendiği kare görüntüsüyle gider. Hepsi proje klasöründe `NOTLAR.md` ve `.kurgu/inbox.jsonl` içine yazılır.
-4. **Ajan düzeltir.** Claude Code `kurgu notes wait <proje>` komutunu arka planda çalıştırır, sen gönderince uyanır; Codex `notes_wait` MCP aracını kullanır (bkz. *Diğer ajanlarla kullanım*). İstersen ajanı Kurgu uyandırsın: `kurgu setup-agent --claude --wake` / `--codex --wake` her gönderide ajanı arka planda başlatır, terminale bakman bile gerekmez.
-5. **Cevabı gör.** Düzeltilen not, listede ajanın tek satırlık cevabıyla *düzeltildi* olur. Ajan çalışırken yaptığın yeni gönderi kaybolmaz.
+4. **Ajan düzeltir.** Claude Code `kurgu notes wait <proje>` komutunu arka planda çalıştırır, sen gönderince uyanır; Codex aynı işi kendi aracıyla yapar (bkz. *Diğer ajanlarla kullanım*). İstersen ajanı Kurgu uyandırsın: `kurgu setup-agent --claude --wake` / `--codex --wake` her gönderide ajanı arka planda başlatır, terminale bakman bile gerekmez.
+   Her not, ekrandaki her katmanın ölçülmüş kutusunu (sol, üst, sağ, alt kenar, piksel olarak) ve konum sayılarının neyi gösterdiğini de taşır; ajan kenarları çevresiyle hizalar, notu kapatmadan önce `kurgu frame <proje> <saniye>` ile sonucun karesine (tarayıcısız bir JPEG) bakar.
+   Belirsiz bir not ("daha dinamik olsun") ya en küçük net okumasıyla uygulanır ve seçilen değerler cevapta yazılır, ya da ajan soru sorar: not *soruldu* olur, cevabı editörde yazarsın, ajana geri gider.
+   Zamana yayılan bir değişikliği kontrol etmek için ajan tek tek kare yerine tek bir `kurgu strip <proje> <t0> <t1>` çağrısı (etiketli kontak sayfası) yapar.
+   Her not, kendi anı çevresinde ölçülmüş ses bilgisini de taşır (tepe ve RMS düzeyi, sessizlikler, döküm varsa kelime zamanları).
+5. **Cevabı gör.** Düzeltilen not, listede ajanın tek satırlık cevabıyla *düzeltildi* olur. Ajan çalışırken yaptığın yeni gönderi kaybolmaz. Ajan çalışırken gönderilen notlarda *Ajan çalışıyor…* yazar; ajan hiç başlayamadıysa (örneğin giriş yapılmamışsa) nedenini söyleyen bir uyarı çıkar, yanında `.kurgu/hook.log` bağlantısı olur; ajan bitti ama bir not açık kaldıysa onu da söyler. Yeniden üretilmiş bir klibin eski ve yeni görüntüsünü karşılaştırmak için `B`'ye bas (önceki sürüm yoksa kısa bir mesaj çıkar).
+   Editörde tuşlar: `W` ya da `F` izle kipini tam ekran açar, `N` not kutusuna atlar, `Enter` notu ekler, `Esc` çıkar, `B` önce / sonra arasında geçiş yapar. İzle kipi açılırken yazdıkların kaybolmaz. Çizim kare üstünde yalnız seçtiğin ya da üstüne geldiğin notun için görünür (çizimli notlarda küçük bir daire simgesi olur).
 
-Ajan tarafı: `kurgu notes wait | list | done`, MCP `notes_wait`, `notes_list`, `notes_done`. Ayrıntı `AGENTS.md` ve `SPEC.md` içinde.
+<!-- kurgu:generated:agent-side -->
+Ajan tarafı (teknik): her notta ayrıca `bounds` (kutu) ve `anchor` (konum açıklaması) alanları gider. Komutlar: `kurgu notes wait | list | done | ask | add`, `kurgu frame <proje> <saniye> [-o cikti.jpg] [--full]`, `kurgu strip <proje> <t0> <t1> [--n 6]`, MCP `notes_wait`, `notes_list`, `notes_done`, `notes_ask`, `render_frame`, `render_strip`. Klibe gömülü yazı ve şekiller için `kurgu detect <proje> <saniye> [--layer ID] [--json]` (takma ad `kurgu ocr`, MCP `detect`); kodla üretilmiş klibi kaynağından yeniden üretmek için `kurgu rerender <proje> <katman|birim>` (MCP `rerender`). "Kurgu notlarımı bekle ve gelince uygula" dersen ajan bekle, düzelt, kapat döngüsünde kalır; Kurgu projede hangi ajan oturumunun çalıştığını `.kurgu/agents.json` içine yazar, uyandırma kancası o oturumu sürdürür. Ayrıntı `AGENTS.md` ve `SPEC.md` içinde.
+<!-- kurgu:generated:end -->
 
 ## Diğer ajanlarla kullanım
 
-Kurgu bir MCP sunucusu (`kurgu-mcp`, stdio; `mcp_server.py` ile aynı kod) ile gelir; MCP destekleyen her ajan aynı yetkileri alır: editörü açar, neyi seçtiğini görür, projeyi doğrulanmış toplu değişikliklerle düzenler, işlenmiş kareye bakar, render alır. Repo kökündeki `AGENTS.md`, o dosyayı okuyan ajanlara Kurgu ile nasıl çalışacaklarını anlatır.
+Kurgu, ajanların kendi araç protokolüyle (MCP; `kurgu-mcp`, `mcp_server.py` ile aynı kod) konuşan bir sunucuyla gelir; MCP destekleyen her ajan aynı yetkileri alır: editörü açar, neyi seçtiğini görür, projeyi doğrulanmış toplu değişikliklerle düzenler, işlenmiş kareye bakar, render alır. Repo kökündeki `AGENTS.md`, o dosyayı okuyan ajanlara Kurgu ile nasıl çalışacaklarını anlatır.
 
-Araçlar: `open_editor`, `get_state`, `get_project`, `edit_project`, `render_frame`, `render`, `get_changes`, `list_fonts`, `list_media`, `import_file`. Hepsi isteğe bağlı `project_dir` alır (varsayılan: sunucunun çalışma klasörü ya da `KURGU_PROJECT_DIR` ortam değişkeni). Aşağıdaki örnekler yukarıdaki tek satırlık kurulumu (ya da `pipx install git+https://github.com/leodavincs/kurgu`) yaptığını varsayar; bu, `kurgu-mcp` komutunu PATH'ine koyar (ajan bulamazsa tam yolu yaz: klasörü `uv tool dir --bin` ya da `pipx` gösterir). Klondan çalışıyorsan sanal ortamının Python'unu ve `mcp_server.py`'nin tam yolunu kullan.
+Araçlar:
+<!-- kurgu:generated:tool-names -->
+`open_editor`, `get_state`, `get_project`, `edit_project`, `render_frame`, `render_strip`, `rerender`, `detect`, `render`, `get_changes`, `get_brief`, `update_brief`, `get_notes`, `update_note`, `add_note`, `notes_list`, `notes_wait`, `notes_done`, `notes_ask`, `list_fonts`, `list_media`, `import_file`, `transcribe`, `make_captions`
+<!-- kurgu:generated:end -->
+
+Hepsi isteğe bağlı `project_dir` alır (varsayılan: sunucunun çalışma klasörü ya da `KURGU_PROJECT_DIR` ortam değişkeni). Aşağıdaki örnekler yukarıdaki tek satırlık kurulumu (ya da `pipx install git+https://github.com/leodavincs/kurgu`) yaptığını varsayar; bu, `kurgu-mcp` komutunu PATH'ine koyar (ajan bulamazsa tam yolu yaz: klasörü `uv tool dir --bin` ya da `pipx` gösterir). Klondan çalışıyorsan sanal ortamının Python'unu ve `mcp_server.py`'nin tam yolunu kullan.
 
 **Claude Code.** Eklentiyi kur (yukarıya bak). MCP sunucusu eklentinin `.mcp.json` dosyasıyla (`uvx` üzerinden) kendiliğinden tanıtılır; ayar gerekmez. Eklenti olmadan: `claude mcp add kurgu -- kurgu-mcp`.
 
 **Deneysel:** editördeki Ask AI kutusu Claude Code yoksa Codex'e düşer, ama bu yol henüz uçtan uca test edilmedi. Özel ajan komutu yalnızca `KURGU_AGENT_CMD` veya `~/.config/kurgu/config.json` içinden okunur, proje klasöründen asla.
 
 **OpenAI Codex (CLI, IDE, masaüstü uygulaması).** `kurgu setup-agent --codex` (`--project <klasör>` ile o projenin AGENTS.md dosyasına kısa bir Kurgu bölümü eklenir; `--dry-run` neyin değişeceğini gösterir). MCP sunucusunu `~/.codex/config.toml` içine `tool_timeout_sec = 3600` ile kaydeder (Codex'in varsayılanı 60 sn, `notes_wait`'i keserdi) ve skill'i `~/.agents/skills/kurgu` altına kurar. Codex'i yeniden başlat. Codex arka plandaki bir süreç tarafından uyandırılamaz; bu yüzden izle + not döngüsü tekrarlanan `notes_wait` çağrılarıyla işler (ya da Gönder'e basıp "notlara bak" dersin); `--wake` ile Gönder'e bastığında Kurgu ajanı kendisi başlatabilir (AGENTS.md'deki "Wake the agent" notlarına bak). Codex'i proje klasörünün içinde, `workspace-write` kum havuzuyla çalıştır.
+
+**Uyanan Codex neyi çalıştırabilir.** `kurgu wake codex`, Codex'i kendi `CODEX_HOME` klasöründe (`~/.config/kurgu/codex-home`, `%APPDATA%\kurgu\codex-home`) üretilmiş bir execpolicy dosyasıyla (`rules/kurgu.rules`) başlatır; kendi `~/.codex` klasörün ve diğer Codex oturumların değişmez (model ayarların kopyalanır, girişin bağlanır, kopyalanmaz; `sessions` klasörün bağlanır, böylece `resume <uuid>` ve `--last` konuşmanı bulur). Codex kuralları yalnız yasaklayabilir; dosya ağ araçlarını (`curl`, `wget`, `ssh`), `rm`/`mv`/`cp`/`tee` gibi yazanları, `python`/`node`/`perl`/`awk`/`find`/`env`/`xargs`/`ffmpeg`'i, paket yöneticilerini, `git push|clone|fetch|pull`'u, `sed -i`'yi, `rg --pre`'yi, `-c` ile yeniden açılan kabukları ve not işi olmayan `kurgu` alt komutlarını yasaklar. Gerisi (`kurgu notes|frame|strip|rerender|detect|probe`, `ffprobe`, `cat`, `ls`, `head`, `sed -n`, `grep`, `rg`, `jq`) `workspace-write` kum havuzunda çalışır: yazma yalnız proje klasöründe, ağ yok. Codex'in yama aracıyla yapılan düzenlemeler (`project.json` böyle değişir) serbest kalır. Claude karşılığı `--allowedTools` listesidir. Kuralsız çalıştırmak için kullanıcı yapılandırma dosyasına (`~/.config/kurgu/config.json`) `"codex_policy": "off"` yaz; proje klasörü bunu yapamaz. Girişin `auth.json`'da değil işletim sistemi anahtar zincirindeyse uyandırma kısıtsız çalışmak yerine başlamaz. Windows'ta sembolik bağ kurulamazsa tam oturuma devam (`resume <uuid>`) kullanılamaz, yeni oturum açılır.
+
+**Uyanan Claude Code neyi çalıştırabilir.** `claude -p ... --allowedTools` tam olarak şunu alır: `kurgu notes|frame|strip|rerender|detect|probe`, `kurgu --help`, `kurgu <komut> --help` ve `kurgu` MCP araçları; genel Bash yok, `ffprobe` yok (URL okuyabilir: `kurgu probe <proje> [katman|dosya]` kullan) ve `--setting-sources user` vardır, yani projenin kendi `.claude/settings*.json` kancaları ve `.mcp.json` sunucuları hiç yüklenmez.
 
 **Cursor.** Projendeki `.cursor/mcp.json` (tüm projeler için `~/.cursor/mcp.json`):
 
@@ -166,6 +188,62 @@ Araçlar: `open_editor`, `get_state`, `get_project`, `edit_project`, `render_fra
 ```
 
 Kurgu'nun çalışma biçimi değişmez: editör açıksa ajan değişikliği onun üzerinden yapar (sen canlı görürsün, `changes.md` içine `[agent]` diye yazılır); açık değilse `project.json`'a doğrudan yazar.
+
+## Kodla video yapıyorsan
+
+Videon kodla üretiliyorsa (cinecode, kendi sayfan, Remotion), videoya düşen bir notu bitmiş mp4'ün üstünde değil o kodda düzeltmek gerekir. `kurgu import` sahne listeni Kurgu projesine çevirir: her sahne, nereden geldiğini hatırlayan bir klip olur (`project.json` içinde `source`). `kurgu elements` bir sahnenin yazısının ekranda nerede durduğunu ölçer. İkisi de ek bağımlılık istemez (`elements` için yalnızca headless Chrome gerekir).
+
+**cinecode** ([sarpstar/cinecode](https://github.com/sarpstar/cinecode), MIT). Taslağı ya da finali her zamanki gibi üret, sonra film klasöründe: `kurgu import . --elements`. `shots.json`'u (kareler, `fps`, `text_on_screen`, `vo`), en yeni `renders/film-vN.mp4` ya da `renders/draft-vN.mp4` dosyasını ve `audio/mix.json`'u okur; `kurgu/project.json` yazar (shot başına bir klip, shot karelerinden kesilmiş; `scenes.md` her shot'ın yazısını ve seslendirmesini listeler). Film klasöründeki mevcut hiçbir dosya değişmez. Kanvasa çizilen yazı ölçülemez; komut bunu söyler.
+
+**Kare çizen düz bir HTML sayfası.** Kareye göre saf fonksiyon olan `window.renderFrame(i)` (ya da `captureFrame(i)`) sunan her sayfa olur: `kurgu elements sayfa.html --frames 0:240:6 -o sahne.kurgu.json`. DOM'daki yazı ve öğeler kare kare kutu alır; 2D kanvas API'siyle (`fillText`, `fill`/`stroke`, `fillRect`, `Path2D`, `drawImage`) çizilen yazı, şekil ve görseller de alır: `kurgu elements` bunları kendiliğinden kaydeder, sayfada değişiklik gerekmez. Kanvas yazısının metni sayfanın kendi kaynaklarında geçiyorsa `file:line` yazılır (`--source-root` bir klasör daha ekler, birden çok yerde geçiyorsa `line_ambiguous`), aynı renkteki yakın şekiller tek öğede birleşir, `--no-canvas` bunu kapatır. WebGL / three.js çıktısı pikseldir, yakalanmaz: aşağıdaki kancayı ya da OCR / görü yedeğini (yakında) kullan.
+
+İstersen bir öğeye `data-kurgu-id="baslik"` (istersen `data-kurgu-src="sahne.js:41"`) yazarak ona sabit bir ad ve kaynak satırı verebilirsin.
+
+**Motor yazarları için (WebGL / 3D sayfalar).** 2D kanvasın çizmediği her şey pikseldir, sayfadan ölçecek bir şey yoktur; bitmiş videoda `kurgu detect <proje> <saniye>` (OCR ve şekil bulma, yaklaşık) karedeki yazı ve şekilleri bulur. Kesin kutu için sayfan `window.kurguElements(i)` tanımlarsa `kurgu elements` onu `renderFrame(i)`'den hemen sonra çağırır ve cevabı DOM'da bulduklarıyla birleştirir. Kutuları sayfa pikseliyle döndürür:
+
+```js
+window.kurguElements = (i) => [
+  { id: "title", label: "Fena değil", kind: "text", l: 116, t: 160, r: 640, b: 250,
+    file: "engine/scene-s03.js", line: 41 },        // file ve line isteğe bağlı
+];
+```
+
+**Geri kalan her şey.** Bir mp4 üret, yanına `scenes.json` yaz: `{"fps": 30, "video": "out/film.mp4", "scenes": [{"id": "intro", "start_frame": 0, "end_frame": 90, "file": "scenes/intro.html"}]}`, sonra `kurgu import <klasör>`. Remotion projesi tanınır ama henüz içe alınmaz; komut neyi yazman gerektiğini söyler. Var olan bir `project.json` `--force` olmadan asla ezilmez.
+
+### Sıfırdan mini sahne
+
+Boş bir klasörde üç dosya bütün döngüyü gösterir. `scenes/hello.html`, `i`. kareyi yalnızca `i`'ye bağlı olarak çizer:
+
+```html
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const g = document.getElementById("c").getContext("2d");
+window.renderFrame = (i) => {                      // ekrandaki her şey yalnızca kare numarasına bağlı
+  g.fillStyle = `hsl(${i * 3}, 70%, 45%)`;
+  g.fillRect(0, 0, 1280, 720);
+  g.fillStyle = "#fff";
+  g.font = "bold 96px sans-serif";
+  g.fillText("Hello Kurgu", 100 + i * 4, 380);
+};
+</script>
+```
+
+`scenes.json` sahneyi (30 fps'de 0 ile 60. kare) ve ait olduğu filmi söyler:
+
+```json
+{"fps": 30, "video": "out/film.mp4",
+ "scenes": [{"id": "hello", "start_frame": 0, "end_frame": 60, "file": "scenes/hello.html"}]}
+```
+
+İlk `out/film.mp4` olarak 2 sn'lik herhangi bir mp4 olur, örneğin `mkdir out && ffmpeg -f lavfi -i color=black:s=1280x720:d=2:r=30 -pix_fmt yuv420p out/film.mp4`. Sonra:
+
+```bash
+kurgu import .                       # 1. scenes.json -> ./kurgu/project.json (her sahne, kendi sayfasını hatırlayan bir klip)
+kurgu kurgu                          # 2. aç; not yaz ("yazı büyük olsun, renk yavaş değişsin"), Gönder'e bas; ajan scenes/hello.html'i düzeltir
+kurgu rerender kurgu hello           # 3. yalnız o sahneyi headless Chrome ile yeniden üretip yerine koyar; editör hemen yeni halini gösterir
+```
+
+Sonuca tarayıcısız bakmak için `kurgu frame kurgu 1.0`. 3. adım için Chrome kurulu olmalı.
 
 ## Editör turu
 
@@ -201,6 +279,8 @@ macOS'ta **Cmd**, Windows ve Linux'ta **Ctrl**.
 | Cmd/Ctrl + E | Dışa aktarma penceresini aç / kapat |
 | S | Mıknatısı aç / kapat |
 | N | Oynatma başlığına not ekle |
+| W / F | İzle + not, tam ekran (hemen yazmaya başlayabilirsin) |
+| B | Yeniden üretilen klibin önce / sonra görüntüsü arasında geçiş |
 | Shift + N | Not panelini göster / gizle |
 | Alt + Sol / Sağ | Önceki / sonraki not |
 | `\` | Medya panelini göster / gizle |

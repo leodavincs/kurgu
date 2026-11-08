@@ -4,7 +4,7 @@ import { S, aspectLabel, onChange, emit, change, select, setTime, layer, selecte
 import * as API from './api.js';
 import { initI18n, t, fmt, getLang, setLang, onLang, applyStatic } from './i18n.js';
 import { refreshFonts } from './fonts.js';
-import { viewGeom, startPreview, togglePlay, play, pause, startAudio, setRealFrame, debugInfo, setZoom, zoomStep, viewAnchor, viewInfo, setGuides, handKey, shuttle, ZOOMS, layerBox } from './preview.js';
+import { viewGeom, startPreview, togglePlay, play, pause, startAudio, setRealFrame, debugInfo, setZoom, zoomStep, viewAnchor, viewInfo, setGuides, handKey, shuttle, ZOOMS, layerBox, layerBounds, toggleAB, abState } from './preview.js';
 import { openSequence, sequenceOpen } from './sequence.js';
 import { startLayerPanel } from './layers.js';
 import { startInspector } from './inspector.js';
@@ -19,7 +19,7 @@ import { initMode, getMode, setMode, isReview, toggleMode } from './mode.js';
 import { initMenu, menuOpen, closeMenu } from './menu.js';
 import { $, el, icon, setIcon, copyText } from './dom.js';
 import { isMod, IS_MAC } from './platform.js';
-import { openFilePicker } from './import.js';
+import { openFilePicker, addMedia } from './import.js';
 import { initTheme, toggleTheme } from './theme.js';
 import { openReport } from './report.js';
 
@@ -74,7 +74,7 @@ async function boot() {
   window.addEventListener('beforeunload', e => { if (API.savePending()) { API.save(); e.preventDefault(); e.returnValue = ''; } });
   window.addEventListener('pointerdown', startAudio, { once: true });
   window.addEventListener('keydown', startAudio, { once: true });
-  window.__kurgu = { S, change, debugInfo, viewGeom, setLang, emit, viewInfo, setZoom, zoomStep, layerBox, LK, select, splitLayers, removeLayers, duplicateLayers, rippleDelete };  // debugging / tests
+  window.__kurgu = { S, change, debugInfo, viewGeom, setLang, emit, viewInfo, setZoom, zoomStep, layerBox, layerBounds, LK, select, splitLayers, removeLayers, duplicateLayers, rippleDelete, abState, toggleAB };  // debugging / tests
   const q = new URLSearchParams(location.search); // tests only: ?t=5&sel=l_1
   if (q.has('t')) setTime(parseFloat(q.get('t')));
   if (q.has('sel')) select(q.get('sel').split(','));
@@ -130,6 +130,7 @@ function bindTransport() {
   $('b-play').addEventListener('click', togglePlay);
   $('b-start').addEventListener('click', () => setTime(0));
   $('b-end').addEventListener('click', () => setTime(S.project.duration));
+  $('b-ab').addEventListener('click', () => toggleAB());
   const scrub = $('scrub');
   scrub.addEventListener('pointerdown', e => {
     if (e.target.closest('.scrub-note')) return;
@@ -172,7 +173,7 @@ function bindHamburger() {
 function updateSequenceUi() {
   const P = S.project; $('seq-label').textContent = `${P.width}×${P.height}`;
   const es = $('empty-state'), empty = P.layers.length === 0;
-  if (es.hidden === empty) es.hidden = !empty;
+  if (es.hidden === empty) { es.hidden = !empty; if (empty) fillFound(); }
   const size = $('es-size'); if (size) size.textContent = t('seq.hint', { size: `${P.width}×${P.height}`, ratio: aspectLabel(P.width, P.height) });
 }
 /** Empty project: a calm panel over the viewer — drop zone, Import, and example prompts for the coding agent (copyable). */
@@ -195,7 +196,33 @@ function buildEmpty() {
   }
   const foot = el('div', 'es-foot'); const size = el('span'); size.id = 'es-size'; const change = el('button', 'link', t('seq.hintChange')); change.addEventListener('click', openSequence);
   foot.append(size, change);
-  card.append(drop, ask, foot); host.append(card);
+  const found = el('div', 'es-found'); found.hidden = true;
+  card.append(found, drop, ask, foot); host.append(card);
+  fillFound();
+}
+/** Clips already lying in media/ while the timeline is empty: offer them, one click puts them on the timeline. */
+async function fillFound() {
+  const box = document.querySelector('#empty-state .es-found'); if (!box) return;
+  const files = (await API.listFiles()).filter(f => ['video', 'image', 'audio'].includes(f.kind) && /^media\//.test(f.path));
+  const used = new Set(S.project.layers.map(l => l.src));
+  const list = files.filter(f => !used.has(f.path)).sort((a, b) => a.path.localeCompare(b.path, getLang(), { numeric: true }));
+  box.hidden = !list.length; if (!list.length) { box.replaceChildren(); return; }
+  const addAll = async () => {
+    let at = 0;
+    for (const f of list) { const l = await addMedia(f.kind, f.path, { time: at, quiet: true }); if (l && f.kind !== 'audio') at = l.end; }
+    toast(t('empty.added', { n: list.length }), 'ok', 3000);
+  };
+  const head = el('div', 'es-found-head'); head.append(el('span', '', t(list.length === 1 ? 'empty.found1' : 'empty.foundN', { n: list.length })));
+  const all = el('button', 'btn primary es-found-all'); all.type = 'button'; all.append(icon('plus'), el('span', '', t('empty.addToTimeline'))); all.addEventListener('click', e => { e.stopPropagation(); all.disabled = true; addAll(); });
+  head.append(all);
+  const rows = el('div', 'es-found-list');
+  for (const f of list.slice(0, 12)) {
+    const b = el('button', 'es-clip'); b.type = 'button'; b.title = t('empty.addToTimeline'); b.append(icon(f.kind === 'video' ? 'film' : f.kind === 'image' ? 'image' : 'music'), el('span', 'es-clip-name', f.path.replace(/^media\//, '')));
+    b.addEventListener('click', e => { e.stopPropagation(); b.disabled = true; addMedia(f.kind, f.path, { time: 0 }); });
+    rows.append(b);
+  }
+  if (list.length > 12) rows.append(el('span', 'es-more', '+' + (list.length - 12)));
+  box.replaceChildren(head, rows);
 }
 function updateZoomUi() {
   const sel = $('zoom-select'), v = viewInfo();
@@ -333,8 +360,9 @@ function bindKeys() {
       case '\\': e.preventDefault(); togglePanel(); break;
       case 'n': case 'N': e.preventDefault(); if (e.shiftKey) toggleNotes(); else focusNote(); break;
       case 's': case 'S': e.preventDefault(); toggleSnap(); break;
-      case 'w': case 'W': e.preventDefault(); openWatch(); break;
+      case 'w': case 'W': case 'f': case 'F': e.preventDefault(); openWatch(); break;     // W / F: watch + note, full screen
       case 'r': case 'R': e.preventDefault(); setRealFrame(!S.realFrame); break;
+      case 'b': case 'B': e.preventDefault(); if (abState().available) toggleAB(); else toast(t('ab.none'), 'info', 2600); break;   // before / after of a re-rendered clip
       case 'Delete': case 'Backspace': if (S.selection.length) { e.preventDefault(); if (e.shiftKey) doRipple(); else removeLayers(S.selection); } break;
       case 'Escape': if (!$('modal').hidden) $('modal').hidden = true; else if (!$('menu').hidden) $('menu').hidden = true; else select([]); break;
       case '[': setTime(S.t - 1 / fps); break;

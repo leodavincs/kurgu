@@ -10,24 +10,12 @@ import subprocess
 import sys
 import time
 
-# ----------------------------------------------------------------------------- agent instructions (one text, three homes)
+# ----------------------------------------------------------------------------- agent instructions (generated, see guidance/)
 BEGIN = "<!-- kurgu:begin (managed by `kurgu setup-agent`; edit outside this block) -->"
 END = "<!-- kurgu:end -->"
 
-AGENT_BLOCK = """\
-## Kurgu (video as code)
-
-Kurgu is a local video editor. You write `<dir>/project.json`; the human fine-tunes it in a browser and watches it. Use the `kurgu` MCP tools when you have them (`get_state`, `get_changes`, `edit_project`, `render_frame`, `notes_wait`, `notes_done`, ...); otherwise edit the JSON and run `kurgu-render`. Field reference: the Kurgu repo's `skills/kurgu/reference.md`.
-
-**Before every edit:** `get_state` + `get_changes` (or re-read `project.json`, the tail of `changes.md`, `.kurgu/state.json`). Keep layer ids stable; keep what the human changed by hand.
-
-**Watch + note loop** (the human drops timestamped notes, maybe with drawn marks, and clicks Send):
-1. At the START of every turn, look once: MCP `notes_wait` with `timeout: 0`, or `kurgu notes wait <dir> --timeout 0` (exit 3 = nothing new).
-2. Fix each note (`edit_project`, then `render_frame` to check), then `notes_done` / `kurgu notes done <dir> <id...> --reply "what you changed"`.
-3. To keep waiting: MCP `notes_wait` with `timeout: 120` (3000 when the user says they are watching live), call it again whenever it times out. No MCP: `kurgu notes wait <dir> --timeout 20`, repeat on exit 3. The human sees the note picture in `NOTLAR.md`.
-- Claude Code only: run `kurgu notes wait <dir>` (no timeout) as a BACKGROUND command; you are re-invoked when it exits.
-- Codex / other agents: a background process cannot wake you, and shell calls may be cut or yielded after ~30 s. Do not rely on one. Use the repeated short waits above, or tell the human "send, then say 'check notes'".
-"""
+# AGENT_BLOCK, WAKE_PROMPT and the `kurgu --help` table are generated from guidance/ (python scripts/gen_guidance.py); do not edit them here.
+from guidance_gen import AGENT_BLOCK, COMMAND_HELP, HELP_TOPICS, WAKE_PROMPT   # noqa: E402
 
 SKILL_CODEX = """\
 ---
@@ -222,11 +210,10 @@ def setup_claude(dry, command, args, runner=subprocess.run):
     return r.returncode
 
 
-WAKE_PROMPT = ("Kurgu'dan yeni notlar geldi. `kurgu notes wait {dir} --timeout 0` ile oku, her notu düzelt, "
-               "`kurgu notes done {dir} <id> --reply ...` ile kapat.")
-
-
-CLAUDE_TOOLS = "Bash(kurgu notes:*),mcp__kurgu"     # no ffprobe (it can fetch URLs: `ffprobe https://x/?<data>` would leak), no general Bash, no ffmpeg
+# tools the wake run needs (notes incl. ask, stills, strips, `kurgu detect` (OCR + shapes of a frame), `kurgu rerender` = it only runs the adaptor the USER's config / Kurgu itself defines, never a project-supplied command, ffprobe). No general Bash, python, ffmpeg or render.py (they can write files); guidance says one command per call.
+# The Codex run has no allowlist: it is limited by sandbox_mode=workspace-write + approval_policy=never (see wake_attempts), so the same read-only commands work there.
+CLAUDE_TOOLS = ("Bash(kurgu notes:*),Bash(kurgu frame:*),Bash(kurgu strip:*),Bash(kurgu rerender:*),Bash(kurgu detect:*),Bash(kurgu probe:*),"
+                "Bash(kurgu --help),Bash(kurgu help:*),Bash(kurgu * --help),mcp__kurgu")        # --help only: read-only discovery; ffprobe stays out (it reads URLs)
 
 
 def kurgu_launcher():
@@ -253,22 +240,74 @@ def wake_command(agent):
     return kurgu_launcher() + ["wake", agent, "{dir}", "{seq}"]
 
 
-def wake_attempts(agent, d):
+ACTIVE_SESSION_SECS = 120      # a session file written this recently is probably open in the app / a terminal: never resume it in the foreground
+
+
+def _recent(path, now=None):
+    try:
+        return (time.time() if now is None else now) - os.path.getmtime(path) < ACTIVE_SESSION_SECS
+    except OSError:
+        return False
+
+
+def claude_session_active(d, now=None):
+    """True when the newest Claude Code session file of folder `d` was modified in the last ACTIVE_SESSION_SECS (two processes must not write one session)."""
+    root = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(d)))
+    try:
+        files = [os.path.join(root, f) for f in os.listdir(root) if f.endswith(".jsonl")]
+    except OSError:
+        return False
+    return any(_recent(f, now) for f in files)
+
+
+def codex_rollout_active(sid, now=None):
+    """True when the Codex rollout file of session `sid` was modified in the last ACTIVE_SESSION_SECS."""
+    import glob
+    home = os.environ.get("CODEX_HOME") or os.path.expanduser("~/.codex")
+    return any(_recent(f, now) for f in glob.glob(os.path.join(home, "sessions", "*", "*", "*", f"rollout-*{sid}.jsonl")))
+
+
+def wake_attempts(agent, d, session=None):
     """[(label, argv)] in the order `kurgu wake` tries them. Both run non-interactively in the project folder, never stop for a question, and print JSON so
-    hook.log records token usage / cost. The first continues the folder's most recent session; the second starts a fresh one (nothing to resume yet)."""
+    hook.log records token usage / cost. `session` = the recorded session of the agent working on this project (agent_notes.latest_session) or None.
+    With a session: Claude gets `--bg --resume <id>` (continues it in the background; Claude starts a copy itself when it is running), Codex gets
+    `exec resume <id>` unless its rollout is active right now (then a new exec). Without one: the folder's last session, then a new one.
+    Source folders outside the project that the USER trusts (render_adaptors.agent_roots) are made writable: `--add-dir` for Claude,
+    `sandbox_workspace_write.writable_roots` for Codex (`exec resume` has no --add-dir; the config key works for both forms)."""
     prompt = WAKE_PROMPT.replace("{dir}", d)
+    sid = session["session_id"] if session else None
+    try:
+        import render_adaptors
+        roots = render_adaptors.agent_roots(d)
+    except Exception:
+        roots = []
     if agent == "codex":
         cfg = ["-c", 'approval_policy="never"']
-        return [("continue the last session", ["codex", "exec", "resume", "--last", "--json", "-c", 'sandbox_mode="workspace-write"', *cfg, prompt]),
-                ("new session", ["codex", "exec", "-s", "workspace-write", *cfg, "--skip-git-repo-check", "-C", d, "--json", prompt])]
-    # --setting-sources user: a downloaded project folder is untrusted; its .claude/settings*.json (hooks, permissions) and .mcp.json
-    # servers must not load in a non-interactive run (claude -p skips the workspace trust prompt). The user's own settings still apply.
+        if roots:
+            cfg += ["-c", "sandbox_workspace_write.writable_roots=" + json.dumps(roots, ensure_ascii=False)]
+        new = ("new session", ["codex", "exec", "-s", "workspace-write", *cfg, "--skip-git-repo-check", "-C", d, "--json", prompt])
+        if sid and codex_rollout_active(sid):
+            return [(f"new session (Codex session {sid} was active in the last {ACTIVE_SESSION_SECS} s, not resuming it)", new[1])]
+        which = ["resume", sid] if sid else ["resume", "--last"]
+        return [(f"resume Codex session {sid}" if sid else "continue the last session", ["codex", "exec", *which, "--skip-git-repo-check", "--json", "-c", 'sandbox_mode="workspace-write"', *cfg, prompt]), new]
+    # --setting-sources user: a downloaded project folder is untrusted; its .claude/settings*.json (hooks, permissions) and .mcp.json servers must not load in a
+    # non-interactive run (claude -p skips the workspace trust prompt). The user's own settings still apply.
     common = ["--setting-sources", "user", "--output-format", "json", "--permission-mode", "acceptEdits", "--allowedTools", CLAUDE_TOOLS]
-    return [("continue the last session", ["claude", "-p", prompt, "--continue", *common]), ("new session", ["claude", "-p", prompt, *common])]
+    extra = [x for r in roots for x in ("--add-dir", r)]            # last on the line: --add-dir is variadic
+    fresh = ["claude", "-p", prompt, *common, *extra]
+    out = []
+    if sid:
+        out.append((f"background: claude --bg --resume {sid}", ["claude", "--bg", "--resume", sid, prompt, "--setting-sources", "user", "--permission-mode", "acceptEdits", "--allowedTools", CLAUDE_TOOLS, *extra]))   # the prompt goes BEFORE the variadic --allowedTools, which would swallow it
+    if claude_session_active(d):                    # the app / a terminal is using the folder's last session right now: start a separate one
+        return out + [(f"new session (the last session was active in the last {ACTIVE_SESSION_SECS} s, not continuing it)", fresh)]
+    return out + [("continue the last session", ["claude", "-p", prompt, "--continue", *common, *extra]), ("new session", fresh)]
 
 
 def wake_main(argv):
     """kurgu wake <codex|claude> <project_dir> [seq]: start the agent for the notes that were just sent (called by the on_send hook)."""
+    if any(a in ("-h", "--help") for a in argv):             # `kurgu * --help` is allowed to a woken agent: help must never start an agent
+        print("usage: kurgu wake <codex|claude> <project_dir> [seq]   (what the on_send hook runs: starts the agent for the notes just sent)")
+        return 0
     if len(argv) < 2 or argv[0] not in ("codex", "claude"):
         print("usage: kurgu wake <codex|claude> <project_dir> [seq]", file=sys.stderr)
         return 2
@@ -278,26 +317,60 @@ def wake_main(argv):
         print(f"kurgu wake: `{agent}` was not found on PATH", file=sys.stderr)
         return 127
     import agent_notes
+    import kurgu_paths
     why = agent_notes.shim_refusal(exe, d)
     if why:
         print(f"kurgu wake: {why}", file=sys.stderr)
         import diag
         diag.refusal(d, why)
         return 1
+    env = None
+    if agent == "codex":                                       # command rules in a dedicated CODEX_HOME (codex_policy.py); never run without them unless the USER config says "off"
+        import codex_policy
+        try:
+            env, msg = codex_policy.wake_env()
+        except RuntimeError as e:
+            code = getattr(e, "code", "policy")
+            print(f"kurgu wake: codex not started ({code}): command rules could not be applied: {e}", file=sys.stderr)
+            try:
+                import diag
+                diag.event(d, "wake", f"codex not started ({code})", "warn", ctx={"code": code})
+            except Exception:
+                pass
+            return 78                                          # EX_CONFIG: the editor's wake status shows this reason, not just "exit 1"
+        print(f"kurgu wake: {msg}", flush=True)
     rc = 1
-    for n, (label, cmd) in enumerate(wake_attempts(agent, d)):
+    env = dict(os.environ if env is None else env, KURGU_WAKE="1")      # the woken run must not be recorded as the user's session
+    prompt = WAKE_PROMPT.replace("{dir}", d)
+    attempts = wake_attempts(agent, d, agent_notes.latest_session(d, agent))
+    for n, (label, cmd) in enumerate(attempts):
         print(f"kurgu wake: {agent}, {label}" + (f" (send #{argv[2]})" if len(argv) > 2 else ""), flush=True)
-        rc = subprocess.run([exe] + cmd[1:], cwd=d, stdin=subprocess.DEVNULL).returncode
+        run, stdin_text = [exe] + cmd[1:], None
+        if kurgu_paths.is_shim(exe) and prompt in run:        # a .cmd shim goes through cmd.exe: the prompt (quotes, <>, &) travels on stdin, never on the command line
+            run.remove(prompt)
+            stdin_text = prompt
+        bad = kurgu_paths.shim_unsafe(exe, run)
+        if bad:
+            print(f"kurgu wake: not starting {os.path.basename(exe)}: an argument has characters cmd.exe would interpret ({kurgu_paths.SHELL_META}): {bad[0][:60]!r}. "
+                  "Use a project path without them.", file=sys.stderr)
+            return 126
+        if "--bg" in cmd:                                      # prints the background id (`claude attach <id>`); returns at once
+            r = subprocess.run(run, cwd=d, stdin=subprocess.DEVNULL, env=env, capture_output=True, text=True, encoding="utf-8", errors="replace")
+            print((r.stdout or "").strip() + (("\n" + r.stderr.strip()) if r.returncode and r.stderr else ""), flush=True)
+            rc = r.returncode
+        else:
+            rc = subprocess.run(run, cwd=d, env=env, input=stdin_text, stdin=None if stdin_text is not None else subprocess.DEVNULL, text=stdin_text is not None,
+                                encoding="utf-8" if stdin_text is not None else None).returncode
         if rc == 0:
             return 0
-        print(f"kurgu wake: {agent} ({label}) exited {rc}" + ("; trying a new session" if n == 0 else ""), flush=True)
+        print(f"kurgu wake: {agent} ({label}) exited {rc}" + ("; trying the next way" if n < len(attempts) - 1 else ""), flush=True)
     return rc
 
 
 def setup_wake(agent, dry, remove=False):
     """Write (or remove) `on_send` in the USER config file. Never in a project folder: a project must not be able to run commands."""
     import kurgu_paths
-    path = os.path.join(kurgu_paths.config_dir(), "config.json")
+    path = kurgu_paths.config_file()
     try:
         with open(path, encoding="utf-8") as f:
             cfg = json.load(f)
@@ -317,6 +390,13 @@ def setup_wake(agent, dry, remove=False):
     if not remove:
         print("    command: " + " ".join(_q(c) if (" " in c or not c) else c for c in cfg["on_send"]))
         print("    (`kurgu wake` continues the folder's last " + agent + " session, or starts a new one when there is none yet; try it by hand: `kurgu wake " + agent + " <project>`)")
+        if agent == "codex":
+            import codex_policy
+            for line in codex_policy.describe():
+                print(line)
+            problem = None if codex_policy.policy_off() else codex_policy.auth_problem()
+            if problem:
+                print(f"  ! this wake will NOT start Codex yet ({problem.code}): {problem}", file=sys.stderr)
         print("    It runs, detached, in the project folder each time you press Send; output goes to <project>/.kurgu/hook.log. It continues the agent's most recent")
         print("    session there (headless): you see the result in Kurgu as \"düzeltildi\" + the agent's reply. Remove it with: kurgu setup-agent --no-wake")
     if old is not None and not remove:
@@ -366,8 +446,240 @@ def setup_agent_main(argv):
     return 1 if rc else 0
 
 
+def _duration(d):
+    import json
+    import schema
+    try:
+        with open(schema.project_path(d), encoding="utf-8") as f:
+            v = json.load(f).get("duration")
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
+def frame_parser():
+    ap = argparse.ArgumentParser(prog="kurgu frame", description="Render one frame of the project (as it is on disk now) to a JPEG and print its path. "
+                                 "Works with or without the editor running; no browser needed.")
+    ap.add_argument("project_dir", help="project folder")
+    ap.add_argument("seconds", type=float, help="timeline time in seconds")
+    ap.add_argument("-o", "--output", default=None, help="JPEG path (default: <project_dir>/.kurgu/look/frame-<seconds>.jpg)")
+    ap.add_argument("--full", action="store_true", help="full project resolution (slower); default is the half-size draft")
+    return ap
+
+
+def frame_main(argv):
+    """kurgu frame <project_dir> <seconds> [-o out.jpg] [--full]: render the project as it is on disk now at that time to a JPEG, print the path."""
+    a = frame_parser().parse_args(argv)
+    import kurgu_paths
+    import schema
+    try:
+        d = kurgu_paths.require_project(a.project_dir)
+        out = kurgu_paths.look_output(d, a.output, f"frame-{a.seconds:g}.jpg")
+    except kurgu_paths.ProjectError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    if a.seconds < 0:
+        print("error: seconds must be >= 0", file=sys.stderr)
+        return 1
+    dur = _duration(d)
+    a.seconds, warn = kurgu_paths.clamp_time(a.seconds, dur)
+    if warn:
+        print("warning: " + warn, file=sys.stderr)
+    import io
+    import json
+    import mcp_server
+    from PIL import Image
+    try:
+        png = mcp_server.render_still(d, a.seconds, draft=not a.full)
+    except mcp_server.ToolError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    with Image.open(io.BytesIO(png)) as im:
+        im = im.convert("RGB")
+        im.save(out, format="JPEG", quality=88)
+        w, h = im.size
+    try:
+        with open(schema.project_path(d), encoding="utf-8") as f:
+            pw = int(json.load(f).get("width") or w)
+    except (OSError, ValueError, TypeError):
+        pw = w
+    k = pw / w if w else 1
+    print(out)
+    print(f"{w}x{h} px" + (f" (project is {pw} wide: multiply image px by {k:g} to get project px)" if abs(k - 1) > 0.01 else " (= project px)"), file=sys.stderr)
+    return 0
+
+
+def strip_parser():
+    ap = argparse.ArgumentParser(prog="kurgu strip", description="Render n evenly spaced frames from t0 to t1 (inclusive) of the project as it is on disk now "
+                                 "into ONE labelled contact-sheet JPEG and print its path. Works with or without the editor running; no browser needed.")
+    ap.add_argument("project_dir", help="project folder")
+    ap.add_argument("t0", type=float, help="start time in seconds")
+    ap.add_argument("t1", type=float, help="end time in seconds (> t0)")
+    ap.add_argument("--n", type=int, default=6, help="number of frames, 2-12 (default 6)")
+    ap.add_argument("-o", "--output", default=None, help="JPEG path (default: <project_dir>/.kurgu/look/strip-<t0>-<t1>.jpg)")
+    ap.add_argument("--full", action="store_true", help="full project resolution (slower); default is the half-size draft")
+    return ap
+
+
+def strip_main(argv):
+    """kurgu strip <project_dir> <t0> <t1> [--n 6] [-o out.jpg] [--full]: n frames from t0 to t1 as ONE labelled contact-sheet JPEG, print the path."""
+    a = strip_parser().parse_args(argv)
+    import kurgu_paths
+    try:
+        d = kurgu_paths.require_project(a.project_dir)
+        out = kurgu_paths.look_output(d, a.output, f"strip-{a.t0:g}-{a.t1:g}.jpg")
+    except kurgu_paths.ProjectError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    dur = _duration(d)
+    a.t0, w0 = kurgu_paths.clamp_time(a.t0, dur)
+    a.t1, w1 = kurgu_paths.clamp_time(a.t1, dur)
+    for w in (w0, w1):
+        if w:
+            print("warning: " + w, file=sys.stderr)
+    import mcp_server
+    try:
+        jpg, info = mcp_server.render_strip(d, a.t0, a.t1, a.n, draft=not a.full)
+    except mcp_server.ToolError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    with open(out, "wb") as f:
+        f.write(jpg)
+    k = info["scale"]
+    print(out)
+    print(f"{info['cols']}x{info['rows']} tiles of {info['tile_w']}x{info['tile_h']} px at " + ", ".join(f"{t:.2f}" for t in info["times"]) + " s"
+          + (f" (multiply tile px by {k:g} to get project px)" if abs(k - 1) > 0.01 else " (= project px)"), file=sys.stderr)
+    return 0
+
+
+# Every subcommand, in the order `kurgu --help` shows them (tests/test_cli_help.py keeps this in step with main() and the launchers).
+COMMANDS = dict(COMMAND_HELP)
+
+
+def help_topic_text(topic=None):
+    """`kurgu help [topic]`: the topic list, or one topic's text (guidance/topics/*.md, compiled into guidance_gen.HELP_TOPICS)."""
+    topics = HELP_TOPICS
+    if not topic:
+        return "help topics: " + ", ".join(sorted(topics)) + "\nkurgu help <topic>   prints one. `kurgu --help` lists the commands.\n"
+    if topic not in topics:
+        return f"unknown help topic {topic!r}. Topics: {', '.join(sorted(topics))}\n"
+    return topics[topic]
+
+
+def help_text():
+    w = max(len(k) for k in COMMANDS)
+    return ("usage: kurgu [project_dir] [--port N] [--no-open]\n"
+            "       kurgu <command> [args]\n\n"
+            "With a project folder (default: the current one) Kurgu opens the editor in your browser.\n"
+            "--port N      port to use (default 8765, the next free one when it is taken)\n"
+            "--no-open     do not open the browser\n\n"
+            "commands:\n" + "\n".join(f"  {k.ljust(w)}  {v}" for k, v in COMMANDS.items()) + "\n\n"
+            "Details: README.md, or `kurgu <command> --help` where the command has options.\n"
+            "Topics: `kurgu help audio` (volume, envelope for ducking, cinecode mix.json).\n")
+
+
+def probe_main(argv):
+    """kurgu probe <project> [layer-id | file inside the project]: duration, size, fps, streams of a media file the project uses, as JSON. Read-only; no URLs,
+    nothing outside the project's own media: the safe replacement for letting a woken agent run ffprobe."""
+    import argparse
+    ap = argparse.ArgumentParser(prog="kurgu probe", description="Facts about a media file of the project (ffprobe): duration, size, frame rate, streams. "
+                                 "Give a layer id, or a file inside the project folder. Without a target: every layer's media.")
+    ap.add_argument("project_dir")
+    ap.add_argument("target", nargs="?", default=None, help="layer id, or a path inside the project folder")
+    a = ap.parse_args(argv)
+    import json
+    import kurgu_paths
+    import media_tools
+    try:
+        d = kurgu_paths.require_project(a.project_dir)
+    except kurgu_paths.ProjectError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    with open(os.path.join(d, "project.json"), encoding="utf-8") as f:
+        layers = [l for l in (json.load(f).get("layers") or []) if isinstance(l, dict)]
+    files = {}
+    for l in layers:
+        if isinstance(l.get("src"), str) and l["src"] and "://" not in l["src"]:
+            p = os.path.realpath(l["src"] if os.path.isabs(l["src"]) else os.path.join(d, l["src"]))
+            files.setdefault(p, []).append(l.get("id"))
+    if a.target is None:
+        pick = list(files)
+    else:
+        by_id = [p for p, ids in files.items() if a.target in ids]
+        if by_id:
+            pick = by_id
+        else:
+            p = os.path.realpath(os.path.join(d, a.target))
+            if not (p == d or p.startswith(d + os.sep)) or "://" in a.target or not os.path.isfile(p):
+                print("error: give a layer id or a file inside the project folder (no URLs, nothing outside the project)", file=sys.stderr)
+                return 1
+            pick = [p]
+    out = []
+    import render_adaptors
+    allowed = [d] + render_adaptors.trusted_roots(d)                   # the project, and folders the USER trusted for it (`kurgu import` records the film folder)
+    for p in pick:
+        name = os.path.relpath(p, d) if p.startswith(d + os.sep) else os.path.basename(p)
+        if not any(kurgu_paths.inside(a, p) for a in allowed):          # a layer src is project-side text: its metadata is not ours to hand out
+            out.append({"file": name, "layers": files.get(p, []), "skipped": "outside the project folder and the folders you trust for it"})
+            continue
+        try:
+            j = media_tools.probe_json(p, "-show_streams")
+        except Exception as e:
+            out.append({"file": name, "error": type(e).__name__})
+            continue
+        fmt = j.get("format") or {}
+        out.append({"file": name, "layers": files.get(p, []), "duration": round(float(fmt.get("duration") or 0), 3), "format": fmt.get("format_name"),
+                    "size_bytes": int(fmt.get("size") or 0),
+                    "streams": [{k: s.get(k) for k in ("codec_type", "codec_name", "width", "height", "r_frame_rate", "sample_rate", "channels", "duration") if s.get(k) is not None}
+                                for s in j.get("streams") or []]})
+    print(json.dumps(out, indent=2))
+    return 0
+
+
+def _help_only(args):
+    """`--help` / `-h` anywhere on the line (also after `--`) means "print help for this command and do nothing else": a woken agent is allowed
+    `kurgu * --help`, so `kurgu doctor --fix -- --help` must not run `doctor --fix`."""
+    if not args or args[0] in ("--help", "-h", "help") or not any(a in ("--help", "-h") for a in args):
+        return args
+    first = args[0]
+    if first == "notes" and len(args) > 2 and args[1] in ("list", "wait", "done", "ask", "add"):
+        return ["notes", args[1], "--help"]
+    return [first if first in COMMANDS or first == "ocr" else "--help", "--help"] if first in COMMANDS or first == "ocr" else ["--help"]
+
+
 def main(argv=None):
-    args = sys.argv[1:] if argv is None else list(argv)
+    args = _help_only(sys.argv[1:] if argv is None else list(argv))
+    if args and args[0] == "help" and len(args) >= 2 and args[1] not in ("--help", "-h"):
+        print(help_topic_text(args[1]), end="")
+        sys.exit(0)
+    if args and args[0] in ("--help", "-h", "help"):
+        print(help_text() + ("\n" + help_topic_text() if args[0] == "help" else ""), end="")
+        sys.exit(0)
+    if args and args[0] in ("frame", "strip"):
+        for _s in (sys.stdout, sys.stderr):
+            if hasattr(_s, "reconfigure"):
+                _s.reconfigure(encoding="utf-8", errors="replace")
+        sys.exit((frame_main if args[0] == "frame" else strip_main)(args[1:]))
+    if args and args[0] in ("elements", "import"):
+        for _s in (sys.stdout, sys.stderr):
+            if hasattr(_s, "reconfigure"):
+                _s.reconfigure(encoding="utf-8", errors="replace")
+        if args[0] == "elements":
+            import elements
+            sys.exit(elements.main(args[1:]))
+        import scene_import
+        sys.exit(scene_import.main(args[1:]))
+    if args and args[0] == "rerender":
+        import render_adaptors
+        sys.exit(render_adaptors.main(args[1:]))
+    if args and args[0] == "probe":
+        sys.exit(probe_main(args[1:]))
+    if args and args[0] in ("detect", "ocr"):
+        for _s in (sys.stdout, sys.stderr):
+            if hasattr(_s, "reconfigure"):
+                _s.reconfigure(encoding="utf-8", errors="replace")
+        import ocr_boxes
+        sys.exit(ocr_boxes.detect_main(args[1:]))
     if args and args[0] == "report":
         import diag
         sys.exit(diag.main(args[1:]))

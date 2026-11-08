@@ -16,6 +16,7 @@ key = path + mtime + size + model + language + range.
 import hashlib
 import json
 import os
+import kurgu_paths
 import platform
 import shutil
 import subprocess
@@ -334,8 +335,8 @@ def transcribe_file(project_dir, path, model=None, language=None, start=0.0, dur
     tr = {"language": lang, "duration": round(total_s, 3), "model": model, "backend": backend, "source_start": start,
           "elapsed": round(time.time() - t0, 2), "segments": segs}
     os.makedirs(os.path.dirname(cf), exist_ok=True)
-    part = cf + f".{os.getpid()}.part"
-    with open(part, "w", encoding="utf-8") as f:
+    part = kurgu_paths.tmp_path(cf, ".part")
+    with kurgu_paths.excl_open(part) as f:
         json.dump(tr, f, ensure_ascii=False)
     os.replace(part, cf)
     progress("done", 1.0, "Done")

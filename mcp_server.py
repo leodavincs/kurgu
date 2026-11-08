@@ -47,6 +47,10 @@ from urllib.error import HTTPError
 
 import agent_notes
 import fonts
+import guidance_gen
+import kurgu_cli
+import ocr_boxes
+import render_adaptors
 import media_tools
 import captions
 import presets
@@ -206,10 +210,19 @@ def editor_port(d):
     if not pid_alive(pid):
         return None
     try:
-        code, _ = http(port, "GET", "/api/version", timeout=2)
+        code, body = http(port, "GET", "/api/version", timeout=2)
+        v = json.loads(body) if isinstance(body, (bytes, str)) else body
     except Exception:
         return None
-    return port if code == 200 else None
+    # server.json comes with the project folder and can name ANY port: only an editor that says it serves THIS folder, and is the process the file names, counts
+    if code != 200 or not isinstance(v, dict) or v.get("app") != "kurgu" or v.get("pid") != pid:
+        return None
+    try:
+        if os.path.realpath(str(v.get("dir"))) != os.path.realpath(d):
+            return None
+    except (OSError, ValueError):
+        return None
+    return port
 
 
 def editor_url(port):
@@ -223,7 +236,7 @@ def tool_open_editor(a, ctx):
     started = False
     if port is None:
         os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
-        logf = open(os.path.join(d, ".kurgu", "server.log"), "ab")
+        logf = os.fdopen(kurgu_paths.open_append_fd(os.path.join(d, ".kurgu", "server.log")), "ab")      # never through a shipped symlink
         kw = {"start_new_session": True} if os.name != "nt" else {"creationflags": 0x00000008 | 0x00000200}
         proc = subprocess.Popen([sys.executable, os.path.join(HERE, "server.py"), d, "--no-open"],
                                 stdin=subprocess.DEVNULL, stdout=logf, stderr=logf, cwd=d, **kw)
@@ -261,7 +274,8 @@ def tool_get_state(a, ctx):
     port = editor_port(d)
     path = os.path.join(d, ".kurgu", "state.json")
     try:
-        with open(path, encoding="utf-8") as f:
+        import diag
+        with diag.open_regular(path) as f:
             st = json.load(f)
     except (OSError, ValueError):
         st = None
@@ -646,19 +660,24 @@ def tool_edit_project(a, ctx):
 
 
 # ---------------------------------------------------------------- notes tools (the user's timeline comments)
-def _layers_under(proj, t):
-    return [{"id": l.get("id"), "name": l.get("name", ""), "type": l.get("type")} for l in proj.get("layers", [])
-            if isinstance(l, dict) and not l.get("hidden") and l.get("start", 0) <= t < l.get("end", 0)]
+def _layers_under(proj, t, d=None):
+    out = [{"id": l.get("id"), "name": l.get("name", ""), "type": l.get("type")} for l in proj.get("layers", [])
+           if isinstance(l, dict) and not l.get("hidden") and l.get("start", 0) <= t < l.get("end", 0)]
+    for e, l in zip(out, [l for l in proj.get("layers", []) if isinstance(l, dict) and not l.get("hidden") and l.get("start", 0) <= t < l.get("end", 0)]):
+        sv = agent_notes.source_view(l, t, proj, d)
+        if sv:
+            e["source"] = sv
+    return out
 
 
-def _note_view(n, proj):
-    out = {"id": n["id"], "t": n["t"], "text": n["text"], "status": "done" if n["done"] else "open",
-           "author": n["author"], "layers": _layers_under(proj, n["t"])}
-    for k in ("reply", "resolved_at", "created"):
+def _note_view(n, proj, d=None):
+    out = {"id": n["id"], "t": n["t"], "text": n["text"], "status": "done" if n["done"] else "asked" if n.get("asked") else "open",
+           "author": n["author"], "layers": _layers_under(proj, n["t"], d)}
+    for k in ("reply", "resolved_at", "created", "question", "answer"):
         if n.get(k):
             out[k] = n[k]
     if n.get("marks"):
-        out["marks"] = [agent_notes.mark_view(m, proj.get("width", 1920), proj.get("height", 1080), proj, n["t"]) for m in n["marks"]]
+        out["marks"] = [agent_notes.mark_view(m, proj.get("width", 1920), proj.get("height", 1080), proj, n["t"], None, d) for m in n["marks"]]
     return out
 
 
@@ -701,7 +720,7 @@ def tool_get_notes(a, ctx):
     notes = sorted(proj["notes"], key=lambda n: n["t"])
     if status != "all":
         notes = [n for n in notes if n["done"] == (status == "done")]
-    views = [_note_view(n, proj) for n in notes]
+    views = [_note_view(n, proj, d) for n in notes]
     if not views:
         return [text(f"No {status if status != 'all' else ''} notes.".replace("  ", " "))]
     return [text(jdump({"status": status, "count": len(views), "notes": views,
@@ -770,8 +789,8 @@ def tool_add_note(a, ctx):
 
 
 def _agent_note_views(d, status):
-    if status not in ("open", "sent", "done", "all"):
-        raise ToolError('status must be "sent", "open", "done" or "all".')
+    if status not in ("open", "sent", "asked", "done", "all"):
+        raise ToolError('status must be "sent", "open", "asked", "done" or "all".')
     require_project(d)
     return agent_notes.list_views(d, status)
 
@@ -793,6 +812,8 @@ def tool_notes_wait(a, ctx):
     d = project_dir(a)
     require_project(d)
     timeout = a.get("timeout", 120)
+    if isinstance(timeout, (int, float)) and not isinstance(timeout, bool) and timeout > 0:
+        agent_notes.record_agent(d)             # a LISTENING agent is the session to wake; one that only reads or edits is not
     if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout < 0:
         raise ToolError("timeout must be a number of seconds >= 0 (0 = look once).")
     timeout = min(float(timeout), 3500.0)
@@ -811,6 +832,25 @@ def tool_notes_wait(a, ctx):
                                  "hint": "Nothing new was sent. Call notes_wait again (the cursor remembers what you already got)."}))]
     return [text(jdump({"sent": entries, "inbox": agent_notes.inbox_len(d), "file": agent_notes.NOTES_MD,
                         "hint": "Fix each note, call notes_done with the ids and a one-line reply, then call notes_wait again: a send made while you worked is delivered then."}))]
+
+
+def tool_notes_ask(a, ctx):
+    d = project_dir(a)
+    ids = as_json_arg(a.get("ids"), "ids")
+    if isinstance(ids, str):
+        ids = [ids]
+    if not isinstance(ids, list) or not ids or any(not isinstance(x, str) for x in ids):
+        raise ToolError("ids must be a non-empty list of note ids (see notes_list).")
+    q = a.get("question", "")
+    if not isinstance(q, str) or not q.strip():
+        raise ToolError("question must be a non-empty string.")
+    require_project(d)
+    try:
+        got = agent_notes.mark_asked(d, ids, q, _write_notes)
+    except ValueError as e:
+        raise ToolError(str(e))
+    return [text(f'{len(got)} note(s) marked asked: ' + ", ".join(n["id"] for n in got)
+                 + ". The editor shows your question; the note comes back through notes_wait (new seq, with the human's answer) when he answers. Do not close it.")]
 
 
 def tool_notes_done(a, ctx):
@@ -833,16 +873,9 @@ def tool_notes_done(a, ctx):
 
 
 # ---------------------------------------------------------------- render tools
-def tool_render_frame(a, ctx):
-    d = project_dir(a)
-    require_project(d)
-    try:
-        t = float(a.get("t", 0))
-    except (TypeError, ValueError):
-        raise ToolError("t must be a number of seconds")
-    if t < 0:
-        raise ToolError("t must be >= 0")
-    draft = a.get("draft", True)
+def render_still(d, t, draft=True):
+    """PNG bytes of the project as it is on disk now at `t` seconds. Draft (half size) goes through the running editor when there is one (shared
+    cache), else the same App.frame machinery; full size runs render.py --frame. One renderer for the editor, MCP and `kurgu frame`."""
     port = editor_port(d)
     try:
         if draft and port:
@@ -853,26 +886,142 @@ def tool_render_frame(a, ctx):
                 except ValueError:
                     msg = ""
                 raise ToolError(f"Frame render failed: {msg or code}")
-        elif draft:
+            return png
+        if draft:
             with open(kserver.App(d).frame(t), "rb") as f:
-                png = f.read()
-        else:
-            fd, tmp = tempfile.mkstemp(suffix=".png")
-            os.close(fd)
-            try:
-                r = subprocess.run([sys.executable, os.path.join(HERE, "render.py"), d, "--frame", f"{t:.3f}", "--output", tmp],
-                                   stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
-                if r.returncode != 0:
-                    err = next((s[5:].strip() for s in r.stdout.splitlines() if s.startswith("ERROR")), None)
-                    raise ToolError("Frame render failed: " + (err or (r.stderr.strip().splitlines() or ["unknown error"])[-1]))
-                with open(tmp, "rb") as f:
-                    png = f.read()
-            finally:
-                os.path.exists(tmp) and os.remove(tmp)
+                return f.read()
+        fd, tmp = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            r = subprocess.run([sys.executable, os.path.join(HERE, "render.py"), d, "--frame", f"{t:.3f}", "--output", tmp],
+                               stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+            if r.returncode != 0:
+                err = next((s[5:].strip() for s in r.stdout.splitlines() if s.startswith("ERROR")), None)
+                raise ToolError("Frame render failed: " + (err or (r.stderr.strip().splitlines() or ["unknown error"])[-1]))
+            with open(tmp, "rb") as f:
+                return f.read()
+        finally:
+            os.path.exists(tmp) and os.remove(tmp)
     except kserver.HttpError as e:
         raise ToolError(f"Frame render failed: {e.message}")
+
+
+def tool_render_frame(a, ctx):
+    d = project_dir(a)
+    require_project(d)
+    try:
+        t = float(a.get("t", 0))
+    except (TypeError, ValueError):
+        raise ToolError("t must be a number of seconds")
+    if t < 0:
+        raise ToolError("t must be >= 0")
+    draft = a.get("draft", True)
+    png = render_still(d, t, draft)
     return [{"type": "image", "data": base64.b64encode(png).decode(), "mimeType": "image/png"},
             text(f"Frame at t={t:g}s ({'draft, half resolution' if draft else 'full resolution'}).")]
+
+
+STRIP_MIN, STRIP_MAX, STRIP_TILE_W = 2, 12, 640
+
+
+def strip_times(t0, t1, n):
+    return [t0 + (t1 - t0) * i / (n - 1) for i in range(n)]
+
+
+def check_strip_args(t0, t1, n):
+    try:
+        t0, t1, n = float(t0), float(t1), int(n)
+    except (TypeError, ValueError):
+        raise ToolError("t0 and t1 must be numbers of seconds and n an integer")
+    if t0 < 0:
+        raise ToolError("t0 must be >= 0")
+    if t1 <= t0:
+        raise ToolError("t1 must be greater than t0")
+    if not STRIP_MIN <= n <= STRIP_MAX:
+        raise ToolError(f"n must be between {STRIP_MIN} and {STRIP_MAX}")
+    return t0, t1, n
+
+
+def render_strip(d, t0, t1, n=6, draft=True):
+    """One contact-sheet JPEG (bytes) of n evenly spaced frames from t0 to t1 inclusive, each tile through render_still() and labelled with its time.
+    Returns (jpeg bytes, info) with info = tile size, columns, rows, the times and the factor from tile px to project px."""
+    import io
+    from PIL import Image, ImageDraw, ImageFont
+    t0, t1, n = check_strip_args(t0, t1, n)
+    times = strip_times(t0, t1, n)
+    tiles = []
+    for t in times:
+        with Image.open(io.BytesIO(render_still(d, t, draft))) as im:
+            tiles.append(im.convert("RGB"))
+    fw, fh = tiles[0].size
+    tw = min(fw, STRIP_TILE_W)
+    th = max(1, round(fh * tw / fw))
+    cols = 2 if n == 4 else min(n, 3)
+    rows = -(-n // cols)
+    gap = 4
+    sheet = Image.new("RGB", (cols * tw + (cols - 1) * gap, rows * th + (rows - 1) * gap), (24, 24, 24))
+    try:
+        font = ImageFont.load_default(size=max(12, tw // 28))
+    except TypeError:
+        font = ImageFont.load_default()
+    for i, (t, im) in enumerate(zip(times, tiles)):
+        tile = im.resize((tw, th), Image.LANCZOS) if im.size != (tw, th) else im
+        dr = ImageDraw.Draw(tile)
+        label = f"{t:.2f}s"
+        l, tp, r, b = dr.textbbox((0, 0), label, font=font)
+        dr.rectangle((0, 0, r - l + 12, b - tp + 10), fill=(0, 0, 0))
+        dr.text((6 - l, 5 - tp), label, fill=(255, 255, 255), font=font)
+        sheet.paste(tile, ((i % cols) * (tw + gap), (i // cols) * (th + gap)))
+    out = io.BytesIO()
+    sheet.save(out, format="JPEG", quality=85)
+    try:
+        with open(schema.project_path(d), encoding="utf-8") as f:
+            pw = int(json.load(f).get("width") or fw)
+    except (OSError, ValueError, TypeError):
+        pw = fw
+    return out.getvalue(), {"tile_w": tw, "tile_h": th, "cols": cols, "rows": rows, "times": times, "t0": t0, "t1": t1, "scale": pw / tw,
+                            "size": sheet.size}
+
+
+def tool_render_strip(a, ctx):
+    d = project_dir(a)
+    require_project(d)
+    draft = a.get("draft", True)
+    jpg, info = render_strip(d, a.get("t0", 0), a.get("t1", 0), a.get("n", 6), draft)
+    return [{"type": "image", "data": base64.b64encode(jpg).decode(), "mimeType": "image/jpeg"},
+            text(f"Strip of {len(info['times'])} frames, {info['t0']:g}s to {info['t1']:g}s, {info['cols']}x{info['rows']} tiles of {info['tile_w']}x{info['tile_h']} px "
+                 f"(each tile labelled with its time; tile px x{info['scale']:g} = project px).")]
+
+
+def tool_rerender(a, ctx):
+    import render_adaptors
+    d = project_dir(a)
+    require_project(d)
+    target = a.get("target")
+    if not isinstance(target, str) or not target:
+        raise ToolError("target must be a layer id or a source.unit")
+    try:
+        res = render_adaptors.rerender(d, target, bool(a.get("dry_run")))
+    except render_adaptors.RerenderError as e:
+        raise ToolError(f"rerender failed: {e}")
+    if a.get("dry_run"):
+        return [text("\n\n".join("\n".join(p) for p in res["plans"]) + "\n(dry run: nothing was run)")]
+    return [text(render_adaptors.format_result(res))]
+def tool_detect(a, ctx):
+    import ocr_boxes
+    d = project_dir(a)
+    require_project(d)
+    try:
+        t = float(a.get("t", 0))
+    except (TypeError, ValueError):
+        raise ToolError("t must be a number of seconds")
+    if t < 0:
+        raise ToolError("t must be >= 0")
+    try:
+        out = ocr_boxes.detect_project(d, t, a.get("layer") or None, bool(a.get("text_only")))
+    except ValueError as e:
+        raise ToolError(str(e))
+    return [text(ocr_boxes.format_detect(out) + "\n\n" + json.dumps(out, ensure_ascii=False))]
 
 
 def tool_render(a, ctx):
@@ -1063,6 +1212,75 @@ def schema_of(props, required=()):
         s["required"] = list(required)
     return s
 
+# ---- tool input schemas derived from the CLI parsers (kurgu_cli.py / agent_notes.py): one definition of every flag
+_JSON_TYPES = {int: "integer", float: "number", str: "string", None: "string"}
+
+
+def cli_props(parser, names=None, skip=(), desc=None, group_prop="status"):
+    """(properties, required) for a tool that mirrors an argparse command. Type, requiredness, choices and description come from the parser;
+    `names` renames a CLI dest (positional `seconds` -> `t`), `skip` drops CLI-only args (project_dir is added by schema_of), `desc` overrides a
+    description where the MCP semantics differ from the CLI. A mutually exclusive group of store_true flags becomes ONE enum property `group_prop`."""
+    names, desc = names or {}, desc or {}
+    props, required = {}, []
+    grouped = {a.dest for g in parser._mutually_exclusive_groups for a in g._group_actions if a.nargs == 0}
+    for act in parser._actions:
+        if act.dest == "help" or act.dest in skip or act.dest in grouped:
+            continue
+        name = names.get(act.dest, act.dest)
+        if act.nargs == 0 and act.const is True:
+            sch = {"type": "boolean"}
+        elif act.nargs in ("+", "*"):
+            sch = {"type": "array", "items": {"type": _JSON_TYPES[act.type]}}
+        else:
+            sch = {"type": _JSON_TYPES[act.type]}
+        if act.choices:
+            sch["enum"] = list(act.choices)
+        d = desc.get(act.dest, act.help)
+        if d:
+            sch["description"] = d
+        props[name] = sch
+        if act.required or (not act.option_strings and act.nargs not in ("?", "*")):
+            required.append(name)
+    for g in parser._mutually_exclusive_groups:
+        flags = [a for a in g._group_actions if a.nargs == 0]
+        if flags:
+            props[group_prop] = {"type": "string", "enum": [a.dest for a in flags],
+                                 "description": desc.get(group_prop) or "; ".join(f"{a.dest} = {a.help}" for a in flags if a.help)}
+    return props, required
+
+
+def schema_from_cli(parser, names=None, skip=(), desc=None, extra=None, group_prop="status"):
+    props, required = cli_props(parser, names, set(skip) | {"project_dir"}, desc, group_prop)
+    props.update(extra or {})
+    return schema_of(props, required)
+
+
+_DRAFT = {"draft": {"type": "boolean", "description": "Half resolution, cached (default true). false = full project resolution (CLI: --full)."}}
+_NOTES_SUBS = agent_notes.build_parsers()[1]
+# tool -> how it mirrors a CLI command; tests/test_guidance_sync.py reads this table
+CLI_MIRRORS = {
+    "render_frame": dict(parser=kurgu_cli.frame_parser(), names={"seconds": "t"}, skip={"output", "full"}, extra=_DRAFT),
+    "render_strip": dict(parser=kurgu_cli.strip_parser(), skip={"output", "full"}, extra=_DRAFT),
+    "notes_list": dict(parser=_NOTES_SUBS["list"], skip={"json"},
+                       desc={"status": "Which notes. sent (default) = released by the user, not fixed yet; open = drafts; asked = waiting for the user's answer; done; all."}),
+    "notes_wait": dict(parser=_NOTES_SUBS["wait"], skip={"json"},
+                       desc={"timeout": "Seconds to wait (default 120, max 3500); 0 = look once without waiting. (The CLI waits forever when --timeout is omitted.)",
+                             "since": "Return sends with seq above this instead of using the saved cursor (the cursor is then not moved)."}),
+    "notes_done": dict(parser=_NOTES_SUBS["done"]),
+    "notes_ask": dict(parser=_NOTES_SUBS["ask"]),
+    "rerender": dict(parser=render_adaptors.rerender_parser(), names={"dry_run": "dry_run"}),
+    "detect": dict(parser=ocr_boxes.detect_parser(), names={"seconds": "t", "text_only": "text_only"}, skip={"json"}),
+}
+
+
+def mirrored(tool):
+    return schema_from_cli(**CLI_MIRRORS[tool])
+
+
+def tool_desc(tool):
+    """The tool's description: written once in guidance/tools/<tool>.md, compiled into guidance_gen.py by scripts/gen_guidance.py."""
+    return guidance_gen.TOOL_DESCRIPTIONS[tool]
+
 
 TOOLS = [
     ("open_editor", "Open the Kurgu browser editor",
@@ -1098,12 +1316,14 @@ TOOLS = [
          "project": {"type": "object", "description": "Top-level/global fields to merge (one level deep). Not `layers`."},
          "summary": {"type": "string", "description": "One-line human description of the change, for changes.md."}}),
      tool_edit_project, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
-    ("render_frame", "See a still frame",
-     "Render one frame at time t (seconds) and return it as an image so you can look at it. Check first frame, titles, the end, "
-     "after every visual change. draft=true (default) is fast, half resolution.",
-     schema_of({"t": {"type": "number", "description": "Timeline time in seconds."},
-                "draft": {"type": "boolean", "description": "Half resolution, cached (default true). false = full resolution."}}, ["t"]),
+    ("render_frame", "See a still frame", tool_desc("render_frame"), mirrored("render_frame"),
      tool_render_frame, {"readOnlyHint": True}),
+    ("render_strip", "See a stretch of time as one contact sheet", tool_desc("render_strip"), mirrored("render_strip"),
+     tool_render_strip, {"readOnlyHint": True}),
+    ("rerender", "Regenerate one code-made clip", tool_desc("rerender"), mirrored("rerender"),
+     tool_rerender, {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": False}),
+    ("detect", "Find burned-in text and shapes in a frame", tool_desc("detect"), mirrored("detect"),
+     tool_detect, {"readOnlyHint": True}),
     ("render", "Render the video",
      "Render the whole video with render.py and wait for it (can take minutes; reports progress if the client supports it). "
      "Draft (default) is half resolution and quick, written to <output>_draft.mp4; use draft=false for the final quality only when the user says it is right.",
@@ -1126,9 +1346,9 @@ TOOLS = [
      tool_update_brief, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}),
     ("get_notes", "Read the user's timeline notes",
      "The timeline notes the user (or an agent) left, sorted by time, each with id, t (seconds), text, status (open/done), author "
-     "(user/agent), optional reply, and `layers`: the layers on screen at that moment. status defaults to open. "
+     "(user/agent), optional reply, and `layers`: the layers on screen at that moment (a code-made layer also carries `source`: fix that source file, not overlay layers). status defaults to open. "
      "When the user says 'apply my notes' (or 'notlarımı uygula'): call this, handle each open note at its time with edit_project "
-     "(check the frame with render_frame), then call update_note for it with done=true and a one-line reply.",
+     "(look at the frame with render_frame before closing it), then call update_note for it with done=true and a one-line reply.",
      schema_of({"status": {"type": "string", "enum": ["open", "done", "all"], "description": "Which notes (default open)."}}),
      tool_get_notes, {"readOnlyHint": True}),
     ("update_note", "Update or resolve a note",
@@ -1147,24 +1367,14 @@ TOOLS = [
      schema_of({"t": {"type": "number", "description": "Timeline time in seconds."},
                 "text": {"type": "string", "description": "The note."}}, ["t", "text"]),
      tool_add_note, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
-    ("notes_list", "List notes the user sent to you",
-     "Notes from the editor's watch + note mode. status: sent (default: released by the user, not fixed yet), open (drafts), done, all. "
-     "Each has id, t, timecode, text, layers active then, `frame` (JPEG path relative to the project) and status. Same data as NOTLAR.md.",
-     schema_of({"status": {"type": "string", "enum": ["sent", "open", "done", "all"], "description": "Default sent."}}),
+    ("notes_list", "List notes the user sent to you", tool_desc("notes_list"), mirrored("notes_list"),
      tool_notes_list, {"readOnlyHint": True}),
-    ("notes_wait", "Wait until the user sends notes",
-     "Blocks (up to timeout, default 120 s, max 3500) until the user clicks the send button in the editor, then returns the notes of that "
-     "send. Loop: notes_wait -> fix -> notes_done -> notes_wait. A saved cursor (.kurgu/inbox.cursor) remembers what you already got, so a send made "
-     "while you were fixing is returned by the next call. On timeout just call again; in Codex keep the timeout at or below 120 and call again (3000 when the user is watching live).",
-     schema_of({"timeout": {"type": "number", "description": "Seconds to wait (default 120, max 3500); 0 = look once without waiting."},
-                "since": {"type": "integer", "description": "Return sends with seq above this instead of using the saved cursor (the cursor is then not moved)."}}),
+    ("notes_wait", "Wait until the user sends notes", tool_desc("notes_wait"), mirrored("notes_wait"),
      tool_notes_wait, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False, "openWorldHint": False}),
-    ("notes_done", "Mark sent notes as fixed",
-     "Mark notes done after fixing them, with a one-line reply the user sees under the note (\"fixed\" in the editor), e.g. "
-     "\"Score order swapped, home team first\". Updates NOTLAR.md too. Resolve, do not delete.",
-     schema_of({"ids": {"type": "array", "items": {"type": "string"}, "description": "Note ids (from notes_list / notes_wait)."},
-                "reply": {"type": "string", "description": "One-line reply (what you changed)."}}, ["ids"]),
+    ("notes_done", "Mark sent notes as fixed", tool_desc("notes_done"), mirrored("notes_done"),
      tool_notes_done, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}),
+    ("notes_ask", "Ask the user a question on a note", tool_desc("notes_ask"), mirrored("notes_ask"),
+     tool_notes_ask, {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True, "openWorldHint": False}),
     ("list_fonts", "List usable fonts",
      "Font ids for text layers' `font` (project, bundled, and with query/source also system fonts).",
      schema_of({"query": {"type": "string", "description": "Filter by family/style/id substring, e.g. 'gill'."},
@@ -1267,6 +1477,10 @@ def run_tool(rid, params, modern):
 
     ctx = {"progress": progress, "cancel": cancel}
     try:
+        valid = set((entry[3] or {}).get("properties") or {})
+        unknown = sorted(k for k in args if k not in valid)
+        if valid and unknown:                                # a misspelt argument used to be ignored silently: the agent thought it had applied it
+            raise ToolError(f"Unknown argument(s) for {name}: {', '.join(unknown)}. Valid arguments: {', '.join(sorted(valid))}.")
         content, is_err = entry[4](args, ctx), False
     except ToolError as e:
         content, is_err = [text(str(e))], True

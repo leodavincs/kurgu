@@ -12,7 +12,9 @@ Decisions where the spec is silent:
 """
 import copy
 import json
+import math
 import os
+import kurgu_paths
 import re
 import unicodedata
 
@@ -22,6 +24,7 @@ VERSION = 2
 LAYER_TYPES = ("video", "image", "text", "color", "audio")
 VISUAL_TYPES = ("video", "image", "text", "color")
 FITS = ("cover", "contain", "native")
+SOURCE_KINDS = ("cinecode", "remotion", "hyperframes", "manim", "html", "cmd")
 ALIGNS = ("center", "left", "right")
 EFFECT_TYPES = ("grayscale", "brightness", "contrast", "saturation", "blur", "zoom", "freeze")
 # Motion (SPEC §1.8). Features a project can require; older builds refuse projects that require more than they know.
@@ -45,13 +48,15 @@ class SchemaError(Exception):
 
 # ---------------------------------------------------------------- small coercion helpers
 def _num(v, default):
+    """A finite number or the default: NaN / Infinity (valid JSON to Python, but not to the editor, which then cannot load the file) count as no number."""
     if isinstance(v, bool):
         return default
     if isinstance(v, (int, float)):
-        return v
+        return v if math.isfinite(v) else default
     if isinstance(v, str):
         try:
-            return float(v.replace(",", "."))
+            f = float(v.replace(",", "."))
+            return f if math.isfinite(f) else default
         except ValueError:
             return default
     return default
@@ -242,6 +247,25 @@ def link_offsets(project):
     return out
 
 
+_SOURCE_STR = ("kind", "root", "unit", "file", "render", "elements")
+
+
+def _norm_source(v):
+    """Where a code-made clip comes from (SPEC 1.9). Known fields are coerced, unknown keys inside `source` survive. None when it is not an object.
+    `render` is an adaptor NAME only; nothing in `source` is ever executed."""
+    if not isinstance(v, dict):
+        return None
+    out = dict(v)
+    for k in _SOURCE_STR:
+        if k in v:
+            out[k] = _str(v.get(k), "")
+    for k in ("fps", "unit_start_frame"):
+        if k in v:
+            n = _num(v.get(k), None)
+            out[k] = _clean_number(float(n)) if n is not None else v.get(k)
+    return out
+
+
 def normalize_layer(layer, W=1920, H=1080, index=0):
     """Return a new layer dict with every known field present."""
     if not isinstance(layer, dict):
@@ -300,6 +324,12 @@ def normalize_layer(layer, W=1920, H=1080, index=0):
                          "opacity": _clean_number(_flt(sh.get("opacity"), d["opacity"]))}
     if typ == "color":
         out["color"] = _str(layer.get("color"), "#000000")
+    if "source" in layer:
+        src = _norm_source(layer.get("source"))
+        if src is None:
+            out.pop("source", None)
+        else:
+            out["source"] = src
     if "keys" in layer:
         out["keys"] = _norm_keys(layer.get("keys"))
         if not out["keys"]:
@@ -374,10 +404,25 @@ def normalize_groups(g):
 NOTE_AUTHORS = ("user", "agent")
 
 
+NOTE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def safe_note_id(raw, i=0):
+    """A note id is a file name stem (.kurgu/notes/<id>.jpg ...): letters, digits, `_` and `-` only, 1-64 characters. Anything else (`../x`, a path, a very long
+    string) is replaced by a stable safe id derived from it, so a project file cannot aim a note's files elsewhere."""
+    s = raw if isinstance(raw, str) else ""
+    if NOTE_ID_RE.match(s):
+        return s
+    if not s.strip():
+        return f"n_{i + 1}"
+    import hashlib
+    return "n_" + hashlib.sha1(s.encode("utf-8", "surrogateescape")).hexdigest()[:12]
+
+
 def normalize_note(n, i=0):
     """Fill/repair one timeline note. Old notes (id, t, text, created) gain done=False, author="user", layer_ids=[], reply="", sent=""."""
     nn = dict(n)
-    nn["id"] = _str(n.get("id"), "") or f"n_{i + 1}"
+    nn["id"] = safe_note_id(_str(n.get("id"), ""), i)
     nn["t"] = _clean_number(_flt(n.get("t"), 0.0))
     nn["text"] = _str(n.get("text"), "")
     nn["created"] = _str(n.get("created"), "")
@@ -388,6 +433,14 @@ def normalize_note(n, i=0):
     nn["layer_ids"] = [x for x in ids if isinstance(x, str)] if isinstance(ids, list) else []
     nn["reply"] = _str(n.get("reply"), "")
     nn["sent"] = _str(n.get("sent"), "")
+    for k in ("question", "asked", "answer"):      # the agent's question (state `asked` while `asked` is set) and the human's answer
+        v = _str(n.get(k), "")
+        if v:
+            nn[k] = v
+        else:
+            nn.pop(k, None)
+    if nn["done"]:
+        nn.pop("asked", None)
     if "marks" in n:
         marks = normalize_marks(n.get("marks"))
         if marks:
@@ -439,6 +492,36 @@ def normalize_marks(marks):
 
 
 # ---------------------------------------------------------------- validation
+def _source_problems(s):
+    if not isinstance(s, dict):
+        return ["source must be an object {kind, root, unit, file, fps, unit_start_frame, render, elements}"]
+    p = []
+    if s.get("kind") not in SOURCE_KINDS:
+        p.append(f'source.kind must be one of {", ".join(SOURCE_KINDS)}')
+    for k in _SOURCE_STR:
+        if s.get(k) is not None and not isinstance(s.get(k), str):
+            p.append(f"source.{k} must be a string")
+    for k in ("root", "file", "elements"):
+        v = s.get(k)
+        if isinstance(v, str) and v and (os.path.isabs(v) or re.match(r"^[A-Za-z]:", v) or v.startswith("~")):
+            p.append(f"source.{k} must be a path relative to the project folder")
+    r = s.get("render")
+    if isinstance(r, str) and r and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", r):
+        p.append("source.render must be an adaptor name (letters, digits, - _ .), never a command")
+    fps = _num(s.get("fps"), None) if s.get("fps") is not None else None
+    if s.get("fps") is not None and (fps is None or fps <= 0):
+        p.append("source.fps must be a positive number")
+    if s.get("unit_start_frame") is not None:
+        u = _num(s.get("unit_start_frame"), None)
+        if u is None or u < 0:
+            p.append("source.unit_start_frame must be a number >= 0")
+    if s.get("media_start_frame") is not None:
+        u = _num(s.get("media_start_frame"), None)
+        if u is None or u < 0:
+            p.append("source.media_start_frame must be a number >= 0")
+    return p
+
+
 def validate(project, font_ids=None):
     """Return a list of human-readable problems (empty = fine). Works on raw or normalised data.
 
@@ -503,6 +586,8 @@ def validate(project, font_ids=None):
             probs.append(f"{tag}: link must be a non-empty string (the id shared by the clips that move together)")
         if typ in ("video", "image", "audio") and not _str(l.get("src"), ""):
             probs.append(f"{tag}: missing src")
+        if l.get("source") is not None:
+            probs.extend(f"{tag}: {p}" for p in _source_problems(l["source"]))
         if l.get("fit") is not None and l.get("fit") not in FITS:
             probs.append(f'{tag}: fit must be one of {", ".join(FITS)}')
         if l.get("align") is not None and l.get("align") not in ALIGNS:
@@ -556,7 +641,7 @@ def validate(project, font_ids=None):
 
 
 def _isnum(v):
-    return isinstance(v, (int, float)) and not isinstance(v, bool)
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
 def _validate_motion(l, typ, tag, probs):
@@ -788,17 +873,7 @@ def migrate_dir(pdir):
     if os.path.exists(project_path(pdir)) or not os.path.exists(legacy_path(pdir)):
         return False
     v2 = normalize(migrate_v1(_read_json(legacy_path(pdir))))
-    tmp = project_path(pdir) + f".{os.urandom(8).hex()}.tmp"
-    try:
-        with open(tmp, "x", encoding="utf-8") as f:        # exclusive create: never through a planted symlink
-            f.write(dumps(v2))
-        os.replace(tmp, project_path(pdir))
-    except BaseException:
-        try:
-            os.remove(tmp)
-        except OSError:
-            pass
-        raise
+    kurgu_paths.write_bytes_atomic(project_path(pdir), dumps(v2).encode("utf-8"))   # temp removed if the replace fails (Windows: AV/indexer lock)
     return True
 
 

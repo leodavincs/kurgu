@@ -168,6 +168,48 @@ def test_6_f_toggles_fullscreen_but_keeps_the_watch_overlay(page):
     page.wait_for("document.getElementById('watch').hidden")
 
 
+def test_9_keys_typed_while_the_watch_mode_opens_are_not_lost(chrome, server):
+    """F opens the mode from the preview focus; what is typed straight after it (while the fullscreen transition is still going) lands in the note box."""
+    p = chrome.new_page()
+    try:
+        p.open(server.url("/"), lang="en")
+        p.eval("Element.prototype.requestFullscreen = function(){ return new Promise(r => setTimeout(() => { if (document.activeElement) document.activeElement.blur(); r(); }, 900)); }")   # a slow transition that drops the focus
+        p.eval("document.getElementById('stage').dispatchEvent(new MouseEvent('pointerdown', {bubbles: true}))")        # the preview has the focus
+        p.key("f", code="KeyF", text="f")
+        p.wait_for("!!document.getElementById('watch') && !document.getElementById('watch').hidden")
+        for ch in "Bu renkli seritler":
+            p.key(ch, code="Key" + ch.upper() if ch.isalpha() else "Space", text=ch)
+        time.sleep(1.4)                                                                    # the transition ends in the middle of the typing
+        for ch in " ok":
+            p.key(ch, code="Space" if ch == " " else "Key" + ch.upper(), text=ch)
+        p.wait_for("document.getElementById('w-input').value.length>=21", 5)
+        assert p.eval("document.getElementById('w-input').value") == "Bu renkli seritler ok"
+        p.wait_for("document.activeElement.id==='w-input'")
+        p.key("Enter", code="Enter")
+        p.wait_for("__kurgu.S.project.notes.some(n=>n.text==='Bu renkli seritler ok')")
+        p.key("Escape", code="Escape")
+        p.wait_for("document.getElementById('watch').hidden")
+        p.eval("__kurgu.S.t=1; __kurgu.emit('time')")
+        p.key("w", code="KeyW", text="w")                                                  # W opens it too; N straight after the shortcut starts a note
+        p.wait_for("!document.getElementById('watch').hidden")
+        p.key("n", code="KeyN", text="n")
+        for ch in "ok":
+            p.key(ch, code="Key" + ch.upper(), text=ch)
+        p.wait_for("document.getElementById('w-input').value==='ok'", 5)
+    finally:
+        p.close()
+
+
+def test_10_b_key_toasts_when_there_is_no_earlier_version(chrome, server):
+    p = chrome.new_page()
+    try:
+        p.open(server.url("/"), lang="en")
+        p.key("b", code="KeyB", text="b")
+        p.wait_for("[...document.querySelectorAll('.toast-text')].some(e=>e.textContent.startsWith('No earlier version'))")
+    finally:
+        p.close()
+
+
 def test_woken_toast_when_the_wake_hook_runs(chrome, monkeypatch, tmp_path):
     monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "conf"))
     monkeypatch.setenv("KURGU_ON_SEND", json.dumps([sys.executable, "-c", "pass"]))

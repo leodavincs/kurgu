@@ -154,8 +154,13 @@ def test_import_media_and_name_clash(srv):
     st, res = c.req("POST", "/api/import?name=New%20Logo.png", body)
     assert st == 200 and res == {"path": "media/New Logo.png", "kind": "image"}
     assert open(os.path.join(d, res["path"]), "rb").read() == body
-    st, res = c.req("POST", "/api/import?name=New%20Logo.png", body)
+    st, res = c.req("POST", "/api/import?name=New%20Logo.png", body)        # the same file again (picked from media/ itself): referenced, not copied
+    assert res == {"path": "media/New Logo.png", "kind": "image", "existing": True}
+    assert not os.path.exists(os.path.join(d, "media", "New Logo-2.png"))
+    st, res = c.req("POST", "/api/import?name=New%20Logo.png", body + b"x")  # another file with the same name: a new name
     assert res["path"] == "media/New Logo-2.png"
+    st, res = c.req("POST", "/api/import?name=New%20Logo.png", body + b"x")
+    assert res["path"] == "media/New Logo-2.png" and res["existing"] is True
     st, res = c.req("POST", "/api/import?name=..%2F..%2Fevil.wav", b"RIFF")
     assert res["path"] == "media/evil.wav" and res["kind"] == "audio"
     st, res = c.req("POST", "/api/import?name=x.exe", b"MZ")
@@ -319,7 +324,154 @@ def test_path_traversal_names(srv):
     assert c.req("POST", "/api/exports/reveal", {"path": "../../etc/passwd"})[0] == 404
 
 
+# ---------------------------------------------------------------- nothing the server writes goes through a symlink the project ships (security review N1, N3)
+import pytest as _pytest
+import agent_notes
+
+
+@_pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_changes_md_brief_md_and_note_signatures_are_never_written_through_symlinks(project_dir, tmp_path):
+    import server
+    victim = tmp_path / "zshrc"
+    victim.write_text("# my profile\n")
+    d = os.path.realpath(project_dir)
+    os.symlink(str(victim), os.path.join(d, "changes.md"))
+    os.symlink(str(victim), os.path.join(d, "brief.md"))
+    app = server.App(d)
+    raw = json.load(open(os.path.join(d, "project.json")))
+    raw["layers"][0]["name"] = 'a"; touch /tmp/kurgu-pwned; "b\nsecond line'
+    body = {"project": raw, "summary": ['renamed a"; touch /tmp/kurgu-pwned; "b\nsecond line']}
+    try:
+        app.save_project(body)
+    except Exception:
+        pass
+    assert victim.read_text() == "# my profile\n"                                    # changes.md -> victim: refused, not appended
+    try:
+        app.save_brief("hello brief")
+    except Exception:
+        pass
+    assert victim.read_text() == "# my profile\n"
+    os.remove(os.path.join(d, "changes.md"))
+    app.write_changes(['x\ny"; z'])
+    lines = open(os.path.join(d, "changes.md")).read().splitlines()
+    assert any(l.endswith('x y"; z') for l in lines)                                  # one line per entry
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    os.symlink(str(other), os.path.join(d, ".kurgu", "notes"))
+    with _pytest.raises(Exception):
+        agent_notes.sig_path(d, "n_1")
+    assert list(other.iterdir()) == []
+
+
+@_pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlinked_dot_kurgu_subfolder_is_refused_by_the_server(project_dir, tmp_path):
+    import server
+    d = os.path.realpath(project_dir)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    os.symlink(str(other), os.path.join(d, ".kurgu", "backups"))
+    app = server.App(d)
+    with _pytest.raises(agent_notes.KurguRefusal):
+        app.sub("backups")
+    assert list(other.iterdir()) == []
+
+
+def test_project_output_outside_the_project_is_refused(project_dir, tmp_path):
+    import subprocess
+    import sys
+    d = os.path.realpath(project_dir)
+    p = json.load(open(os.path.join(d, "project.json")))
+    p["output"] = "../vo-escaped.mp4"
+    json.dump(p, open(os.path.join(d, "project.json"), "w"))
+    r = subprocess.run([sys.executable, os.path.join(ROOT, "render.py"), d, "--draft"], capture_output=True, text=True, timeout=120)
+    assert r.returncode != 0 and "outside the project" in (r.stdout + r.stderr)
+    assert not os.path.exists(os.path.join(os.path.dirname(d), "vo-escaped_draft.mp4")) and not os.path.exists(os.path.join(os.path.dirname(d), "vo-escaped.mp4"))
+    import server
+    assert os.path.realpath(os.path.join(os.path.dirname(d), "vo-escaped.mp4")) not in server.App(d).allowed_paths()
+
+
+
 def test_the_listen_backlog_takes_a_burst_of_module_loads():
     """Windows CI: the editor's parallel module loads overflowed the default backlog (5) and some got ERR_CONNECTION_REFUSED."""
     import server
     assert server.Server.request_queue_size >= 64
+
+
+@_pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlinked_versions_folder_never_receives_media(project_dir, tmp_path):
+    import versions
+    d = os.path.realpath(project_dir)
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    clip = os.path.join(d, "media", "a.mp4")
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    os.symlink(str(other), os.path.join(d, ".kurgu", "versions"))
+    assert versions.snapshot(d, clip, sync=True) is None and list(other.iterdir()) == []
+    assert versions.list_versions(d, clip) == []
+    os.remove(os.path.join(d, ".kurgu", "versions"))
+    moved = tmp_path / "kurgu-elsewhere"
+    shutil.move(os.path.join(d, ".kurgu"), str(moved))
+    os.symlink(str(moved), os.path.join(d, ".kurgu"))
+    assert versions.snapshot(d, clip, sync=True) is None and not (moved / "versions").exists()
+    with _pytest.raises(agent_notes.KurguRefusal):
+        versions.versions_dir(d)
+
+
+@_pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_shipped_changes_md_symlink_is_a_409_before_anything_is_written(project_dir, tmp_path):
+    import threading
+    d = os.path.realpath(project_dir)
+    victim = tmp_path / "profile"
+    victim.write_text("keep\n")
+    p = json.load(open(os.path.join(d, "project.json")))
+    p["notes"] = [{"id": "n_1", "t": 1.0, "text": "x", "created": "2026-11-07T10:00:00"}]
+    json.dump(p, open(os.path.join(d, "project.json"), "w"))
+    os.symlink(str(victim), os.path.join(d, "changes.md"))
+    before = open(os.path.join(d, "project.json"), "rb").read()
+    srv = server.make_server(d, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        c = Client(srv.server_address[1])
+        st, got = c.req("GET", "/api/project")
+        body = {"project": dict(got["project"], name="renamed"), "summary": ["renamed"], "base_version": got["version"]}
+        st, res = c.req("PUT", "/api/project", body)
+        assert st == 409 and res.get("reason") == "symlink", (st, res)
+        assert open(os.path.join(d, "project.json"), "rb").read() == before and victim.read_text() == "keep\n"      # nothing written, nothing appended
+        st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})
+        assert st == 409 and res.get("reason") == "symlink"
+        assert open(os.path.join(d, "project.json"), "rb").read() == before                                         # the note was not stamped as sent
+        os.remove(os.path.join(d, "changes.md"))
+        assert c.req("PUT", "/api/project", body)[0] == 200                                                         # without the symlink the same save works
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+@_pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_changes_md_symlink_also_stops_presets_and_the_brief_before_they_write(srv, tmp_path):
+    c, d = srv
+    victim = tmp_path / "profile"
+    victim.write_text("keep\n")
+    os.symlink(str(victim), os.path.join(d, "changes.md"))
+    before = open(os.path.join(d, "project.json"), "rb").read()
+    st, res = c.req("POST", "/api/presets/apply", {"layer_id": "k_logo", "preset": "in.fade-up", "at": "in"})
+    assert st == 409 and res.get("reason") == "symlink", (st, res)
+    assert open(os.path.join(d, "project.json"), "rb").read() == before                     # the preset was not baked in
+    st, res = c.req("PUT", "/api/brief", {"text": "new brief"})
+    assert st == 409 and res.get("reason") == "symlink", (st, res)
+    assert not os.path.exists(os.path.join(d, "brief.md")) and victim.read_text() == "keep\n"
+
+
+@_pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs on Windows")
+def test_a_fifo_changes_md_is_a_409_before_anything_is_written(srv):
+    c, d = srv
+    os.mkfifo(os.path.join(d, "changes.md"))
+    before = open(os.path.join(d, "project.json"), "rb").read()
+    st, got = c.req("GET", "/api/project")
+    st, res = c.req("PUT", "/api/project", {"project": dict(got["project"], name="renamed"), "summary": ["renamed"], "base_version": got["version"]})
+    assert st == 409 and res.get("reason") == "special_file", (st, res)
+    assert open(os.path.join(d, "project.json"), "rb").read() == before
+    os.remove(os.path.join(d, "changes.md"))
+    assert c.req("PUT", "/api/project", {"project": dict(got["project"], name="renamed"), "summary": ["renamed"], "base_version": got["version"]})[0] == 200

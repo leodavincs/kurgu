@@ -26,6 +26,7 @@ _EMAIL = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+")
 _BEARER = re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]+")
 _SK = re.compile(r"\b(?:sk|pk|ghp|gho|xox[abp]|AIza)[-_][A-Za-z0-9_-]{8,}")
 _ASSIGN = re.compile(r"(?i)\b([A-Za-z_]*(?:token|secret|password|passwd|api[_-]?key|apikey|authorization)[A-Za-z_]*)(\s*[=:]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;]+)")
+_KEYS = re.compile(r"\b(?:AKIA[0-9A-Z]{16}|github_pat_[A-Za-z0-9_]{20,}|xox[abpr]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{20,})")
 _HEX = re.compile(r"\b[0-9a-fA-F]{32,}\b")
 _LONG = re.compile(r"(?<![\w./\\-])[A-Za-z0-9+/_=-]{32,}(?![\w./\\-])")
 
@@ -35,7 +36,7 @@ def _mixed(m):
     return "<redacted>" if re.search(r"[a-z]", s) and re.search(r"[A-Z]", s) and re.search(r"[0-9]", s) else s     # file names rarely mix all three
 
 
-_OTHER_HOME = re.compile(r"(?i)(?:[A-Za-z]:)?[\\/](?:Users|home)[\\/][^\\/\s\"']+")
+_OTHER_HOME = re.compile(r"(?i)(?:[A-Za-z]:)?[\\/](?:Users|home)[\\/][^\\/\r\n\"']+")      # the whole segment up to the next separator: "John Smith" has a space
 
 
 def redact(text, home=None):
@@ -53,6 +54,7 @@ def redact(text, home=None):
     text = _BEARER.sub("Bearer <redacted>", text)
     text = _ASSIGN.sub(lambda m: f"{m.group(1)}{m.group(2)}<redacted>", text)
     text = _SK.sub("<redacted>", text)
+    text = _KEYS.sub("<redacted>", text)
     text = _HEX.sub("<redacted>", text)
     return _LONG.sub(_mixed, text)
 
@@ -97,6 +99,8 @@ def event(d, kind, msg="", level="info", code=None, ctx=None):
     """Append one event. Best effort: a diagnostics failure must never break the thing being diagnosed. Returns True when written."""
     try:
         import agent_notes
+        if not os.path.isdir(d):                          # never create a project folder just to log into it
+            return False
         path = os.path.join(d, LOG)
         e = {"ts": datetime.now().replace(microsecond=0).isoformat(), "kind": kind, "level": level}
         if code:
@@ -118,14 +122,14 @@ def refusal(d, err):
     event(d, "refusal", str(err), "warn", code=getattr(err, "code", None), ctx=getattr(err, "params", None))
 
 
-def open_regular(path):
-    """Open a project-side file for reading as UTF-8 text, only if it is a regular file (a FIFO or device would block or never end).
+def open_regular(path, binary=False):
+    """Open a project-side file for reading as UTF-8 text (bytes with binary=True), only if it is a regular file (a FIFO or device would block or never end).
     Symlinks are refused where O_NOFOLLOW exists."""
     fd = os.open(path, os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0) | getattr(os, "O_NOFOLLOW", 0))
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             raise OSError(f"not a regular file: {os.path.basename(path)}")
-        return os.fdopen(fd, encoding="utf-8", errors="replace")
+        return os.fdopen(fd, "rb") if binary else os.fdopen(fd, encoding="utf-8", errors="replace")
     except BaseException:
         os.close(fd)
         raise
@@ -219,12 +223,116 @@ def own_line(line):
     return None
 
 
+_JS_CLASSES = ("Error", "TypeError", "ReferenceError", "RangeError", "SyntaxError", "URIError", "EvalError", "AggregateError", "DOMException", "AbortError",
+               "NotAllowedError", "NotSupportedError", "SecurityError", "QuotaExceededError")
+_CODE = re.compile(r"^[a-z][a-z0-9_]{0,39}$")
+_VERSION = re.compile(r"^[0-9A-Za-z.+~-]{1,30}$")
+_ROUTE = re.compile(r"^/api/[a-z0-9/_-]{1,60}$")
+_METHODS = ("GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS")
+# Every message Kurgu writes itself (the diag.event call sites). Anything else in a log.jsonl came from somewhere else (a project can ship one): dropped.
+FIXED_MSGS = ("server started", "server stopped", "notes sent", "hook run started", "hook run finished", "hook run stopped (timeout)", "rerender failed", "import failed", "import warning")
+_CODEX_MSG = re.compile(r"^codex not started \([a-z_]{1,30}\)$")
+
+
+def _i(v):
+    return v if isinstance(v, int) and not isinstance(v, bool) and -10**9 < v < 10**12 else None
+
+
+def _b(v):
+    return v if isinstance(v, bool) else None
+
+
+def _c(v, allowed=None):
+    return v if isinstance(v, str) and _CODE.match(v) and (allowed is None or v in allowed) else None
+
+
+KURGU_EXCEPTIONS = ("ToolError", "KurguRefusal", "ElementsError", "RerenderError", "SceneImportError", "PolicyProblem", "ProjectError", "ConflictError")
+
+
+def _py_class(name):
+    import builtins
+    if not isinstance(name, str) or not re.fullmatch(r"[A-Z][A-Za-z0-9_]{0,40}", name):
+        return None
+    b = getattr(builtins, name, None)
+    return name if (isinstance(b, type) and issubclass(b, BaseException)) or name in KURGU_EXCEPTIONS else None
+
+
+def _own_web_files():
+    try:
+        return {n for n in os.listdir(os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "js")) if n.endswith(".js")}
+    except OSError:
+        return set()
+
+
 def _event_for_report(e, include_agent_output):
-    """Browser and server error messages are free text; the default report keeps only the error's class name."""
-    if include_agent_output or not isinstance(e, dict) or e.get("kind") not in ("frontend", "error"):
+    """The default report copies NOTHING free-form from log.jsonl (a project can ship one, and browsers and exceptions write text into it): only the kinds Kurgu
+    writes, only fixed message strings, and per kind only the ctx values that are numbers, booleans or fixed codes. Returns None for an event to leave out."""
+    if include_agent_output:
         return e
-    m = _ERR_CLASS.match(str(e.get("msg") or ""))
-    return {**e, "msg": m.group(2) if m else "(message left out)"}
+    if not isinstance(e, dict):
+        return None
+    kind, ctx_in = e.get("kind"), e.get("ctx") if isinstance(e.get("ctx"), dict) else {}
+    out = {"ts": e["ts"] if isinstance(e.get("ts"), str) and _ISO.match(e["ts"]) else None, "kind": kind, "level": _c(e.get("level"), ("info", "warn", "error"))}
+    code = _c(e.get("code")) or (str(_i(e.get("code"))) if _i(e.get("code")) is not None else None)
+    ctx = {}
+    msg = e.get("msg") if isinstance(e.get("msg"), str) else ""
+    if kind == "server":
+        ctx = {"version": ctx_in.get("version") if isinstance(ctx_in.get("version"), str) and _VERSION.match(ctx_in["version"]) else None, "port": _i(ctx_in.get("port")), "pid": _i(ctx_in.get("pid"))}
+    elif kind == "send":
+        ctx = {"count": _i(ctx_in.get("count")), "listening": _b(ctx_in.get("listening")), "wake": _c(ctx_in.get("wake"), ("configured", "none")),
+               "hook": _c(ctx_in.get("hook"), ("started", "queued", "error", "none")), "failed_frames": _i(ctx_in.get("failed_frames"))}
+    elif kind == "wake":
+        ctx = {"seq": _i(ctx_in.get("seq")), "notes": _i(ctx_in.get("notes")), "exit": _i(ctx_in.get("exit")), "limit_s": _i(ctx_in.get("limit_s")),
+               "cause": _c(ctx_in.get("cause"), tuple(c for c, _ in CAUSES)), "code": _c(ctx_in.get("code"))}
+    elif kind == "refusal":
+        msg = ""                                                          # str(err) of a refusal names paths
+        ctx = {}
+    elif kind == "frontend":
+        m = _ERR_CLASS.match(msg)
+        msg = m.group(2) if m and m.group(2) in _JS_CLASSES else "(message left out)"
+        src = ctx_in.get("source")
+        ctx = {"source": src if isinstance(src, str) and src in _own_web_files() else None, "line": _i(ctx_in.get("line")), "col": _i(ctx_in.get("col"))}
+    elif kind == "error":
+        m = _ERR_CLASS.match(msg)
+        msg = _py_class(m.group(2)) if m else None
+        msg = msg or "(class left out)"
+        route = ctx_in.get("route")
+        ctx = {"route": route if isinstance(route, str) and _ROUTE.match(route) else None, "method": ctx_in.get("method") if ctx_in.get("method") in _METHODS else None,
+               "exc": _py_class(ctx_in.get("exc"))}
+    elif kind in ("rerender", "import"):
+        ctx = {}
+    else:
+        return None
+    if kind not in ("frontend", "error", "refusal") and not (msg in FIXED_MSGS or _CODEX_MSG.match(msg)):
+        msg = ""
+    out["msg"] = msg
+    out["code"] = code
+    out["ctx"] = {k: v for k, v in ctx.items() if v is not None}
+    return {k: v for k, v in out.items() if v not in (None, "", {})}
+
+
+_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$")
+_WAKE_STATES = ("running", "finished", "stopped")
+_WAKE_REASONS = ("login", "missing", "codex_no_auth_file", "codex_auth_replaced", "codex_prepare_failed", "codex_policy")
+
+
+def _wake_line(w):
+    """One line describing the last wake run from wake.json, built only from values whose shape is checked (a shipped wake.json may hold anything)."""
+    def num(v):
+        return str(v) if isinstance(v, int) and not isinstance(v, bool) and -10**6 < v < 10**9 else ""
+    out = []
+    if w.get("state") in _WAKE_STATES:
+        out.append(f"state={w['state']}")
+    for k in ("seq", "count", "exit_code"):
+        if num(w.get(k)):
+            out.append(f"{k}={num(w[k])}")
+    for k in ("started", "ended"):
+        if isinstance(w.get(k), str) and _ISO.match(w[k]):
+            out.append(f"{k}={w[k]}")
+    r = w.get("reason")
+    if r:
+        out.append(f"reason={r if r in _WAKE_REASONS else 'other'}")
+    return "  ".join(out) or "(unreadable)"
 
 
 def build_report(d, include_agent_output=False):
@@ -233,7 +341,7 @@ def build_report(d, include_agent_output=False):
     ver, commit = _kurgu_version()
     L = ["Kurgu report", "=" * 12, f"time:    {datetime.now().replace(microsecond=0).isoformat()}",
          f"kurgu:   {ver}" + (f" ({commit})" if commit else ""), f"os:      {platform.platform()}",
-         f"python:  {sys.version.split()[0]}", f"project: {os.path.basename(d)}"]
+         f"python:  {sys.version.split()[0]}", f"project: {os.path.basename(d) if include_agent_output else '<project>'}"]
     try:
         import media_tools
         L.append("ffmpeg:  " + (_run([media_tools.ffmpeg(), "-version"]) or "not found"))
@@ -249,6 +357,14 @@ def build_report(d, include_agent_output=False):
         L.append(f"wake:      configured ({agent})")
     L.append(f"listening: {'yes' if agent_notes.is_listening(d) else 'no'}")
     L.append(f"agent name set: {'yes' if agent_notes.agent_name(d) else 'no'}")
+    L += ["", "Last wake run (.kurgu/wake.json)", "-" * 30]
+    w = {} if kurgu_is_link(d) else (agent_notes.read_wake(d) or {})
+    if not w:
+        L.append("(none on record)")
+    else:
+        L.append(_wake_line(w))                                           # fixed shapes only: numbers, timestamps, a known state and reason code
+        if include_agent_output:                                          # the summary / tail are lines the agent printed: they may quote the user's notes
+            L += [f"summary: {w.get('summary', '')}"] + [f"| {x}" for x in (w.get("tail") or []) if isinstance(x, str)]
     L += ["", "Doctor", "------"]
     try:
         import doctor
@@ -259,7 +375,8 @@ def build_report(d, include_agent_output=False):
     if kurgu_is_link(d):
         L.append("(refused: .kurgu is a symbolic link)")
     else:
-        L += [json.dumps(_event_for_report(e, include_agent_output), ensure_ascii=False) for e in read_events(d, 200)] or ["(none)"]
+        shown = [_event_for_report(e, include_agent_output) for e in read_events(d, 200)]
+        L += [json.dumps(x, ensure_ascii=False) for x in shown if x is not None] or ["(none)"]
     L += ["", "hook.log (last 50 lines" + (", with the agent's output" if include_agent_output else ", agent output left out") + ")", "-" * 30]
     try:
         p = os.path.join(d, agent_notes.HOOK_LOG)

@@ -72,6 +72,7 @@ def test_log_rotates_at_the_size_limit_and_keeps_three_files(project_dir, monkey
     assert ev[-1]["msg"].startswith("event number 199") and len(ev) < 200 and all({"ts", "kind", "level", "msg"} <= set(e) for e in ev)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
 def test_log_refuses_a_symlink_and_leaves_the_target_alone(project_dir, tmp_path):
     target = tmp_path / "profile"
     target.write_text("keep\n")
@@ -81,6 +82,7 @@ def test_log_refuses_a_symlink_and_leaves_the_target_alone(project_dir, tmp_path
     assert events(project_dir) == []
 
 
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
 def test_events_for_send_refusal_error_frontend_and_wake_without_note_text(srv, cfg):
     c, d, s = srv
     st, res = c.req("POST", "/api/notes/send", {"ids": ["n_1"]})                                      # a send
@@ -154,7 +156,9 @@ def test_report_has_the_facts_the_log_and_the_hook_log_and_is_redacted(srv, cfg)
     text = diag.build_report(d)
     for part in ("Kurgu report", "kurgu:", "python:", "ffmpeg:", "chrome:", "Agent setup", "wake:      configured (claude)", "listening: no", "Doctor", "Last events", "hook.log (last 50 lines, agent output left out)"):
         assert part in text, part
-    assert "/secret/path" not in text and "me@example.com" not in text and "<email>" in text and "(send #79," in text and "(send #20," not in text and "agent says hi" not in text
+    assert "/secret/path" not in text and "me@example.com" not in text and "contact me" not in text and "(send #79," in text and "(send #20," not in text and "agent says hi" not in text
+    full = diag.build_report(d, include_agent_output=True)             # an unknown-kind event is only in the full report, and redacted there
+    assert "me@example.com" not in full and "<email>" in full
     assert c.req("GET", "/api/report")[1]["text"].startswith("Kurgu report")
 
 
@@ -167,6 +171,7 @@ def test_kurgu_report_cli_prints_or_writes_a_file(project_dir):
 
 
 # ---------------------------------------------------------------- refusal reasons end to end (server side)
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
 def test_reason_symlinked_kurgu_folder_or_inbox_refuses_the_send_as_an_error(srv, tmp_path):
     c, d, s = srv
     os.makedirs(tmp_path / "elsewhere")
@@ -179,6 +184,7 @@ def test_reason_symlinked_kurgu_folder_or_inbox_refuses_the_send_as_an_error(srv
     assert os.listdir(tmp_path / "elsewhere") == []                                                        # nothing was written through the link
 
 
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
 def test_reason_symlinked_inbox_refuses_and_hook_log_is_reported(srv, tmp_path):
     c, d, s = srv
     os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
@@ -281,6 +287,7 @@ def test_home_redaction_is_case_insensitive_for_windows_and_generic_for_other_us
     assert "other" not in out and "bob" not in out and "Zed" not in out and out.count("<user-home>") == 3 and "/srv/keep/me" in out
 
 
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
 def test_reading_through_a_symlinked_kurgu_folder_is_refused(project_dir, tmp_path):
     other = tmp_path / "other"
     (other).mkdir()
@@ -291,6 +298,19 @@ def test_reading_through_a_symlinked_kurgu_folder_is_refused(project_dir, tmp_pa
     assert diag.read_events(project_dir) == []
     text = diag.build_report(project_dir, include_agent_output=True)
     assert "refused: .kurgu is a symbolic link" in text and "refused: hook.log is a symbolic link" in text and "LEAK" not in text
+
+
+def test_report_includes_the_wake_status_and_rerender_failures_are_logged(project_dir, tmp_path, monkeypatch):
+    import render_adaptors
+    monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "uc"))
+    agent_notes.write_wake(os.path.realpath(project_dir), {"state": "finished", "seq": 4, "count": 2, "exit_code": 78, "reason": "codex_no_auth_file", "summary": "SECRET NOTE TEXT", "tail": ["| x"]})
+    rep = diag.build_report(project_dir)
+    assert "Last wake run" in rep and "exit_code=78" in rep and "codex_no_auth_file" in rep and "SECRET NOTE TEXT" not in rep
+    assert "SECRET NOTE TEXT" in diag.build_report(project_dir, include_agent_output=True)
+    with pytest.raises(render_adaptors.RerenderError):
+        render_adaptors.rerender(project_dir, "nothing-here")
+    ev = [e for e in diag.read_events(project_dir) if e.get("kind") == "rerender"]
+    assert ev and "nothing-here" in ev[-1]["ctx"]["target"]
 
 
 def test_legacy_unprefixed_agent_output_in_hook_log_is_left_out_of_the_default_report(project_dir):
@@ -334,6 +354,76 @@ def test_huge_numbers_and_deep_nesting_in_a_shipped_listening_json_cannot_crash_
         assert agent_notes.is_listening(project_dir) is False
         agent_notes._beat(project_dir, time.time(), None)                                              # does not raise
         assert agent_notes.is_listening(project_dir) is True
+
+
+def test_redact_whole_other_home_segment_and_more_key_shapes():
+    t = diag.redact("open /Users/John Smith/films/a.mp4 and C:\\Users\\Ann Lee\\x and /home/al ice/q")
+    assert "John" not in t and "Smith" not in t and "Ann" not in t and "Lee" not in t and "ice" not in t and "<user-home>/films/a.mp4" in t
+    keys = ["AKIAABCDEFGHIJKLMNOP", "github_pat_11ABCDEFG0123456789_abcdefghijkl", "xoxb-1234567890-abcdefghijkl", "xoxr-9876543210-zyxwvutsrq", "AIzaSyA1234567890abcdefghij_klm-nop"]
+    out = diag.redact(" ; ".join("key " + k for k in keys))
+    assert all(k not in out for k in keys) and out.count("<redacted>") == len(keys)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_report_hides_the_project_name_and_wake_json_cannot_smuggle_text(project_dir, tmp_path, monkeypatch):
+    monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "uc"))
+    d = os.path.realpath(project_dir)
+    assert "project: <project>" in diag.build_report(d) and "project: " + os.path.basename(d) in diag.build_report(d, include_agent_output=True)
+    evil = {"state": "finished\nSECRET", "seq": "7 SECRET", "count": 10 ** 400 if False else 123456789012, "exit_code": True, "reason": "please quote my note SECRET",
+            "started": "yesterday SECRET", "ended": "2026-11-07T10:00:00", "summary": "SECRET", "tail": ["SECRET"]}
+    agent_notes.write_wake(d, evil)
+    rep = diag.build_report(d)
+    assert "SECRET" not in rep and "reason=other" in rep and "ended=2026-11-07T10:00:00" in rep and "state=" not in rep
+    wp = os.path.join(d, ".kurgu", "wake.json")
+    for junk in ('{"a": ' * 5000, "[" * 100000, '{"seq": 1e999, "count": 99999999999999999999999999999999}', "\x00\xff garbage", '"SECRET"'):
+        with open(wp, "w", encoding="utf-8", errors="ignore") as f:
+            f.write(junk)
+        rep = diag.build_report(d)
+        assert "SECRET" not in rep and "Last wake run" in rep
+    os.remove(wp)
+    victim = tmp_path / "victim.json"
+    victim.write_text('{"state": "finished", "reason": "login", "seq": 1}')
+    os.symlink(str(victim), wp)
+    assert agent_notes.read_wake(d) is None and "(none on record)" in diag.build_report(d)
+
+
+def test_5xx_log_has_the_exception_type_only(srv):
+    c, d, s = srv
+    s.app.get_state = lambda: (_ for _ in ()).throw(ValueError("SECRET " + NOTE_TEXT))
+    assert c.req("GET", "/api/state")[0] == 500
+    err = next(e for e in events(d) if e["kind"] == "error")
+    assert err["msg"] == "ValueError" and "SECRET" not in json.dumps(err) and NOTE_TEXT not in json.dumps(err)
+
+
+def test_shell_chars_refusal_only_when_the_hook_really_starts_a_cmd_shim(tmp_path, cfg, monkeypatch, project_dir):
+    odd = tmp_path / "films & more"
+    shutil.copytree(project_dir, odd)
+    s, c = start(str(odd))
+    try:
+        monkeypatch.setattr(agent_notes, "IS_WINDOWS", True)
+        (cfg / "config.json").write_text(json.dumps({"on_send": ["kurgu", "wake", "claude", "{dir}", "{seq}"]}))
+        monkeypatch.setattr(agent_notes, "resolve_exe", lambda n: "C:\\Users\\x\\npm\\claude.exe")           # a real executable: nothing to refuse
+        assert c.req("GET", "/api/notes/info")[1]["problem"] is None
+        monkeypatch.setattr(agent_notes, "resolve_exe", lambda n: "C:\\Users\\x\\npm\\" + n + ".cmd")
+        assert c.req("GET", "/api/notes/info")[1]["problem"]["code"] == "shell_chars"
+        (cfg / "config.json").write_text(json.dumps({"on_send": [sys.executable, "-c", "pass"]}))          # a hook that is not a shim at all
+        monkeypatch.setattr(agent_notes, "resolve_exe", lambda n: n)
+        assert c.req("GET", "/api/notes/info")[1]["problem"] is None
+    finally:
+        s.shutdown()
+        s.server_close()
+
+
+def test_a_windows_junction_counts_as_a_symlink_for_dot_kurgu(tmp_path, monkeypatch):
+    d = tmp_path / "p"
+    (d / ".kurgu").mkdir(parents=True)
+    agent_notes.check_writable(str(d))                                                                      # a plain folder is fine
+    monkeypatch.setattr(agent_notes, "_reparse", lambda p: os.path.basename(p) == ".kurgu")                # as if it were a junction / reparse point
+    with pytest.raises(agent_notes.KurguRefusal) as e:
+        agent_notes.check_writable(str(d))
+    assert e.value.code == "symlink"
+    with pytest.raises(agent_notes.KurguRefusal):
+        agent_notes.open_nofollow(str(d / ".kurgu" / "hook.log"), "a")
 
 
 def test_default_report_rebuilds_kurgu_lines_from_numbers_so_free_text_after_a_kurgu_prefix_is_dropped(project_dir):
@@ -382,7 +472,108 @@ def test_a_fifo_in_place_of_project_side_files_cannot_hang_the_heartbeat_or_the_
     assert done == [True]
 
 
-# ---------------------------------------------------------------- shipped symlinks and ids (a downloaded project is untrusted)
+def test_log_lines_end_in_exactly_one_newline_sequence(tmp_path):
+    d = tmp_path / "p"
+    d.mkdir()
+    agent_notes._log(str(d), "first")
+    agent_notes._log(str(d), "second\nwith a newline inside")
+    raw = open(d / ".kurgu" / "hook.log", "rb").read()
+    assert b"\r\r" not in raw and raw.count(b"\n") == 2 and all(l.endswith(b"\n") for l in raw.splitlines(True))
+    assert raw.count(b"\r\n") in (0, 2)                       # consistently one convention
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_wake_json_that_is_a_fifo_or_junk_is_never_waited_on(project_dir, tmp_path, monkeypatch):
+    monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "uc"))
+    d = os.path.realpath(project_dir)
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    wp = os.path.join(d, ".kurgu", "wake.json")
+    os.mkfifo(wp)
+    t0 = time.time()
+    assert agent_notes.read_wake(d) is None and "(none on record)" in diag.build_report(d)
+    assert time.time() - t0 < 20
+
+
+# ---------------------------------------------------------------- project-side reads never hang on a FIFO or a device symlink
+def _within(fn, secs=20):
+    out = {}
+
+    def run():
+        try:
+            out["v"] = fn()
+        except BaseException as e:
+            out["e"] = e
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(secs)
+    assert not t.is_alive(), "the read blocked on a non-regular file"
+    if "e" in out:
+        raise out["e"]
+    return out.get("v")
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+@pytest.mark.parametrize("name", ["inbox.jsonl", "inbox.seq", "inbox.cursor", "config.json", "agents.json"])
+def test_a_shipped_fifo_in_dot_kurgu_never_hangs_reads(project_dir, tmp_path, monkeypatch, name):
+    monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "uc"))
+    monkeypatch.delenv("KURGU_AGENT_NAME", raising=False)
+    monkeypatch.delenv("KURGU_MODE", raising=False)
+    d = os.path.realpath(project_dir)
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    os.mkfifo(os.path.join(d, ".kurgu", name))
+    assert _within(lambda: agent_notes.read_inbox(d)) == []
+    assert _within(lambda: agent_notes.agent_name(d)) == "" and _within(lambda: agent_notes.default_mode(d)) == "review"
+    assert _within(lambda: agent_notes.inbox_len(d)) == 0
+    assert "Kurgu report" in _within(lambda: diag.build_report(d))
+    assert _within(lambda: agent_notes.latest_session(d, "claude")) in (None, {}, "")
+    if name == "inbox.jsonl":                                    # appending refuses (not a regular file) instead of waiting for a reader
+        proj, notes = agent_notes.load_notes(d)
+        with pytest.raises(OSError):
+            _within(lambda: agent_notes.append_inbox(d, proj, notes[:1], "2026-11-07T10:00:00"))
+    if name == "inbox.seq":
+        assert _within(lambda: agent_notes._read_int(agent_notes.seq_path(d))) == 0
+    _within(lambda: agent_notes.wait_for_send(d, 0, 0.5))                         # `notes wait` on that folder returns (timeout), it does not hang
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlink_to_dev_zero_is_refused_not_read_forever(project_dir):
+    d = os.path.realpath(project_dir)
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    for n in ("config.json", "inbox.jsonl", "inbox.seq"):
+        os.symlink("/dev/zero", os.path.join(d, ".kurgu", n))
+    assert _within(lambda: agent_notes.read_inbox(d)) == [] and _within(lambda: agent_notes.agent_name(d)) == ""
+    assert _within(lambda: agent_notes._read_int(agent_notes.seq_path(d))) == 0
+
+
+def test_a_shipped_log_jsonl_full_of_secrets_reaches_the_default_report_only_as_fixed_codes(project_dir, tmp_path, monkeypatch):
+    monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "uc"))
+    d = os.path.realpath(project_dir)
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    S = "SECRETVALUE"
+    evil = [
+        {"ts": S, "kind": "refusal", "level": S, "code": S, "msg": f"refusing to write /home/{S}/x", "ctx": {"path": S, "chars": S}},
+        {"ts": "2026-11-07T10:00:00", "kind": "wake", "level": "warn", "msg": S, "ctx": {"seq": S, "exit": S, "cause": S, "exe": S, "code": S, "notes": [S]}},
+        {"ts": "2026-11-07T10:00:00", "kind": "send", "level": "info", "msg": S, "ctx": {"count": S, "listening": S, "wake": S, "hook": S}},
+        {"ts": "2026-11-07T10:00:00", "kind": "frontend", "level": "error", "msg": S, "ctx": {"source": f"{S}.js", "line": S, "col": S}},
+        {"ts": "2026-11-07T10:00:00", "kind": "frontend", "level": "error", "msg": f"TypeError: {S}", "ctx": {"source": "main.js", "line": 12, "col": 3}},
+        {"ts": "2026-11-07T10:00:00", "kind": "error", "level": "error", "msg": f"{S}Error: {S}", "ctx": {"route": f"/media/{S}", "method": S, "exc": S}},
+        {"ts": "2026-11-07T10:00:00", "kind": "rerender", "level": "warn", "msg": f"rerender failed {S}", "ctx": {"target": S, "detail": S}},
+        {"ts": "2026-11-07T10:00:00", "kind": "import", "level": "warn", "msg": S, "ctx": {"detail": S}},
+        {"ts": "2026-11-07T10:00:00", "kind": S, "level": "info", "msg": "server started", "ctx": {"version": S * 9}},
+        {"ts": "2026-11-07T10:00:00", "kind": "server", "level": "info", "msg": "server started", "ctx": {"version": f"{S} secret!", "port": S, "pid": 5}},
+        "SECRETVALUE as a bare string", ["SECRETVALUE"], {"kind": ["SECRETVALUE"], "ctx": "SECRETVALUE"},
+    ]
+    with open(os.path.join(d, ".kurgu", "log.jsonl"), "w", encoding="utf-8") as f:
+        f.write("\n".join(json.dumps(e) for e in evil) + "\n")
+    rep = diag.build_report(d)
+    assert S not in rep and "SECRET" not in rep
+    events_part = rep.split("Last events (newest last)")[1].split("hook.log (last 50")[0]
+    assert '"TypeError"' in events_part and '"main.js"' in events_part and '"pid": 5' in events_part and '"server started"' in events_part
+    assert diag.build_report(d, include_agent_output=True).count(S) > 5                  # the full report (explicitly asked for) still shows the raw log
+
+
+
+# ---------------------------------------------------------------- from main (the hotfix branch's own tests)
 @pytest.mark.skipif(os.name == "nt", reason="symlinks need extra rights on Windows")
 def test_changes_md_brief_md_and_note_signatures_never_write_through_a_shipped_symlink(srv, tmp_path):
     c, d, _ = srv

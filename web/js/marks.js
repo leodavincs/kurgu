@@ -49,9 +49,25 @@ function strokeMark(c, m, g) {   // m: a stored mark or a live shape in project 
   c.lineWidth = 3; c.strokeStyle = m.color || cv('--note') || '#f3c34b'; c.stroke();
   c.restore();
 }
-function shown() {   // saved marks of the note the playhead rests on
-  if (!S.project || S.playing) return [];
-  return S.project.notes.filter(n => n.marks && n.marks.length && Math.abs(S.t - n.t) < 0.04).flatMap(n => n.marks);
+// The saved marks of a note show on the frame only while that note is the selected one (clicked in a list / jumped to) or hovered, and the playhead
+// rests on its second: a mark with no note to blame would just sit on the picture.
+let focusId = null, hoverId = null;
+export function setFocusNote(id) { if (focusId !== id) { focusId = id; schedule(); } }
+export function setHoverNote(id) { if (hoverId !== id) { hoverId = id; schedule(); } }
+function shown() {
+  if (!S.project || S.playing || (!focusId && !hoverId)) return [];
+  return S.project.notes.filter(n => (n.id === focusId || n.id === hoverId) && n.marks && n.marks.length && Math.abs(S.t - n.t) < 0.04).flatMap(n => n.marks);
+}
+function leaveFocus() {   // the playhead moved off the selected note: it is no longer selected
+  if (!focusId || !S.project) return;
+  const n = S.project.notes.find(q => q.id === focusId);
+  if (!n || Math.abs(S.t - n.t) >= 0.04) focusId = null;
+}
+/** Small "has a drawing" icon for a note with marks (null otherwise). */
+export function drawBadge(n, cls = '') {
+  if (!n.marks || !n.marks.length) return null;
+  const b = el('span', 'mk-badge ' + cls); b.title = t('mark.has'); b.setAttribute('role', 'img'); b.setAttribute('aria-label', t('mark.has')); b.append(icon('m-ellipse'));
+  return b;
 }
 function redraw() {
   raf = 0; if (!canvas || !S.project) return;
@@ -148,5 +164,5 @@ function bind() {
 export function startMarks(stage) {
   canvas = el('canvas'); canvas.id = 'mark-canvas'; ctx = canvas.getContext('2d'); stage.append(canvas); bind();
   new ResizeObserver(schedule).observe(stage);
-  return { project: schedule, time: schedule, view: schedule, playing: schedule, theme: schedule };
+  return { project: schedule, time() { leaveFocus(); schedule(); }, view: schedule, playing: schedule, theme: schedule };
 }

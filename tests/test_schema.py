@@ -194,3 +194,26 @@ def test_group_colour_overrides_are_normalised_and_validated():
     assert any('groups["Bad"]' in x for x in schema.validate(p)) and any('groups["Odd"]' in x for x in schema.validate(p))
     assert not schema.validate(n)
     assert "groups" not in schema.normalize({"version": 2, "layers": [], "groups": {"x": {}}})
+
+
+def test_non_finite_numbers_are_not_numbers():
+    """NaN / Infinity are accepted by Python's json but the editor cannot load a project that holds them (security review N5)."""
+    import json
+    import math
+    n = schema.normalize_note({"id": "n_1", "t": float("nan"), "text": "x", "marks": [{"type": "rect", "x": float("inf"), "y": 1, "w": 2, "h": 3}, {"type": "rect", "x": 1, "y": 1, "w": 2, "h": 3}]})
+    assert n["t"] == 0 and len(n["marks"]) == 1
+    assert schema.normalize_note({"id": "n_2", "t": "inf", "text": ""})["t"] == 0
+    p = schema.normalize({"width": float("inf"), "fps": float("nan"), "duration": "nan", "layers": [{"type": "text", "id": "a", "x": float("-inf"), "text": "t", "start": 0, "end": 1}]})
+    json.loads(schema.dumps(p), parse_constant=lambda c: (_ for _ in ()).throw(AssertionError("NaN/Infinity in " + c)))
+    assert all(math.isfinite(v) for v in (p["width"], p["fps"], p["duration"]))
+
+
+def test_migrate_dir_leaves_no_temp_when_the_replace_fails(tmp_path, monkeypatch):
+    (tmp_path / "proje.json").write_text(json.dumps(v1()), encoding="utf-8")
+
+    def locked(*a, **k):                              # Windows: an antivirus / indexer holds the new file
+        raise PermissionError("locked")
+    monkeypatch.setattr(os, "replace", locked)
+    with pytest.raises(PermissionError):
+        schema.migrate_dir(str(tmp_path))
+    assert sorted(x.name for x in tmp_path.iterdir()) == ["proje.json"]

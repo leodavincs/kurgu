@@ -1,4 +1,4 @@
-"""Headless-Chrome check of the Notes panel (CDP over websocket-client). Own server on port 8897 and own Chrome profile/debug port:
+"""Headless-Chrome check of the Notes panel (CDP over websocket-client). Own server on a free port and own Chrome profile/debug port:
 never touches the user's Chrome or the usual editor port. Skipped when Chrome or websocket-client is missing.
 Set KURGU_SHOTS=<dir> to keep the screenshots (en / tr)."""
 import json
@@ -20,7 +20,16 @@ import cdp  # noqa: E402
 CHROME = cdp.find_chrome()
 CMD = 4 if sys.platform == "darwin" else 2                          # CDP modifier bits: alt 1, ctrl 2, meta 4, shift 8; the app's command key is Meta on macOS only
 pytestmark = pytest.mark.skipif(not CHROME, reason="Chrome not found")
-PORT, DEBUG = 8897, 9337
+def _free_port():
+    import socket
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+PORT, DEBUG = _free_port(), _free_port()                              # free ports: parallel agents / suites must not collide
 NOTES = [
     {"id": "n_a", "t": 1.2, "text": "title appears too late", "created": "2026-09-29T10:00:00"},
     {"id": "n_b", "t": 3.4, "text": "sound a bit loud here", "created": "2026-09-29T10:01:00"},
@@ -109,9 +118,8 @@ def env(tmp_path_factory):
     else:
         pytest.fail("server/chrome did not start")
     yield {"proj": proj, "shots": os.environ.get("KURGU_SHOTS") or str(tmp)}
-    chrome.terminate()
+    cdp.stop_chrome(chrome, DEBUG, prof)
     server.terminate()
-    shutil.rmtree(prof, ignore_errors=True)
 
 
 def saved_notes(proj):

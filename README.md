@@ -44,7 +44,11 @@ One command. It installs [uv](https://docs.astral.sh/uv/) if needed, a private P
 | macOS / Linux | `curl -LsSf https://raw.githubusercontent.com/leodavincs/kurgu/main/install.sh \| sh` |
 | Windows (PowerShell) | `powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/leodavincs/kurgu/main/install.ps1 \| iex"` |
 
-Then open a **new** terminal and run `kurgu path/to/project`. `kurgu doctor` checks the machine (Python, ffmpeg, hardware encoders, free disk space; `--json` for agents, `--fix` downloads a missing ffmpeg).
+Then open a **new** terminal and run `kurgu path/to/project`. `kurgu --help` lists every command. `kurgu doctor` checks the machine (Python, ffmpeg, hardware encoders, free disk space; `--json` for agents, `--fix` downloads a missing ffmpeg).
+
+**From a checkout** (to try a branch or your own changes): `KURGU_SOURCE=/path/to/your/kurgu sh install.sh`. `KURGU_SOURCE` can be a folder, a URL or `git+https://...`; run it again after you change the code.
+
+Chrome (or Chromium) is only needed for the code-video tools, `kurgu elements` and `kurgu rerender`; the editor itself runs without it. Set `KURGU_CHROME=/path/to/chrome` if Kurgu does not find yours.
 
 ### Install for your user (for a coding agent: Claude Code, Codex, ...)
 
@@ -69,6 +73,8 @@ When something goes wrong:
 Order: `KURGU_FFMPEG` / `KURGU_FFPROBE` (a file or a folder) → `ffmpeg` on PATH (a system ffmpeg always wins) → the copy `kurgu setup-ffmpeg` downloaded into Kurgu's data folder (`%LOCALAPPDATA%\Kurgu\ffmpeg`, `~/Library/Application Support/Kurgu/ffmpeg`, `~/.local/share/kurgu/ffmpeg`) → usual install folders (Homebrew, winget, Chocolatey, Scoop, ...). The editor never downloads anything by itself; only the install script, `kurgu setup-ffmpeg` or `kurgu doctor --fix` do. Downloads are verified by SHA-256 and by running `-version`.
 
 Static builds used (all GPL builds of FFmpeg, free software, fetched on your machine, not shipped inside Kurgu; see https://ffmpeg.org/legal.html): Windows and Linux from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds), macOS from [ffmpeg.martin-riedl.de](https://ffmpeg.martin-riedl.de/). Prefer your own? `brew install ffmpeg`, `sudo apt install ffmpeg` or `winget install Gyan.FFmpeg` also work.
+
+**FFmpeg compatibility.** CI runs the ffmpeg-heavy tests (export, proxies, waveforms, loudness, strips, frame parity) against ffmpeg 6.1, 7.1 and 8.1 on Linux, and the full suite on whatever each runner ships. `kurgu doctor` reports your version and warns below 6.1.
 
 ### Other routes
 
@@ -123,21 +129,44 @@ Kurgu opens in **Review mode**: a big preview, the audio as one readable wavefor
 2. **Point.** Can't describe where? Draw on the frame: ellipse, rectangle or arrow, in five colours (`Alt+O/B/A`, `Alt+1…5`). Shapes are stored in project pixels, so the agent gets exact coordinates, not "somewhere top right".
 3. **Send.** One click on *Send to agent*. Each note goes out with its timecode, the scene and layers under it, the drawn marks (colour, position, size, the layers beneath) and a JPEG of the frame with the marks burned in. Everything lands in `NOTLAR.md` and `.kurgu/inbox.jsonl` in the project folder.
 4. **The agent fixes it.** Claude Code runs `kurgu notes wait <project>` in the background and wakes up on your send; Codex calls the `notes_wait` MCP tool (see *Use with other agents*). Or let Kurgu wake the agent itself: `kurgu setup-agent --claude --wake` / `--codex --wake` starts it on every send, headless, so you don't have to look at a terminal at all.
-5. **See the reply.** Fixed notes turn into *fixed* with the agent's one-line answer in the notes list. A send made while the agent is still working is never lost.
+   Every note also carries the rendered `bounds` (left/top/right/bottom, px) and an `anchor` line for each layer on screen, so the agent can line edges up with what is around it; it then checks the result with `kurgu frame <project> <seconds>` (a JPEG of the project as it is now, no browser needed) before closing the note.
+   If the note gives a direction or target, apply the best change in that direction and state the values and any remaining compromise in the reply. Ask only when no reading satisfies the note's core request, or the change would be destructive. A vague note with no direction gets the smallest clear reading, stated with its values. When it does ask, the note turns into *asked*, you type the answer in the editor and it goes back to the agent.
+   To check a change over time the agent makes one `kurgu strip <project> <t0> <t1>` call (a labelled contact sheet) instead of many single frames.
+   Clips made with code (cinecode, Remotion, HyperFrames, Manim, plain HTML) can declare a `source` and an element map: the note then names the source file and frame, and a mark lists the on-screen elements under it with measured boxes and `file:line`, so the agent fixes the code instead of patching the timeline.
+   Each note also carries measured audio facts (peak and RMS level, silences, word timings when a transcript exists) around its time.
+5. **See the reply.** Fixed notes turn into *fixed* with the agent's one-line answer in the notes list. A send made while the agent is still working is never lost. While the agent works the sent notes say *Agent is working…*; if it could not start (for example it is not logged in) a red message says why, with a link to `.kurgu/hook.log`; if it finished but a note is still open, you are told that too. To compare the old and the new picture of a re-rendered clip, press `B` (a short message says so when there is no earlier version yet).
+   Keys in the editor: `W` or `F` opens watch mode full screen, `N` jumps into the note box, `Enter` adds the note, `Esc` leaves, `B` flips before / after. Anything you type while watch mode is still opening is kept. A drawing shows on the frame only for the note you select or hover (notes with a drawing carry a small circle icon).
 
-Agent side: `kurgu notes wait | list | done`, MCP `notes_wait`, `notes_list`, `notes_done`. Details in `AGENTS.md` and `SPEC.md`.
+<!-- kurgu:generated:agent-side -->
+Agent side: `kurgu notes wait | list | done | ask | add`, `kurgu frame <project> <seconds> [-o out.jpg] [--full]`, `kurgu strip <project> <t0> <t1> [--n 6]`, MCP `notes_wait`, `notes_list`, `notes_done`, `notes_ask`, `render_frame`, `render_strip`. `kurgu detect <project> <seconds> [--layer ID] [--json]` (alias `kurgu ocr`, MCP `detect`) finds text and shapes burned into a clip, which have no layer bounds; `kurgu rerender <project> <layer|unit>` (MCP `rerender`) regenerates a code-made clip from its source. Say "Wait for my Kurgu notes" and the agent stays in the wait, fix, done loop; Kurgu records which agent session works on the project in `.kurgu/agents.json` so the wake hook resumes that one. Details in `AGENTS.md` and `SPEC.md`.
+<!-- kurgu:generated:end -->
+
+### Clips made by code: `kurgu rerender`
+
+A layer can say which code made it (`source`: `kind`, `unit`, `fps`, `unit_start_frame`, `render`). When a note on such a layer is fixed in the source file, `kurgu rerender <project> <unit-or-layer-id>` regenerates only that unit: which frames it covers comes from the scene list (`source.list`, e.g. `shots.json`, read fresh) or `source.unit_start_frame` + `source.frames`, never from the old media's length. A scene of a film gets its OWN file (`film.<unit>.mp4`, written atomically; the film and the other scenes are never rewritten) and its layers are re-pointed at it, with the new `end` when the length changed; the output names the later scene layers you must shift. `--dry-run` prints what would run. Audio is the matching slice of the old file. Inside Codex's macOS sandbox Chrome cannot start and the command says so. Editor and project.json otherwise stay as they are. The agent then checks with `kurgu frame` / `kurgu strip` before closing the note.
+
+`source.render` is an adaptor name, never a command, so a downloaded project cannot run anything. Built in: `html-frames` (any page exposing `window.renderFrame(i)` or `window.captureFrame(i)`, rendered in headless Chrome with the network blocked and encoded with ffmpeg; set `source.page`, optionally `source.frames` and `source.params`) and `cinecode-shot` (uses cinecode's `capture.mjs` when you point `cinecode_dir` in your config at a cinecode checkout, otherwise `html-frames` over the shot's frames). Your own adaptor goes in `~/.config/kurgu/config.json` only: `"render_adaptors": {"mine": ["my-tool", "--unit", "{unit}", "--from", "{start_frame}", "--to", "{end_frame}", "--fps", "{fps}", "--out", "{out}"]}` (or env `KURGU_RENDER_MINE` as a JSON list). Placeholders `{root} {unit} {start_frame} {end_frame} {fps} {out}`; no shell. A `source.root` outside the project folder must be listed in `render_trusted_roots` in the same file. After a built-in re-render the unit's `source.elements` boxes are re-measured (same page, params and step; a failure keeps the old map and marks it `"stale": true`, shown as `elements_error`). `kurgu import <folder>` adds that folder to `render_trusted_roots` in your user config (one line printed; `--no-trust` skips it); a project file can never trust a folder itself.
 
 ## Use with other agents
 
 Kurgu ships an MCP server (`kurgu-mcp`, stdio; the same code as `mcp_server.py`), so any MCP-capable agent gets the same powers: open the editor, see what you selected, edit the project in validated batches, look at rendered frames, render. `AGENTS.md` in the repo root tells agents that read that file how to work with Kurgu.
 
-Tools: `open_editor`, `get_state`, `get_project`, `edit_project`, `render_frame`, `render`, `get_changes`, `list_fonts`, `list_media`, `import_file`. Each takes an optional `project_dir` (default: the server's working directory, or the `KURGU_PROJECT_DIR` environment variable). The snippets below assume the one-line installer above (or `pipx install git+https://github.com/leodavincs/kurgu`), which puts `kurgu-mcp` on your PATH (if the agent cannot find it, use the full path: `uv tool dir --bin` or `pipx` print the folder). From a clone, use your virtualenv's Python and the full path to `mcp_server.py` instead.
+Tools:
+<!-- kurgu:generated:tool-names -->
+`open_editor`, `get_state`, `get_project`, `edit_project`, `render_frame`, `render_strip`, `rerender`, `detect`, `render`, `get_changes`, `get_brief`, `update_brief`, `get_notes`, `update_note`, `add_note`, `notes_list`, `notes_wait`, `notes_done`, `notes_ask`, `list_fonts`, `list_media`, `import_file`, `transcribe`, `make_captions`
+<!-- kurgu:generated:end -->
+
+Each takes an optional `project_dir` (default: the server's working directory, or the `KURGU_PROJECT_DIR` environment variable). The snippets below assume the one-line installer above (or `pipx install git+https://github.com/leodavincs/kurgu`), which puts `kurgu-mcp` on your PATH (if the agent cannot find it, use the full path: `uv tool dir --bin` or `pipx` print the folder). From a clone, use your virtualenv's Python and the full path to `mcp_server.py` instead.
 
 **Claude Code.** Install the plugin (see above). The MCP server is registered automatically through the plugin's `.mcp.json` (via `uvx`); nothing to configure. Without the plugin: `claude mcp add kurgu -- kurgu-mcp`.
 
 **Experimental:** the in-editor Ask AI box falls back to Codex when Claude Code is missing, but that path is not yet tested end to end. A custom agent command is read only from `KURGU_AGENT_CMD` or `~/.config/kurgu/config.json`, never from a project folder.
 
 **OpenAI Codex (CLI, IDE, desktop app).** `kurgu setup-agent --codex` (add `--project <dir>` to put a short Kurgu section in that project's AGENTS.md; `--dry-run` shows what changes). It registers the MCP server in `~/.codex/config.toml` with `tool_timeout_sec = 3600` (Codex's default is 60 s, which would cut off `notes_wait`) and installs the skill to `~/.agents/skills/kurgu`. Restart Codex. Codex cannot be woken by a background process, so the watch + note loop uses repeated `notes_wait` calls (or you press Send and tell it "check notes"); with `--wake` Kurgu can start the agent itself when you press Send (see the "Wake the agent" notes in AGENTS.md). Run Codex inside the project folder with the `workspace-write` sandbox.
+
+**What a woken Codex may run.** `kurgu wake codex` starts Codex in its own `CODEX_HOME` (`~/.config/kurgu/codex-home`, `%APPDATA%\kurgu\codex-home`) with a generated execpolicy file, `rules/kurgu.rules`; your own `~/.codex` and your other Codex sessions are untouched (your model settings are copied, your login is linked, not copied). Codex rules can only deny, so the file forbids network tools (`curl`, `wget`, `ssh`), `rm`/`mv`/`cp`/`tee` and other file writers, `python`/`node`/`perl`/`awk`/`find`/`env`/`xargs`/`ffmpeg`, package managers, `git push|clone|fetch|pull`, `sed -i`, `rg --pre`, any shell started again with `-c`, and the `kurgu` subcommands that are not note work. Everything else (`kurgu notes|frame|strip|rerender|detect|probe`, `ffprobe`, `cat`, `ls`, `head`, `sed -n`, `grep`, `rg`, `jq`) runs inside the `workspace-write` sandbox: writes only in the project folder, no network. Edits through Codex's patch tool, which is how it changes `project.json`, stay allowed. The Claude equivalent is the `--allowedTools` list (`kurgu notes|frame|strip`, `ffprobe`), which is stricter because Claude supports an allow list. To run without the rules, set `"codex_policy": "off"` in the user config file (`~/.config/kurgu/config.json`); a project folder cannot do that. If your Codex login lives in the OS keyring instead of `auth.json`, the wake refuses to start rather than run unrestricted. `kurgu setup-agent --codex --wake --dry-run` prints the policy.
+
+**What a woken Claude Code may run.** `claude -p ... --allowedTools` gets exactly: `kurgu notes|frame|strip|rerender|detect|probe`, `kurgu --help`, `kurgu <command> --help` and the `kurgu` MCP tools; no general Bash, no `ffprobe` (it can read URLs: use `kurgu probe <project> [layer|file]`), and `--setting-sources user`, so a project's own `.claude/settings*.json` hooks and `.mcp.json` servers never load.
 
 **Cursor.** `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` for all projects):
 
@@ -166,6 +195,62 @@ Tools: `open_editor`, `get_state`, `get_project`, `edit_project`, `render_frame`
 ```
 
 Nothing here changes how Kurgu works: the agent edits through the running editor when there is one (you see changes live and they are logged in `changes.md` as `[agent]`), and writes `project.json` directly when there is not.
+
+## If you make videos with code
+
+If your video is rendered by code (cinecode, a page of your own, Remotion), a note on the video is best fixed in that code, not on top of the finished mp4. `kurgu import` turns your scene list into a Kurgu project where every scene is a clip that remembers where it came from (`source` in `project.json`); `kurgu elements` measures where the text of a scene sits on screen. Both are zero-dependency (headless Chrome is the only requirement for `elements`).
+
+**cinecode** ([sarpstar/cinecode](https://github.com/sarpstar/cinecode), MIT). Render a draft or final as usual, then in the film folder: `kurgu import . --elements`. It reads `shots.json` (frames, `fps`, `text_on_screen`, `vo`), the newest `renders/film-vN.mp4` or `renders/draft-vN.mp4` and `audio/mix.json`, and writes `kurgu/project.json` (one clip per shot, cut at the shot frames; `scenes.md` lists each shot's text and voice-over). Nothing that exists in the film folder is changed. Text drawn into the canvas cannot be measured; the command says so.
+
+**A plain HTML page that draws frames.** Any page that exposes `window.renderFrame(i)` (or `captureFrame(i)`) as a pure function of the frame works: `kurgu elements page.html --frames 0:240:6 -o scene.kurgu.json`. Text and elements in the DOM get boxes per frame, and so do text, shapes and images drawn with the 2D canvas API (`fillText`, `fill`/`stroke`, `fillRect`, `Path2D`, `drawImage`): `kurgu elements` records them automatically, the page needs no change. Canvas text gets `file:line` when its literal string is in the page's own sources (`--source-root` adds a folder; `line_ambiguous` when it appears more than once), nearby shapes of one colour merge into one element, and `--no-canvas` turns this off. WebGL / three.js output is pixels and is not captured: use the hook below or the OCR / vision fallback (coming).
+
+Mark an element with `data-kurgu-id="title"` (and optionally `data-kurgu-src="scene.js:41"`) to give it a stable name and its source line.
+
+**For engine authors (WebGL / 3D pages).** Anything a 2D canvas does not draw is pixels, so there is nothing to measure from the page; for the finished video, `kurgu detect <project> <seconds>` (OCR and shape detection, approximate) finds text and shapes in the frame. For exact boxes, if your page defines `window.kurguElements(i)`, `kurgu elements` calls it right after `renderFrame(i)` and merges the answer with what it finds in the DOM. It returns the boxes in page pixels:
+
+```js
+window.kurguElements = (i) => [
+  { id: "title", label: "Fena değil", kind: "text", l: 116, t: 160, r: 640, b: 250,
+    file: "engine/scene-s03.js", line: 41 },        // file and line are optional
+];
+```
+
+**Anything else.** Render an mp4 and write a `scenes.json` next to it: `{"fps": 30, "video": "out/film.mp4", "scenes": [{"id": "intro", "start_frame": 0, "end_frame": 90, "file": "scenes/intro.html"}]}`, then `kurgu import <folder>`. A Remotion project is recognised but not imported yet: the command tells you what to write. An existing `project.json` is never overwritten without `--force`.
+
+### A tiny scene from scratch
+
+Three files in an empty folder show the whole loop. `scenes/hello.html` draws frame `i` as a pure function of `i`:
+
+```html
+<canvas id="c" width="1280" height="720"></canvas>
+<script>
+const g = document.getElementById("c").getContext("2d");
+window.renderFrame = (i) => {                      // everything on screen depends only on the frame number
+  g.fillStyle = `hsl(${i * 3}, 70%, 45%)`;
+  g.fillRect(0, 0, 1280, 720);
+  g.fillStyle = "#fff";
+  g.font = "bold 96px sans-serif";
+  g.fillText("Hello Kurgu", 100 + i * 4, 380);
+};
+</script>
+```
+
+`scenes.json` lists the scene (frames 0 to 60 at 30 fps) and names the film it belongs to:
+
+```json
+{"fps": 30, "video": "out/film.mp4",
+ "scenes": [{"id": "hello", "start_frame": 0, "end_frame": 60, "file": "scenes/hello.html"}]}
+```
+
+Any 2 s mp4 will do as the first `out/film.mp4`, for example `mkdir out && ffmpeg -f lavfi -i color=black:s=1280x720:d=2:r=30 -pix_fmt yuv420p out/film.mp4`. Then:
+
+```bash
+kurgu import .                       # 1. scenes.json -> ./kurgu/project.json (one clip per scene that remembers its page)
+kurgu kurgu                          # 2. open it; write a note ("text bigger, slower colour change"), press Send; the agent edits scenes/hello.html
+kurgu rerender kurgu hello           # 3. render only that scene with headless Chrome and swap it in; the editor shows it at once
+```
+
+`kurgu frame kurgu 1.0` shows the result without a browser. Chrome must be installed for step 3.
 
 ## Editor tour
 
@@ -201,6 +286,8 @@ Nothing here changes how Kurgu works: the agent edits through the running editor
 | Cmd/Ctrl + E | Open / close the export dialog |
 | S | Toggle snapping |
 | N | Add a note at the playhead |
+| W / F | Watch + note, full screen (typing straight away works) |
+| B | Flip between before and after of a re-rendered clip |
 | Shift + N | Show / hide the Notes panel |
 | Alt + Left / Right | Previous / next note |
 | `\` | Show / hide the media panel |

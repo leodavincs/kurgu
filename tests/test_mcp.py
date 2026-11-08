@@ -123,8 +123,8 @@ def test_legacy_handshake_and_tools_list(project_dir):
         m.send({"jsonrpc": "2.0", "method": "notifications/initialized"})
         assert m.call("ping")["result"] == {}
         names = [t["name"] for t in m.call("tools/list")["result"]["tools"]]
-        assert names == ["open_editor", "get_state", "get_project", "edit_project", "render_frame", "render",
-                         "get_changes", "get_brief", "update_brief", "get_notes", "update_note", "add_note", "notes_list", "notes_wait", "notes_done", "list_fonts", "list_media", "import_file",
+        assert names == ["open_editor", "get_state", "get_project", "edit_project", "render_frame", "render_strip", "rerender", "detect", "render",
+                         "get_changes", "get_brief", "update_brief", "get_notes", "update_note", "add_note", "notes_list", "notes_wait", "notes_done", "notes_ask", "list_fonts", "list_media", "import_file",
                          "transcribe", "make_captions"]
         for t in m.call("tools/list")["result"]["tools"]:
             assert t["inputSchema"]["type"] == "object" and "project_dir" in t["inputSchema"]["properties"] and t["description"]
@@ -151,7 +151,7 @@ def test_modern_era_without_handshake(project_dir):
         assert d["supportedVersions"] == ["2026-07-28"] and d["resultType"] == "complete"
         assert d["_meta"]["io.modelcontextprotocol/serverInfo"]["name"] == "kurgu"
         tl = m.call("tools/list", meta=meta)["result"]
-        assert tl["resultType"] == "complete" and len(tl["tools"]) == 20
+        assert tl["resultType"] == "complete" and len(tl["tools"]) == 24
         assert isinstance(tl["ttlMs"], int) and tl["cacheScope"] in ("public", "private")  # required by Claude Code 2.1.296
         r = m.call("tools/call", {"name": "get_project", "arguments": {"summary": True}}, meta=meta)["result"]
         assert r["resultType"] == "complete" and "k_buyuk" in r["content"][0]["text"]
@@ -486,3 +486,11 @@ def test_linked_pair_shows_in_summary_and_edit_warns_when_out_of_sync(mcp, proje
     mcp.ok("edit_project", update=[{"id": "pa", "set": {"link": None}}])       # unlink
     assert "link" not in layer(project_dir, "pa") and layer(project_dir, "pv")["link"] == "lk_x"
     assert "Linked clips" not in first_text(mcp.ok("get_project", summary=True))    # a lone link is not a pair
+
+
+def test_unknown_tool_arguments_are_an_error_that_names_the_valid_ones(mcp, project_dir):
+    r = mcp.tool("render_frame", t=1.0, tt=2.0, bogus=True)
+    assert r["isError"] and "Unknown argument(s) for render_frame: bogus, tt" in r["content"][0]["text"] and "Valid arguments:" in r["content"][0]["text"] and "t" in r["content"][0]["text"]
+    assert not mcp.tool("render_frame", t=1.0).get("isError")
+    r = mcp.tool("notes_done", ids=["n_x"], reply="ok", repl="typo")
+    assert r["isError"] and "repl" in r["content"][0]["text"]

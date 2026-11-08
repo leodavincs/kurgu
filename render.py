@@ -45,6 +45,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 import anim
 import media_tools
 import fonts
+import kurgu_paths
 import schema
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1141,6 +1142,8 @@ def _render_full(pdir, project, o, output):
     rng = (t0, t1) if (t0 > 0 or t1 < ctx.duration) else None
     want_audio = audio_only or (o.audio and o.codec != 'gif')
     L = [] if audio_only else visual_layers(ctx, project)
+    if os.path.islink(os.path.join(pdir, '.kurgu')) or os.path.islink(os.path.join(pdir, '.kurgu', 'render_tmp')):
+        raise RenderError('.kurgu (or .kurgu/render_tmp) is a symbolic link: refusing to render through it')
     tmp = os.path.join(pdir, '.kurgu', 'render_tmp')
     shutil.rmtree(tmp, ignore_errors=True)
     os.makedirs(tmp, exist_ok=True)
@@ -1292,6 +1295,8 @@ def main(argv=None):
                     output = os.path.splitext(output)[0] + '.' + fmt
             else:
                 output = resolve(pdir, project['output'])
+                if not kurgu_paths.inside(pdir, output):                 # project.json is untrusted: its `output` must not point outside the project
+                    raise RenderError(f"project.output points outside the project folder ({project['output']}); give --output if you really want that")
                 if fmt:
                     output = os.path.splitext(output)[0] + '.' + fmt
                 if a.draft:

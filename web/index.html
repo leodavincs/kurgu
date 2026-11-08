@@ -132,7 +132,7 @@ try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'd
 <main id="main">
   <aside data-edit id="media-panel" class="panel"></aside>
   <section id="preview-section" class="panel">
-    <div id="stage"><div id="frame"><canvas id="canvas"></canvas></div><canvas id="overlay-canvas"></canvas><div id="empty-state" hidden></div></div>
+    <div id="stage"><div id="frame"><canvas id="canvas"></canvas></div><canvas id="overlay-canvas"></canvas><div id="empty-state" hidden></div><div id="ab-badge" class="ab-badge" hidden aria-live="polite"></div></div>
     <div data-edit id="scrub"><div class="fill"></div><div id="scrub-notes"></div><div class="head"></div></div>
     <div id="transport" class="glass">
       <span id="timecode"><b id="tc-now">00:00.00</b><span id="tc-dur">/ 00:00.00</span><span id="tc-rate" hidden></span></span>
@@ -145,6 +145,7 @@ try { var t = localStorage.getItem('kurgu.theme'); if (t !== 'light' && t !== 'd
         <button data-edit id="b-zoom-out" class="ib" data-i18n-title="view.zoomOut"><svg class="ic" aria-hidden="true"><use href="#i-zoom-out"/></svg></button>
         <select data-edit id="zoom-select" data-i18n-title="view.zoomTip"></select>
         <button data-edit id="b-zoom-in" class="ib" data-i18n-title="view.zoomIn"><svg class="ic" aria-hidden="true"><use href="#i-zoom-in"/></svg></button>
+        <button id="b-ab" class="ab" hidden aria-pressed="false" data-i18n-title="ab.tip"><span data-i18n="ab.button"></span></button>
         <button id="b-watch" class="watch" data-i18n-title="watch.tip"><svg class="ic" aria-hidden="true"><use href="#i-watch"/></svg><span data-i18n="watch.button"></span></button>
         <button data-edit id="b-guides" class="ib" data-i18n-title="guides.tip"><svg class="ic" aria-hidden="true"><use href="#i-grid-3x3"/></svg></button>
       </div>

@@ -35,6 +35,7 @@ class Chrome:
             [exe] + chrome_flags(self.port, self.profile, width, height, ["--force-color-profile=srgb", "--hide-scrollbars"]), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         self.ws = None
         self._id = 0
+        self.dialogs = []
         deadline = time.time() + STARTUP_WAIT
         while time.time() < deadline:
             try:
@@ -53,6 +54,10 @@ class Chrome:
         self.ws.send(json.dumps({"id": self._id, "method": method, "params": params}))
         while True:
             msg = json.loads(self.ws.recv())
+            if msg.get("method") == "Page.javascriptDialogOpening":      # a beforeunload prompt blocks headless Chrome until somebody answers it
+                self.dialogs.append(str((msg.get("params") or {}).get("type", "")))
+                self.ws.send(json.dumps({"id": 10 ** 9 + len(self.dialogs), "method": "Page.handleJavaScriptDialog", "params": {"accept": True}}))
+                continue
             if msg.get("id") == self._id:
                 if "error" in msg:
                     raise RuntimeError(f"{method}: {msg['error']}")
@@ -82,12 +87,8 @@ class Chrome:
                 self.ws.close()
         except Exception:
             pass
-        self.proc.terminate()
-        try:
-            self.proc.wait(5)
-        except Exception:
-            self.proc.kill()
-        shutil.rmtree(self.profile, ignore_errors=True)
+        from cdp import stop_chrome
+        stop_chrome(self.proc, self.port, self.profile)
 
 
 def decode_data_url(u):

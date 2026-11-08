@@ -3,11 +3,15 @@
 // and shows up in the change summary. Also exports addNote (used by the N box), jumpNote (Alt+→ / Alt+←) and toggleNotes (Shift+N).
 // Styling: web/notes.css (Lumen tokens with fallbacks). Icons: ic() below uses the Lumen sprite when present, else a plain glyph.
 import { S, change, newId, setTime, select, clamp } from './state.js';
-import { pause } from './preview.js';
+import { pause, layerBounds } from './preview.js';
 import { revealPlayhead } from './layers.js';
 import { askAbout } from './ai.js';
 import { t, fmt, getLang } from './i18n.js';
 import { $, el } from './dom.js';
+import { answerBlock } from './answer.js';
+import { abNoteButton, noteChanged } from './ab.js';
+import { wakeBlock, wakeWorking } from './wake.js';
+import { setFocusNote, setHoverNote, drawBadge } from './marks.js';
 
 { const link = document.createElement('link'); link.rel = 'stylesheet'; link.href = '/web/notes.css'; document.head.append(link); }
 
@@ -22,7 +26,7 @@ const st = {
   filter: ['all', 'open', 'done'].includes(store.get('filter', 'all')) ? store.get('filter', 'all') : 'all',
   query: '', editing: null, current: null, reveal: null,
 };
-let root, listEl, countEl, filterBtns = {}, addInput, addTime, toast = () => {}, sig = '', io = null;
+let root, listEl, wakeEl, countEl, filterBtns = {}, addInput, addTime, toast = () => {}, sig = '', io = null;
 const rows = new Map();   // note id -> { el, sig, thumb }
 const sorted = () => [...S.project.notes].sort((a, b) => a.t - b.t);
 const rnd = v => Math.round(v * 100) / 100;
@@ -40,11 +44,26 @@ export function ic(name, glyph = '') {
 
 // ---------------------------------------------------------------- data helpers
 export const layersAt = (P, time) => P.layers.filter(l => !l.hidden && l.start <= time && time < l.end);
+/** Rendered bounds (project px) of every layer the note refers to: the layers active at `at` plus the ones under its marks. Only measurable when the
+ *  playhead is at `at` (the geometry is the editor's own, at the playhead). {layerId: {left, top, right, bottom, w, h, anchor}} */
+function boundsFor(at, marks) {
+  const out = {};
+  if (Math.abs(S.t - at) > 0.05) return out;
+  const ids = new Set(layersAt(S.project, at).map(l => l.id));
+  for (const m of marks || []) for (const l of m.layers || []) if (l && l.id) ids.add(l.id);
+  for (const id of ids) {
+    const l = S.project.layers.find(x => x.id === id);
+    if (!l || !['video', 'image', 'text'].includes(l.type)) continue;
+    try { const b = layerBounds(l); if (b) out[id] = b; } catch (e) { /* a layer that cannot be measured is left out */ }
+  }
+  return out;
+}
 /** Add a user note at `at` (seconds); returns its id. */
 export function addNote(text, at, marks) {
   text = String(text || '').trim(); if (!text && !(marks && marks.length)) return null;
   const id = newId('n'); at = rnd(at);
-  change(p => { p.notes.push({ id, t: at, text, created: nowIso(), done: false, author: 'user', resolved_at: '', layer_ids: layersAt(p, at).map(l => l.id), reply: '', ...(marks && marks.length ? { marks } : {}) }); });
+  const bounds = boundsFor(at, marks);
+  change(p => { p.notes.push({ id, t: at, text, created: nowIso(), done: false, author: 'user', resolved_at: '', layer_ids: layersAt(p, at).map(l => l.id), reply: '', ...(Object.keys(bounds).length ? { bounds } : {}), ...(marks && marks.length ? { marks } : {}) }); });
   st.reveal = id; if (st.filter === 'done') setFilter('all');
   return id;
 }
@@ -56,7 +75,7 @@ const remove = n => { change(p => { p.notes = p.notes.filter(x => x.id !== n.id)
 export function goTo(n, { focus = false } = {}) {
   if (!n) return;
   if (S.playing) pause();
-  setTime(n.t); revealPlayhead(); st.current = n.id;
+  setTime(n.t); revealPlayhead(); st.current = n.id; setFocusNote(n.id);
   markActive();
   const r = rows.get(n.id);
   if (r && st.open) { r.el.scrollIntoView({ block: 'nearest' }); if (focus) r.el.focus({ preventScroll: true }); }
@@ -127,7 +146,7 @@ function iconBtn(cls, name, glyph, tip, fn) {
   const b = el('button', 'np-ib ' + cls); b.type = 'button'; b.title = tip; b.setAttribute('aria-label', tip); b.append(ic(name, glyph));
   b.addEventListener('click', e => { e.stopPropagation(); fn(e); }); return b;
 }
-function rowSig(n) { return JSON.stringify([n.t, n.text, n.done, n.author, n.reply, n.sent, layersAt(S.project, n.t).map(l => l.id + l.name + l.type), getLang(), st.editing === n.id]); }
+function rowSig(n) { return JSON.stringify([n.t, n.text, n.done, n.author, n.reply, n.sent, n.asked, n.question, n.answer, layersAt(S.project, n.t).map(l => l.id + l.name + l.type), getLang(), st.editing === n.id, noteChanged(n), wakeWorking(n), !!(n.marks && n.marks.length)]); }
 function fillRow(r, n) {
   const e = r.el; e.className = 'np-row' + (n.done ? ' done' : '') + (n.author === 'agent' ? ' agent' : '') + (st.current === n.id ? ' current' : '');
   e.dataset.id = n.id; e.dataset.t = n.t; r.thumb.tm = n.t; r.thumb.wrap.querySelector('.np-tc').textContent = tc(n.t);
@@ -152,9 +171,14 @@ function fillRow(r, n) {
   const meta = el('div', 'np-meta');
   meta.append(el('span', 'np-badge ' + n.author, t(n.author === 'agent' ? 'np.agent' : 'np.you')));
   if (n.done) meta.append(el('span', 'np-state', t(n.sent ? 'np.fixed' : 'np.done')));
+  else if (n.asked) meta.append(el('span', 'np-state asked', t('ask.badge')));
+  else if (wakeWorking(n)) meta.append(el('span', 'np-state wk-working', t('wake.working')));
   else if (n.sent) meta.append(el('span', 'np-state sent', t('np.sent')));
+  { const db = drawBadge(n, 'np-draw'); if (db) meta.append(db); }
   main.append(meta, layerChips(n));
+  { const ab = answerBlock(n, toast); if (ab) main.append(ab); }
   if (n.reply) { const rp = el('div', 'np-reply'); rp.append(ic('clapperboard', '›'), el('span', '', n.reply)); main.append(rp); }
+  { const ab = abNoteButton(n, 'np-ab'); if (ab) main.append(ab); }
   const acts = el('div', 'np-acts');
   acts.append(iconBtn('jump', 'arrow-right-to-line', '→', t('np.jump'), () => goTo(n)),
     iconBtn('edit', 'pencil', '✎', t('np.edit'), () => startEdit(n)),
@@ -168,6 +192,7 @@ function makeRow(n) {
   const e = el('div', 'np-row'); e.tabIndex = 0; e.setAttribute('role', 'listitem');
   const r = { el: e, sig: '', thumb: makeThumb(n.t) };
   e.addEventListener('click', () => goTo(n = S.project.notes.find(x => x.id === r.id) || n));
+  e.addEventListener('pointerenter', () => setHoverNote(r.id)); e.addEventListener('pointerleave', () => setHoverNote(null));
   r.id = n.id; return r;
 }
 
@@ -187,6 +212,7 @@ function setFilter(f) { st.filter = f; store.set('filter', f); refresh(); }
 function refresh(force = false) {
   if (!root || !S.project || !st.open) return;
   updateCount();
+  { const wb = wakeBlock(); wakeEl.replaceChildren(...(wb ? [wb] : [])); }
   const all = new Map(S.project.notes.map(n => [n.id, n]));
   for (const [id, r] of rows) if (!all.has(id)) { if (io) io.unobserve(r.thumb.wrap); rows.delete(id); }
   const list = filtered(), seq = [];
@@ -248,7 +274,8 @@ function build() {
     else if (e.key === ' ' && e.target === r) { e.preventDefault(); e.stopPropagation(); toggleDone(list[i]); }
   });
   root.addEventListener('pointerdown', () => { S.focus = 'general'; }, true);
-  root.append(grip, head, add, tools, listEl);
+  wakeEl = el('div', 'np-wake');
+  root.append(grip, head, add, tools, wakeEl, listEl);
   $('main').append(root);
   io = new IntersectionObserver(entries => { for (const en of entries) { const th = en.target._th; if (!th) continue; th.visible = en.isIntersecting; if (th.visible) loadThumb(th); } }, { root: listEl, rootMargin: '120px' });
   for (const r of rows.values()) io.observe(r.thumb.wrap);
@@ -262,6 +289,7 @@ export function startNotes({ toast: toastFn } = {}) {
   const b = $('b-notes'); if (b) { const i = ic('list', ''); if (i.tagName === 'svg') b.prepend(i); b.addEventListener('click', () => toggleNotes()); }
   applyLayout();
   if (st.open) build();
+  window.addEventListener('kurgu-wake', () => refresh());
   const project = () => {
     if (!root) return;
     const vs = visualSig();
@@ -269,5 +297,5 @@ export function startNotes({ toast: toastFn } = {}) {
     refresh();
   };
   const lang = () => { if (root) { root.remove(); root = null; rows.clear(); filterBtns = {}; if (st.open) build(); } };
-  return { project, time: markActive, lang };
+  return { project, time: markActive, lang, media: project };
 }

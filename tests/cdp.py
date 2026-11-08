@@ -50,10 +50,27 @@ def chrome_flags(port, profile, width, height, extra=()):
     """Command-line flags shared by every test that starts headless Chrome. On Linux (CI runs as a user without a usable
     sandbox / with a tiny /dev/shm) --no-sandbox and --disable-dev-shm-usage are needed."""
     flags = ["--headless=new", "--remote-debugging-port=%d" % port, "--remote-allow-origins=*", "--user-data-dir=" + profile,
-             "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--mute-audio", "--use-mock-keychain", "--password-store=basic", "--window-size=%d,%d" % (width, height)]
+             "--no-first-run", "--no-default-browser-check", "--disable-gpu", "--mute-audio", "--use-mock-keychain", "--password-store=basic",
+             "--window-size=%d,%d" % (width, height)]
     if sys.platform.startswith("linux") or os.environ.get("CI"):
         flags += ["--no-sandbox", "--disable-dev-shm-usage"]
     return flags + list(extra) + ["about:blank"]
+
+
+def stop_chrome(proc, port, profile=None):
+    """Quit a test Chrome gracefully (CDP Browser.close over its browser websocket), wait, only then terminate; delete the profile last. A Chrome that is killed
+    or loses its profile while running aborts, which macOS reports as "Google Chrome quit unexpectedly"."""
+    import kurgu_paths
+
+    def graceful():
+        import websocket
+        info = json.loads(urllib.request.urlopen("http://127.0.0.1:%d/json/version" % port, timeout=2).read())
+        ws = websocket.create_connection(info["webSocketDebuggerUrl"], timeout=3, suppress_origin=True)
+        try:
+            ws.send(json.dumps({"id": 1, "method": "Browser.close"}))
+        finally:
+            ws.close()
+    kurgu_paths.stop_chrome(proc, graceful, profile)
 
 
 def free_port():
@@ -140,12 +157,7 @@ class Chrome:
         return pg
 
     def close(self):
-        self.proc.terminate()
-        try:
-            self.proc.wait(5)
-        except Exception:
-            self.proc.kill()
-        shutil.rmtree(self.tmp, ignore_errors=True)
+        stop_chrome(self.proc, self.port, self.tmp)
 
 
 class Page:

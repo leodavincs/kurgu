@@ -1,0 +1,13 @@
+/* wake.css — the agent's wake status next to the sent notes (js/wake.js) */
+.wk-banner { display: flex; flex-direction: column; gap: 3px; margin: 6px 8px; padding: 8px 10px; border-radius: var(--r-md, 8px); font-size: 12px; line-height: 1.4; border: 1px solid var(--line, #444); }
+.wk-banner.err { border-color: var(--danger, #ff5446); background: color-mix(in srgb, var(--danger, #ff5446) 12%, transparent); }
+.wk-banner.warn { border-color: var(--note, #f3c34b); background: color-mix(in srgb, var(--note, #f3c34b) 10%, transparent); }
+.wk-title { font-weight: 600; overflow-wrap: anywhere; }
+.wk-hint { opacity: .85; }
+.wk-hint code { font-family: var(--mono, ui-monospace, monospace); font-size: 11px; padding: 0 3px; border-radius: 3px; background: rgba(127,127,127,.2); }
+.wk-log { align-self: flex-start; color: inherit; text-decoration: underline; cursor: pointer; opacity: .9; }
+.wk-working { color: var(--note, #f3c34b); }
+.wk-working { animation: wk-pulse 1.4s ease-in-out infinite; }
+@keyframes wk-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .wk-working { animation: none; } }
+.np-wake:empty { display: none; }

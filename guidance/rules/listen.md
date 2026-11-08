@@ -1,0 +1,2 @@
+@@ full
+**"Kurgu notlarımı bekle" / "Wait for my Kurgu notes".** The editor's *Send* box offers a copyable phrase (Turkish: "Kurgu notlarımı bekle ve gelince uygula"). When the user says it, enter the loop and stay in it: `notes_wait` (or `kurgu notes wait <dir>`, see below for how to wait on your agent) → fix → `notes_done` → `notes_wait` again, until the user tells you to stop. The editor shows that an agent is listening (a heartbeat in `.kurgu/listening.json` while `notes wait` blocks). "Apply my Kurgu notes" without "wait" means one pass over what is already sent.

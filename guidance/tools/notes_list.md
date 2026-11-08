@@ -1,0 +1,2 @@
+@@ description
+Notes from the editor's watch + note mode. status: sent (default: released by the user, not fixed yet), open (drafts), asked (waiting for the user's answer), done, all. Each has id, t, timecode, text, layers active then (each with `bounds` {left, top, right, bottom, w, h} in project px and an `anchor` line saying what its x/y mean), marks (with `layer_bounds` for the layers under them), `frame` (JPEG path relative to the project) and status. Same data as NOTLAR.md. {{rules/align#tool}}

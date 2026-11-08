@@ -35,3 +35,14 @@ body[data-mode=review] #stage { padding: 0; }
 .mm-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mm-hint { color: var(--t3); font-family: var(--mono); font-size: var(--fs-cap); }
 .mm-item kbd { font-family: var(--mono); font-size: 10.5px; color: var(--t3); border: 1px solid var(--line2); border-radius: 3px; padding: 0 4px; }
+
+/* before / after (B): badge over the picture, toggle button beside the watch button, "önce/sonra" button of a closed note */
+.ab-badge { position: absolute; top: 10px; left: 10px; z-index: 5; display: inline-flex; gap: 4px; padding: 3px 9px; border-radius: var(--r-md); background: var(--raised); box-shadow: inset 0 0 0 1px var(--line2); color: var(--t3); font-size: var(--fs-cap); font-weight: 600; pointer-events: none; }
+.ab-badge[hidden] { display: none; }
+.ab-badge .on { color: var(--acc); }
+#transport .ab { height: 28px; padding: 0 10px; margin: 0 2px; border-radius: var(--r-md); color: var(--t2); box-shadow: inset 0 0 0 1px var(--line2); font-weight: 600; font-size: var(--fs-cap); white-space: nowrap; }
+#transport .ab[hidden] { display: none; }
+#transport .ab:hover { background: var(--hover); color: var(--t1); }
+#transport .ab.on { color: var(--acc); background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc-line); }
+.ab-note { align-self: flex-start; height: 20px; margin-top: 4px; padding: 0 8px; border-radius: var(--r-sm); color: var(--acc); background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc-line); font-size: 10.5px; font-weight: 600; cursor: pointer; }
+.ab-note:hover { background: var(--note-soft); box-shadow: inset 0 0 0 1px var(--acc); }

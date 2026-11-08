@@ -23,11 +23,22 @@ pick_python() {
   return 1
 }
 py="$(pick_python)" || { echo "Kurgu needs Python 3.10 or newer (found none on PATH). Easiest fix: run the installer (https://github.com/leodavincs/kurgu#install), it brings its own Python." >&2; exit 1; }
+if [ "$1" = "--help" ] || [ "$1" = "-h" ] || { [ "$1" = "help" ] && [ $# -eq 1 ]; }; then exec "$py" "$dir/kurgu_cli.py" help; fi   # every subcommand, one line each
 # `kurgu doctor [dir] [--json] [--fix]` and `kurgu setup-ffmpeg` (download a static ffmpeg for Kurgu)
+for a in "$@"; do case "$a" in --help|-h) exec "$py" "$dir/kurgu_cli.py" "$@";; esac; done         # --help anywhere: print help, never run the action (a woken agent may run `kurgu * --help`)
+if [ "$1" = "help" ]; then shift; exec "$py" "$dir/kurgu_cli.py" help "$@"; fi     # `kurgu help [topic]`
 if [ "$1" = "doctor" ]; then shift; exec "$py" "$dir/doctor.py" "$@"; fi
 if [ "$1" = "setup-ffmpeg" ]; then shift; exec "$py" "$dir/ffmpeg_fetch.py" "$@"; fi
 if [ "$1" = "wake" ]; then shift; exec "$py" "$dir/kurgu_cli.py" wake "$@"; fi                        # start the agent for sent notes (the on_send hook)
 if [ "$1" = "setup-agent" ]; then shift; exec "$py" "$dir/kurgu_cli.py" setup-agent "$@"; fi          # register Kurgu with Codex / Claude Code
+if [ "$1" = "frame" ]; then shift; exec "$py" "$dir/kurgu_cli.py" frame "$@"; fi   # `kurgu frame <dir> <seconds> [-o f.jpg]`: look at the project as it is now
+if [ "$1" = "strip" ]; then shift; exec "$py" "$dir/kurgu_cli.py" strip "$@"; fi   # `kurgu strip <dir> <t0> <t1> [--n 6]`: n frames as one contact sheet
+if [ "$1" = "elements" ]; then shift; exec "$py" "$dir/kurgu_cli.py" elements "$@"; fi  # `kurgu elements <page.html> --frames 0:100:5`: where is the text in a frame-function page
+if [ "$1" = "rerender" ]; then shift; exec "$py" "$dir/kurgu_cli.py" rerender "$@"; fi   # `kurgu rerender <dir> <layer|unit>`: regenerate one code-made clip
+if [ "$1" = "import" ]; then shift; exec "$py" "$dir/kurgu_cli.py" import "$@"; fi      # `kurgu import <folder>`: scene list (cinecode shots.json, scenes.json) -> Kurgu project
+if [ "$1" = "probe" ]; then shift; exec "$py" "$dir/kurgu_cli.py" probe "$@"; fi   # `kurgu probe <project> [layer|file]`: media facts (replaces ffprobe for woken agents)
+if [ "$1" = "report" ]; then shift; exec "$py" "$dir/kurgu_cli.py" report "$@"; fi   # `kurgu report [project]`: a pasteable error report
+if [ "$1" = "detect" ] || [ "$1" = "ocr" ]; then shift; exec "$py" "$dir/kurgu_cli.py" detect "$@"; fi   # `kurgu detect <dir> <seconds> [--layer ID] [--json]` (alias ocr): text + shapes with boxes in project px
 # `kurgu notes list|wait|done <dir>` goes straight to agent_notes.py (no editor modules imported). A folder called "notes" is opened as `kurgu ./notes`.
 if [ "$1" = "notes" ]; then shift; exec "$py" "$dir/agent_notes.py" "$@"; fi
 project="${1:-.}"; [ $# -gt 0 ] && shift

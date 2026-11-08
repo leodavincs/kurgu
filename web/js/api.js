@@ -12,7 +12,8 @@ async function json(url, opt) {
 }
 const sendJson = (url, method, body) => json(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-export const mediaUrl = path => '/media?path=' + encodeURIComponent(path);
+/** `v` = the file's mtime (ns) from /api/media-info or /api/version: a re-rendered file gets a new URL, so no cache (or element) can keep showing the old one. */
+export const mediaUrl = (path, v) => '/media?path=' + encodeURIComponent(path) + (v != null && v !== '' ? '&v=' + v : '');
 
 /** Known server errors are translated; anything else is shown as the server sent it. */
 export function errorText(status, data) {
@@ -38,12 +39,24 @@ export async function fetchFonts() {
 export async function mediaInfo(path) {
   try { const r = await json('/api/media-info?path=' + encodeURIComponent(path)); return r.ok ? r.data : null; } catch (e) { return null; }
 }
+/** Versions kept by the server for a media file (newest first; `current` marks the one in place): [{mtime_ns, size, current, url}]. */
+export async function mediaVersions(path) {
+  try { const r = await json('/api/versions?path=' + encodeURIComponent(path)); return r.ok && r.data ? r.data.versions || [] : []; } catch (e) { return []; }
+}
 const waveCache = new Map();
 export function waveform(path) {
   if (!waveCache.has(path)) waveCache.set(path, json('/api/waveform?path=' + encodeURIComponent(path)).then(r => (r.ok ? r.data : null)).catch(() => null));
   return waveCache.get(path);
 }
 const thumbCache = new Map();
+/** A media file was replaced: forget what was computed from the old one (waveform, filmstrip). */
+export function invalidateMedia(path) {
+  waveCache.delete(path);
+  for (const k of [...thumbCache.keys()]) if (k.startsWith(path + '#')) thumbCache.delete(k);
+}
+const mediaWatchers = [];
+/** fn(media) gets the {src: {m, s}} map of every /api/version answer (the editor's existing 1 s poll). */
+export const onMediaStamps = fn => { mediaWatchers.push(fn); };
 /** Evenly spaced filmstrip thumbnails for a video: resolves to an array of URLs, or null when unavailable. */
 /** `pr` 0 = on screen now (served first by the server's job queue), 1 = the rest. */
 export function thumbs(path, n = 40, pr = 1) {
@@ -69,7 +82,8 @@ export async function exportPresets() { const r = await json('/api/export-preset
 export async function exportsList() { const r = await json('/api/exports'); return r.ok && Array.isArray(r.data) ? r.data : []; }
 // watch + note (web/js/watch.js)
 let infoCache = null;
-export async function notesInfo() { if (infoCache) return infoCache; try { const r = await json('/api/notes/info'); if (r.ok) infoCache = r.data; return r.ok ? r.data : null; } catch (e) { return null; } }
+export async function notesInfo(fresh = false) { if (infoCache && !fresh) return infoCache; try { const r = await json('/api/notes/info'); if (r.ok) infoCache = r.data; return r.ok ? r.data : null; } catch (e) { return null; } }
+export const answerNote = (id, answer) => sendJson('/api/notes/answer', 'POST', { id, answer });
 export async function notesLive() { try { const r = await json('/api/notes/info'); return r.ok ? r.data : null; } catch (e) { return null; } }   // uncached: listening / wake change while the editor is open
 export const sendNotes = ids => sendJson('/api/notes/send', 'POST', { ids });
 export const frameUrl = time => '/api/frame?t=' + time.toFixed(3) + '&v=' + encodeURIComponent(S.version || '');
@@ -163,11 +177,14 @@ export function startPolling() {
 }
 /** Look for a changed project.json now (the AI panel also calls this when a job ends). Every reload is one undo step. */
 export async function checkExternal() {
-  if (!S.project || saving || S.saveState === 'dirty') return;
+  if (!S.project) return;
+  const busy = saving || S.saveState === 'dirty';        // a pending save only holds back the project reload, not the media refresh
   const count = saveCount;
   try {
     const r = await json('/api/version');
     if (!r.ok || !r.data) return;
+    for (const f of mediaWatchers) { try { f(r.data.media || {}); } catch (e) { console.error(e); } }
+    if (busy) return;
     if (count !== saveCount || saving || S.saveState === 'dirty') return;
     if (r.data.version === S.version) return;
     const v = await loadProject();
@@ -175,8 +192,9 @@ export async function checkExternal() {
     const fresh = normalizeProject(clone(v.project));
     if (JSON.stringify(fresh) === JSON.stringify(S.project)) { S.version = v.version; S.savedBase = clone(S.project); return; }
     const ai = !!S.aiJob;
+    const agent = !ai && S.project.notes.some(n => n.author === 'user' && n.sent && !n.done);   // notes are out with the agent: the change is most likely its work
     loadExternal(v.project, v.version, ai ? 'ai' : 'external');
-    toast(t(ai ? 'toast.aiUpdate' : 'toast.externalUpdate'), 'info', 3500);
+    toast(t(ai ? 'toast.aiUpdate' : agent ? 'toast.agentUpdate' : 'toast.externalUpdate'), 'info', 3500);
   } catch (e) { /* server briefly unavailable */ }
 }
 

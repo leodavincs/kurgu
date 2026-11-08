@@ -12,6 +12,7 @@ import tempfile
 import media_tools
 
 MIN_FREE_GB = 5.0
+MIN_FFMPEG = (6, 1)    # the oldest ffmpeg the CI "ffmpeg-compat" job covers; keep in sync with .github/workflows/ffmpeg-compat.yml
 HW_NAMES = {"videotoolbox": "VideoToolbox (macOS)", "nvenc": "NVENC (NVIDIA)", "qsv": "QSV (Intel)", "amf": "AMF (AMD)",
             "vaapi": "VAAPI (Linux)"}
 
@@ -28,6 +29,13 @@ def _version_line(path):
         return r.stdout.splitlines()[0].strip() if r.returncode == 0 and r.stdout else None
     except (OSError, subprocess.SubprocessError):
         return None
+
+
+def parse_ffmpeg_version(line):
+    """(major, minor) from an `ffmpeg -version` first line ('ffmpeg version n7.1.5-12-g..', '6.1.1-3ubuntu5', '8.0'), or None
+    for builds that carry no release number (git master 'N-12345-g...' / dated snapshots)."""
+    m = re.search(r"version\s+n?(\d+)\.(\d+)", line or "")
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 
 def _source(path):
@@ -116,6 +124,12 @@ def collect(project_dir=".", fix=False, log=print):
         elif not tools[t]["version"]:
             rep["problems"].append(f"{t} at {p} does not run. Run: kurgu setup-ffmpeg --force")
     rep["tools"] = tools
+    if tools["ffmpeg"]["version"]:
+        ver = parse_ffmpeg_version(tools["ffmpeg"]["version"])
+        rep["ffmpeg_version"] = ".".join(map(str, ver)) if ver else None
+        if ver and ver < MIN_FFMPEG:
+            rep["warnings"].append(f"ffmpeg {rep['ffmpeg_version']} is older than {'.'.join(map(str, MIN_FFMPEG))}, the oldest version "
+                                   "Kurgu is tested with; some features may fail. Upgrade it, or run: kurgu setup-ffmpeg --force")
     if tools["ffmpeg"]["path"] and tools["ffmpeg"]["version"]:
         listed = _encoders(tools["ffmpeg"]["path"])
         working = {k: v for k, v in media_tools.hw_encoders().items() if v}

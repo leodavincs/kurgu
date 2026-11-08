@@ -174,7 +174,7 @@ input:disabled, textarea:disabled, select:disabled { opacity: .5; }
 #frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #overlay-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; outline: 0; }
 /* empty project: calm panel over the viewer */
-#empty-state { position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; padding: var(--s-7); pointer-events: none; }
+#empty-state { container-type: size; position: absolute; inset: 0; z-index: 4; display: flex; align-items: center; justify-content: center; padding: var(--s-7); pointer-events: none; }
 #empty-state[hidden] { display: none; }
 .es-card { pointer-events: auto; width: min(500px, 100%); max-height: 100%; overflow: auto; display: flex; flex-direction: column; gap: var(--s-7); padding: var(--s-7); border-radius: var(--r-2xl); background: var(--raised); border: 1px solid var(--line2); box-shadow: var(--shadow); }
 .es-drop { display: flex; flex-direction: column; align-items: center; gap: var(--s-4); padding: var(--s-9) var(--s-7); text-align: center; cursor: pointer; border: 1.5px dashed var(--line2); border-radius: var(--r-xl); transition: border-color var(--dur-2), background var(--dur-2); }
@@ -570,3 +570,14 @@ textarea.text-input { width: 100%; font-size: var(--fs-body); }
 .av-hint { display: none; }
 #layers.pane-audio .av-hint { display: inline; }
 #layers.pane-audio .lp-bar-right > :not(.lp-seg):not(.av-hint) { display: none; }
+
+/* empty state: clips already in media/ + a card that fits a small viewer (the card scrolls inside itself, the extras give way first) */
+.es-found { display: flex; flex-direction: column; gap: var(--s-3); padding: var(--s-4); border-radius: var(--r-lg); background: var(--hover); }
+.es-found-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); color: var(--t2); font-size: var(--fs-cap); }
+.es-found-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 84px; overflow: auto; }
+.es-clip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 8px; border-radius: var(--r-md); background: var(--press); color: var(--t2); font-size: var(--fs-cap); }
+.es-clip:hover { color: var(--t1); } .es-clip .ic { flex: none; width: 13px; height: 13px; }
+.es-clip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.es-more { align-self: center; color: var(--t3); font-size: var(--fs-cap); }
+@container (max-height: 520px) { .es-card { gap: var(--s-4); padding: var(--s-5); } .es-drop { padding: var(--s-5); } .es-icon { display: none; } }
+@container (max-height: 340px) { .es-sub, .es-foot, .es-ask { display: none; } .es-found-list { max-height: 44px; } }

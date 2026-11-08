@@ -108,7 +108,7 @@ def test_menu_error_report_shows_the_text_and_copies_it(chrome, monkeypatch, tmp
         assert "Agent setup" in txt and "hook.log" in txt and os.path.expanduser("~") not in txt.replace("~", "")
         p.eval("window.__copied=[]; navigator.clipboard.writeText=t=>{window.__copied.push(t);return Promise.resolve()}")
         p.click_sel("#report-modal .rp-copy")
-        p.wait_for("window.__copied.length===1", cdp.STARTUP_WAIT)
+        p.wait_for("window.__copied.length===1")
         assert p.eval("window.__copied[0]") == txt                                           # what was shown is exactly what was copied
         p.click_sel("#report-modal .rp-close")
         assert p.eval("!document.getElementById('report-modal')")
@@ -136,13 +136,22 @@ def test_report_window_agent_output_checkbox_is_off_by_default(chrome, monkeypat
         p.eval("window.__copied=[]; navigator.clipboard.writeText=t=>{window.__copied.push(t);return Promise.resolve()}")
         p.wait_for("!document.querySelector('#report-modal .rp-copy').disabled")
         p.click_sel("#report-modal .rp-copy")
-        p.wait_for("window.__copied.length===1", cdp.STARTUP_WAIT)
+        p.wait_for("window.__copied.length===1")
         assert "AGENT QUOTES YOUR NOTE" in p.eval("window.__copied[0]") and p.eval("window.__copied[0]") == p.eval("document.querySelector('#report-modal .rp-text').value")
         p.click_sel("#rp-agent")                                                              # off again: the text goes back
         p.wait_for("!document.querySelector('#report-modal .rp-text').value.includes('AGENT QUOTES')", 30)
         p.close()
     finally:
         s.close()
+
+
+def test_idle_panel_and_notice_panel_close_themselves():
+    """Static check of the wiring in watch.js (the panels are plain DOM): the live poll removes #idle-panel once somebody listens, a good send removes #notice-panel."""
+    src = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web", "js", "watch.js"), encoding="utf-8").read()
+    poll = src[src.index("async function pollLive"):src.index("function noteProblem")]
+    assert "live.listening || live.wake" in poll and "$('idle-panel')" in poll and ".remove()" in poll
+    send = src[src.index("const woke ="):src.index("failed_frames")]
+    assert "$('notice-panel')" in send and ".remove()" in send and "r.data.hook !== 'error'" in send
 
 
 def test_a_beforeunload_prompt_never_blocks_the_test_browser(chrome, monkeypatch, tmp_path):

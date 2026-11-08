@@ -30,7 +30,7 @@ import os
 import queue
 import re
 import shutil
-import secrets
+import stat
 import signal
 import subprocess
 import sys
@@ -53,6 +53,7 @@ import presets
 import kurgu_paths
 import schema
 import transcribe
+import versions
 
 ROOT = os.path.dirname(os.path.realpath(__file__))
 WEB = os.path.join(kurgu_paths.data_root(), "web")
@@ -110,9 +111,9 @@ def _drop(path):
 
 
 def write_atomic(path, data):
-    tmp = f"{path}.{secrets.token_hex(8)}.tmp"
+    tmp = kurgu_paths.tmp_path(path)
     try:
-        with open(tmp, "xb") as f:                 # exclusive create: never through a planted symlink
+        with kurgu_paths.excl_open(tmp, "wb") as f:
             f.write(data)
         for attempt in range(20):  # Windows refuses to replace a file another handle is reading: retry briefly
             try:
@@ -125,6 +126,37 @@ def write_atomic(path, data):
     except BaseException:
         _drop(tmp)                                 # a random name is never reused: do not leave it behind
         raise
+
+
+def same_file_in(directory, stem, ext, new):
+    """An older file of `directory` named `stem[-N]ext` whose bytes equal the freshly uploaded `new` (None when there is none)."""
+    import hashlib
+    try:
+        size = os.path.getsize(new)
+        names = sorted(n for n in os.listdir(directory) if n == stem + ext or re.fullmatch(re.escape(stem) + r"-\d+" + re.escape(ext), n))
+    except OSError:
+        return None
+
+    def digest(path):
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for b in iter(lambda: f.read(1 << 20), b""):
+                h.update(b)
+        return h.digest()
+    mine = None
+    for n in names:
+        old = os.path.join(directory, n)
+        if os.path.realpath(old) == os.path.realpath(new) or os.path.islink(old):
+            continue
+        try:
+            if os.path.getsize(old) != size:
+                continue
+            mine = mine or digest(new)
+            if digest(old) == mine:
+                return old
+        except OSError:
+            continue
+    return None
 
 
 def safe_name(name):
@@ -311,15 +343,20 @@ class App:
         self.dir = os.path.realpath(project_dir)
         self.project_path = os.path.join(self.dir, schema.PROJECT_FILE)
         self.kurgu = os.path.join(self.dir, ".kurgu")
+        if agent_notes._linkish(self.kurgu):                # a downloaded project could point .kurgu anywhere; everything Kurgu writes lives there
+            raise agent_notes.KurguRefusal("symlink", f"refusing to open this project: {self.kurgu} is a symbolic link", path=".kurgu")
         self.write_lock = threading.Lock()
         self.info_cache, self.info_lock = {}, threading.Lock()
         self.proxy_state, self.proxy_lock = {}, threading.Lock()
         self.proxy_prog, self.prewarmed = {}, set()
         self._ver = (None, "")
+        self._srcs = (None, [])                # (project sha, [(raw src, real path)]) of the media the project references
+        self._mstamp, self.media_lock = {}, threading.Lock()   # real path -> (mtime_ns, size) as of the last poll
         self.last_seen = time.time()           # last request that came from a browser tab (the editor's heartbeat)
         self.quick = JobQueue(QUICK_WORKERS, "quick")
         self.proxies = JobQueue(PROXY_WORKERS, "proxy")
         self.frame_locks = {}
+        self.frame_guard = threading.Lock()                 # NOT write_lock: a send holds write_lock while it renders a frame for OCR
         self.render = {"status": "idle", "progress": 0, "output": None, "output_path": None, "name": None, "error": None,
                        "warnings": []}
         self.render_lock = threading.Lock()
@@ -354,7 +391,24 @@ class App:
                 return True
         if any(j.get("status") == "running" for j in list(self.stt.jobs.values())) or any(j.get("status") == "running" for j in list(self.ai.jobs.values())):
             return True
-        return bool(self.quick.pending) or bool(self.proxies.pending)
+        return bool(self.quick.pending) or bool(self.proxies.pending) or self.agent_waiting()
+
+    def agent_waiting(self):
+        """Somebody still needs this server: an agent is blocked in `notes wait` (a live listener), or notes were sent in the last 2 hours and are not done
+        yet (the agent will answer through this server; a stopped server would make its `notes done` / the editor's status calls fail)."""
+        try:
+            if agent_notes.is_listening(self.dir):
+                return True
+            now = datetime.now()
+            for n in agent_notes.list_views(self.dir, "sent"):
+                try:
+                    if (now - datetime.fromisoformat(n.get("sent") or "")).total_seconds() < 2 * 3600:
+                        return True
+                except ValueError:
+                    continue
+        except Exception:
+            pass
+        return False
 
     def idle_for(self):
         return time.time() - self.last_seen
@@ -372,8 +426,6 @@ class App:
 
     # ------------------------------------------------------------ paths
     def prepare(self):
-        if os.path.islink(self.kurgu):             # a downloaded project could point .kurgu anywhere; everything Kurgu writes lives there
-            raise agent_notes.KurguRefusal("symlink", f"refusing to open this project: {self.kurgu} is a symbolic link", path=".kurgu")
         os.makedirs(self.kurgu, exist_ok=True)
         if not os.path.exists(self.project_path):
             if os.path.exists(schema.legacy_path(self.dir)):
@@ -385,9 +437,10 @@ class App:
                 print("no project.json found, wrote an empty template", flush=True)
 
     def sub(self, name):
+        for x in (self.kurgu, os.path.join(self.kurgu, name)):          # a project may ship .kurgu or .kurgu/<name> as a symlink: nothing is written through it
+            if agent_notes._linkish(x):
+                raise agent_notes.KurguRefusal("symlink", f"refusing to write: {x} is a symbolic link", path=os.path.relpath(x, self.dir))
         d = os.path.join(self.kurgu, name)
-        if os.path.islink(self.kurgu) or os.path.islink(d):
-            raise agent_notes.KurguRefusal("symlink", f"refusing to write: {d} is a symbolic link", path=".kurgu/" + name)
         os.makedirs(d, exist_ok=True)
         return d
 
@@ -415,6 +468,82 @@ class App:
         self._ver = (key, v)
         return v
 
+    def media_srcs(self):
+        """[(src as written in project.json, real path)] of the video / image / audio files the project references (re-parsed only when project.json changed)."""
+        v = self.version()
+        if self._srcs[0] == v:
+            return self._srcs[1]
+        out, seen = [], set()
+        try:
+            project = json.loads(self.project_bytes())
+        except Exception:
+            return self._srcs[1]
+
+        def walk(o):
+            if isinstance(o, dict):
+                for k, x in o.items():
+                    if k == "src" and isinstance(x, str) and x:
+                        if x not in seen and kind_of(x) in ("video", "image", "audio"):
+                            seen.add(x)
+                            out.append((x, self.resolve(x)))
+                    else:
+                        walk(x)
+            elif isinstance(o, list):
+                for x in o:
+                    walk(x)
+        walk(project)
+        self._srcs = (v, out)
+        return out
+
+    def media_stamps(self):
+        """{src: {"m": mtime_ns, "s": size} | None} for every referenced media file: ONE os.stat per file per call, nothing else. A file seen for the
+        first time or with a new mtime gets its content kept as a version (hardlink, see versions.py) and its old proxy dropped."""
+        out, stats, raws = {}, {}, {}
+        for raw, real in self.media_srcs():
+            raws.setdefault(real, raw)
+            if real not in stats:
+                try:
+                    st = os.stat(real)
+                    stats[real] = st if stat.S_ISREG(st.st_mode) else None
+                except OSError:
+                    stats[real] = None
+            st = stats[real]
+            out[raw] = {"m": st.st_mtime_ns, "s": st.st_size} if st else None
+        with self.media_lock:
+            for real, st in stats.items():
+                if st is None:
+                    continue
+                stamp = (st.st_mtime_ns, st.st_size)
+                old = self._mstamp.get(real)
+                if old == stamp:
+                    continue
+                self._mstamp[real] = stamp
+                if not os.path.islink(os.path.join(self.dir, raws.get(real, ""))):          # a symlinked media path is never snapshotted
+                    versions.snapshot(self.dir, real, st)                                   # hardlink, or a background copy: never a copy in this request
+                if old is not None:
+                    self.forget_media(real, old[0])
+        return out
+
+    def forget_media(self, real, old_mtime_ns):
+        """The file was replaced: its proxy (named after path + mtime) is stale; drop it and the cached probe."""
+        key = sha1(f"{real}|{old_mtime_ns}")
+        with self.info_lock:
+            self.info_cache.pop(key, None)
+        name = key + ".mp4"
+        with self.proxy_lock:
+            self.proxy_state.pop(name, None)
+            self.proxy_prog.pop(name, None)
+        try:
+            os.remove(os.path.join(self.kurgu, "proxies", name))
+        except OSError:
+            pass
+
+    def media_versions(self, real):
+        """Versions kept for a media file, newest first, with the URL each is served at."""
+        self.media_stamps()                     # make sure the present content has its snapshot
+        return [{"mtime_ns": v["mtime_ns"], "size": v["size"], "current": v["current"],
+                 "url": "/media?path=" + quote(v["file"])} for v in versions.list_versions(self.dir, real)]
+
     def allowed_paths(self):
         found = set()
         try:
@@ -435,9 +564,10 @@ class App:
         walk(project)
         out = project.get("output") if isinstance(project, dict) else None
         if isinstance(out, str) and out:
-            found.add(self.resolve(out))
             stem, ext = os.path.splitext(out)
-            found.add(self.resolve(stem + "_draft" + ext))
+            for o in (out, stem + "_draft" + ext):
+                if is_under(self.resolve(o), self.dir):          # an `output` outside the project is not something this server hands out
+                    found.add(self.resolve(o))
         return found
 
     def media_path(self, raw):
@@ -464,22 +594,21 @@ class App:
         if not os.path.exists(path):
             text = "# Changes (Kurgu)\n"
         else:
-            with open(path, encoding="utf-8") as f:
+            with diag.open_regular(path) as f:                       # a shipped symlink / FIFO is not read either
                 for line in f:
                     if line.startswith("## "):
                         last = line[3:].strip()
         if last != today:
             text += f"\n## {today}\n\n"
         stamp = now.strftime("%H:%M:%S")
-        text += "".join(f"- {stamp} {' '.join(str(s).split())}\n" for s in summary)   # one line each: names come from the project
-        with agent_notes.open_nofollow(path, "a") as f:        # a project may ship changes.md as a symlink (e.g. to a shell profile)
+        text += "".join(f"- {stamp} {' '.join(str(s).split())}\n" for s in summary)           # one line each: layer names come from the project
+        with agent_notes.open_nofollow(path, "a") as f:                                      # changes.md may be shipped as a symlink (to a shell profile, say)
             f.write(text)
 
     def backup(self, old_bytes):
         d = self.sub("backups")
         name = datetime.now().strftime("project-%Y%m%d-%H%M%S-%f.json")
-        with open(os.path.join(d, name), "wb") as f:
-            f.write(old_bytes)
+        kurgu_paths.write_bytes_atomic(os.path.join(d, name), old_bytes)
         files = sorted(x for x in os.listdir(d) if x.startswith("project-") and x.endswith(".json"))
         for x in files[:-50]:
             try:
@@ -496,21 +625,21 @@ class App:
         if len(text) > ai.BRIEF_MAX:
             raise HttpError(400, f"brief is too long ({len(text)} > {ai.BRIEF_MAX} characters)")
         path = os.path.join(self.dir, "brief.md")
+        agent_notes.check_writable(self.dir)                   # refuse a shipped changes.md / .kurgu link BEFORE brief.md is written
         with self.write_lock:
             old = ai.read_brief(self.dir)
             if old == text:
                 return {"text": text, "max": ai.BRIEF_MAX}
             if old:
                 d = self.sub("backups")
-                with open(os.path.join(d, datetime.now().strftime("brief-%Y%m%d-%H%M%S-%f.md")), "w", encoding="utf-8") as f:
-                    f.write(old + "\n")
+                kurgu_paths.write_bytes_atomic(os.path.join(d, datetime.now().strftime("brief-%Y%m%d-%H%M%S-%f.md")), (old + "\n").encode("utf-8"))
                 for x in sorted(x for x in os.listdir(d) if x.startswith("brief-") and x.endswith(".md"))[:-20]:
                     try:
                         os.remove(os.path.join(d, x))
                     except OSError:
                         pass
             if text:
-                with agent_notes.open_nofollow(path, "w") as f:    # never through a shipped symlink
+                with agent_notes.open_nofollow(path, "w") as f:                          # never through a shipped brief.md symlink
                     f.write(text + "\n")
             elif os.path.exists(path):
                 os.remove(path)
@@ -529,6 +658,7 @@ class App:
         project, summary, base = body.get("project"), body.get("summary") or [], body.get("base_version")
         if not isinstance(project, dict) or not isinstance(project.get("layers", []), list):
             raise HttpError(400, "project must be an object with a layers list")
+        agent_notes.check_writable(self.dir)                   # a shipped symlink (.kurgu, changes.md): refuse BEFORE project.json is written
         with self.write_lock:
             old = self.project_bytes()
             current = sha1(old)
@@ -542,6 +672,7 @@ class App:
 
     def _write_project(self, project, summary, old):
         """Back up `old`, stamp `requires` (motion features actually used, like schema.normalize) and write project.json. Caller holds write_lock."""
+        agent_notes.check_writable(self.dir)                   # every project write (save, preset, ...) refuses a shipped link BEFORE anything is written
         self.backup(old)
         project = schema.stamp_requires(dict(project, version=schema.VERSION))
         new = schema.dumps(project).encode()
@@ -602,7 +733,8 @@ class App:
 
     def get_state(self):
         try:
-            with open(os.path.join(self.kurgu, "state.json"), encoding="utf-8") as f:
+            import diag
+            with diag.open_regular(os.path.join(self.kurgu, "state.json")) as f:                # a shipped FIFO / device must not hang the editor
                 return json.load(f)
         except (OSError, ValueError):
             return {"time": 0, "selected": [], "playing": False, "language": "", "updated": None}
@@ -682,7 +814,7 @@ class App:
         return rc == 0
 
     def make_proxy(self, path, target, key, duration=0.0, codec=""):
-        tmp = target + f".{secrets.token_hex(8)}.part.mp4"      # unpredictable: a project cannot plant a symlink under this name
+        tmp = kurgu_paths.tmp_path(target, ".part.mp4")
         state = "error"
         try:
             # Hardware decode + encode only pays for codecs that are slow to decode in software (measured: H.264 is
@@ -756,6 +888,11 @@ class App:
             with self.info_lock:
                 self.info_cache[key] = base
         info = dict(base, proxy=None, proxy_ready=False, proxy_progress=None, proxy_eta=None)
+        try:
+            st = os.stat(path)
+            info["mtime_ns"], info["size"] = st.st_mtime_ns, st.st_size       # the editor's cache-buster: /media?path=..&v=<mtime_ns>
+        except OSError:
+            pass
         if self.wants_proxy(path, base):
             target = self.proxy_path(path)
             self.start_proxy(path, target, base["duration"], base.get("codec", ""))
@@ -836,26 +973,31 @@ class App:
         os.makedirs(folder, exist_ok=True)
         if kind == "image":
             one = os.path.join(folder, names[0])
-            cmd = [media_tools.ffmpeg(), "-y", "-v", "error", *media_tools.input_args(path), "-vf", "scale=-2:72", "-frames:v", "1", "-q:v", "5", one]
+            tmp1 = kurgu_paths.tmp_path(one, ".tmp.jpg")                       # ffmpeg writes to a name nobody can plant a symlink on
+            cmd = [media_tools.ffmpeg(), "-y", "-v", "error", *media_tools.input_args(path), "-vf", "scale=-2:72", "-frames:v", "1", "-q:v", "5", tmp1]
             if run(cmd, stdin=subprocess.DEVNULL, capture_output=True, **low_priority()).returncode != 0:
+                if os.path.exists(tmp1):
+                    os.remove(tmp1)
                 raise HttpError(422, "could not read image")
+            os.replace(tmp1, one)
+            data = open(one, "rb").read()
             for x in names[1:]:
-                with open(one, "rb") as src, open(os.path.join(folder, x), "wb") as dst:
-                    dst.write(src.read())
+                kurgu_paths.write_bytes_atomic(os.path.join(folder, x), data)
             return urls(names)
         dur = self.media_info(path)["duration"] or 1.0
+        tag = "." + os.urandom(6).hex()                                         # random frame-file prefix: planted names cannot be written through
         cmd = [media_tools.ffmpeg(), "-y", "-v", "error", "-ss", f"{dur / (2 * n):.4f}", *media_tools.input_args(path), "-an",
                "-vf", f"fps={n}/{dur:.6f},scale=-2:72", "-frames:v", str(n), "-q:v", "5",
-               os.path.join(folder, "%03d.jpg.tmp.jpg")]
+               os.path.join(folder, tag + "-%03d.tmp.jpg")]
         r = run(cmd, stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", **low_priority())
-        made = sorted(x for x in os.listdir(folder) if x.endswith(".tmp.jpg"))
+        made = sorted(x for x in os.listdir(folder) if x.startswith(tag + "-") and x.endswith(".tmp.jpg"))
         if r.returncode != 0 and not made:
             raise HttpError(422, (r.stderr.strip().splitlines() or ["thumbnail extraction failed"])[-1])
         # ffmpeg counts from 1; pad with the last frame if it produced fewer than n
         for i, x in enumerate(names):
             src = os.path.join(folder, made[min(i, len(made) - 1)])
-            with open(src, "rb") as s, open(os.path.join(folder, x), "wb") as d:
-                d.write(s.read())
+            with open(src, "rb") as s:
+                kurgu_paths.write_bytes_atomic(os.path.join(folder, x), s.read())
         for x in made:
             os.remove(os.path.join(folder, x))
         return urls(names)
@@ -1098,27 +1240,30 @@ class App:
             agent_notes.check_writable(self.dir, side=True)
         except agent_notes.KurguRefusal as e:
             return {"code": e.code, "params": e.params}
-        if agent_notes.IS_WINDOWS and agent_notes.wake_configured():
-            e = agent_notes.shim_refusal("claude.cmd", self.dir)
+        exe = agent_notes.hook_agent_exe() if agent_notes.IS_WINDOWS else None
+        if exe:                                                  # only the program the hook really starts, and only when it is a .cmd/.bat shim
+            e = agent_notes.shim_refusal(exe, self.dir)
             if e:
                 return {"code": e.code, "params": e.params}
         return None
 
     def notes_info(self):
-        return {"agent_name": agent_notes.agent_name(self.dir), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "problem": self.notes_problem(), "inbox": agent_notes.inbox_len(self.dir), "default_mode": agent_notes.default_mode(self.dir)}
+        return {"agent_name": agent_notes.display_agent_name(self.dir), "listening": agent_notes.is_listening(self.dir), "wake": agent_notes.wake_status(self.dir),
+                "wake_configured": "configured" if agent_notes.wake_configured() else "none", "problem": self.notes_problem(), "inbox": agent_notes.inbox_len(self.dir),
+                "default_mode": agent_notes.default_mode(self.dir)}
 
     def note_frame_jpeg(self, nid, t, marks=None, size=(1920, 1080)):
         """Render the timeline frame at `t` (same machinery as /api/frame, draft size) and store it as .kurgu/notes/<id>.jpg."""
         from PIL import Image
+        if not schema.NOTE_ID_RE.match(str(nid)):
+            raise HttpError(400, "unsafe note id")
         png = self.frame(t)
-        nid = agent_notes.safe_nid(nid)
-        agent_notes.notes_dir(self.dir)                          # refuses a symlinked .kurgu/notes before anything is created
         out = os.path.join(self.sub("notes"), nid + ".jpg")
         with Image.open(png) as im:
             im = im.convert("RGB")
             if im.width > 640:
                 im = im.resize((640, max(1, round(im.height * 640 / im.width))), Image.LANCZOS)
-            tmp = out + f".{secrets.token_hex(8)}.part"
+            tmp = kurgu_paths.tmp_path(out, ".part")
             if marks:                                  # burn the marks in (yellow), so the picture alone says where
                 agent_notes.burn_marks(im, [agent_notes.mark_view(m, *size) for m in marks])
             try:
@@ -1215,8 +1360,38 @@ class App:
         listening, wake = agent_notes.is_listening(self.dir), "configured" if agent_notes.wake_configured() else "none"
         diag.event(self.dir, "send", "notes sent", ctx={"count": len(sent_notes), "listening": listening, "wake": wake, "hook": hook.get("hook", "") or "none",
                                                         "failed_frames": len(failed)})
-        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "hook_reason": hook.get("reason"), "listening": listening, "wake": wake, "at": stamp, "file": agent_notes.NOTES_MD,
+        return {"sent": len(sent_notes), "ids": sorted(sent_ids), "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "hook_reason": hook.get("reason"), "listening": listening, "wake": wake, "wake_route": agent_notes.wake_route(self.dir), "at": stamp, "file": agent_notes.NOTES_MD,
                 "failed_frames": failed, "inbox": entry, "project": proj, "version": version}
+
+    def notes_answer(self, body):
+        """POST /api/notes/answer {id, answer}: the human answers the agent's question on a note (state `asked`). The note gets `answer`, loses `asked`, is
+        stamped `sent` again and re-enters the inbox with a new seq (the on_send hook wakes the agent), so the agent sees question + answer together."""
+        nid, answer = body.get("id"), body.get("answer")
+        if not isinstance(nid, str) or not isinstance(answer, str) or not answer.strip():
+            raise HttpError(400, "id and a non-empty answer are required")
+        agent_notes.check_writable(self.dir)
+        stamp = agent_notes.now_iso()
+        with self.write_lock:
+            old = self.project_bytes()
+            cur = json.loads(old)
+            cur_notes = [schema.normalize_note(n, i) for i, n in enumerate(cur.get("notes") or []) if isinstance(n, dict)]
+            n = next((x for x in cur_notes if x["id"] == nid), None)
+            if n is None:
+                raise HttpError(404, "no such note")
+            if n["done"] or not n.get("asked"):
+                raise HttpError(409, "that note has no open question")
+            n["answer"], n["sent"] = answer.strip(), stamp
+            n.pop("asked", None)
+            cur["notes"] = cur_notes
+            version = self._write_project(cur, [f'answer to the agent on note {agent_notes.tc(n["t"])}: {answer.strip()[:60]}'], old)
+            proj = schema.normalize(cur)
+            entry = agent_notes.append_inbox(self.dir, proj, [x for x in proj["notes"] if x["id"] == nid], stamp)
+            agent_notes.write_notes_md(self.dir, proj)
+        try:
+            hook = agent_notes.run_on_send(self.dir, entry["seq"], 1)
+        except Exception as e:
+            hook = {"hook": "error", "error": f"{type(e).__name__}: {e}"}
+        return {"ids": [nid], "sent": 1, "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "wake_route": agent_notes.wake_route(self.dir), "at": stamp, "inbox": entry, "project": proj, "version": version}
 
     def reveal(self, rel):
         full = os.path.realpath(os.path.join(self.dir, str(rel)))
@@ -1231,12 +1406,12 @@ class App:
         png = os.path.join(self.sub("frames"), key + ".png")
         if os.path.exists(png):
             return png
-        with self.write_lock:
+        with self.frame_guard:
             lock = self.frame_locks.setdefault(key, threading.Lock())
         with lock:
             if os.path.exists(png):
                 return png
-            tmp = png + f".{secrets.token_hex(8)}.part.png"
+            tmp = kurgu_paths.tmp_path(png, ".part.png")
             try:
                 r = run([sys.executable, os.path.join(ROOT, "render.py"), self.dir, "--frame", f"{t:.3f}",
                                     "--output", tmp, "--draft"], stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
@@ -1319,7 +1494,7 @@ class Handler(BaseHTTPRequestHandler):
     def fail(self, code, message, close=False):
         if code >= 500:                                          # route + short message only: never a request body
             try:
-                diag.event(self.app.dir, "error", message, "error", code=str(code), ctx={"route": (self.path or "").split("?")[0], "method": self.command, "exc": getattr(self, "_exc", "")})
+                diag.event(self.app.dir, "error", getattr(self, "_exc", "") or "server error", "error", code=str(code), ctx={"route": (self.path or "").split("?")[0], "method": self.command, "exc": getattr(self, "_exc", "")})
             except Exception:
                 pass
         self.reply(code, {"error": message}, close=close)
@@ -1415,7 +1590,10 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/diag/client" and method == "POST":
             return self.reply(*app.client_error(self.read_json()))
         elif path == "/api/version" and method == "GET":
-            return self.reply(200, {"version": app.version(), "app": "kurgu", "dir": app.dir})
+            return self.reply(200, {"version": app.version(), "app": "kurgu", "dir": app.dir, "pid": os.getpid(), "media": app.media_stamps()})
+        elif path == "/api/versions" and method == "GET":
+            real = app.media_path(q.get("path", ""))
+            return self.reply(200, {"path": q.get("path", ""), "versions": app.media_versions(real)})
         elif path == "/api/state":
             if method == "PUT":
                 return self.reply(200, app.save_state(self.read_json()))
@@ -1532,8 +1710,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {"ok": True})
         elif path == "/api/notes/info" and method == "GET":
             return self.reply(200, app.notes_info())
+        elif path == "/api/notes/hook-log" and method == "GET":
+            return self.reply(200, agent_notes.hook_log_text(app.dir).encode("utf-8"), ctype="text/plain; charset=utf-8")
         elif path == "/api/notes/send" and method == "POST":
             return self.reply(200, app.notes_send(self.read_json()))
+        elif path == "/api/notes/answer" and method == "POST":
+            return self.reply(200, app.notes_answer(self.read_json()))
         elif path == "/api/frame" and method == "GET":
             try:
                 t = float(q.get("t", ""))
@@ -1582,7 +1764,13 @@ class Handler(BaseHTTPRequestHandler):
             except OSError:
                 pass
             raise
+        same = same_file_in(directory, stem, ext, dest)
+        if same:                                       # the person picked a file that already lives in the folder: reference it, do not copy it to name-2
+            os.remove(dest)
+            dest = same
         result = {"path": os.path.relpath(dest, app.dir).replace(os.sep, "/"), "kind": kind}
+        if same:
+            result["existing"] = True
         if kind == "video":
             app.prewarm(dest)
         if kind == "font":
@@ -1674,6 +1862,10 @@ class Server(ThreadingHTTPServer):
 def make_server(project_dir, port=8765, tries=50):
     """Prepare the project dir and bind the first free port in [port, port+tries). Port 0 = any free port."""
     app = App(project_dir)
+    def _frame_png(t, _app=app):
+        with open(_app.frame(t), "rb") as f:
+            return f.read()
+    agent_notes.FRAME_PROVIDERS[os.path.realpath(project_dir)] = _frame_png     # in-process frames for the OCR fallback: never an HTTP call back into this server
     if not os.path.isdir(app.dir):
         raise SystemExit(f"folder does not exist: {app.dir}")
     app.prepare()

@@ -23,7 +23,6 @@ import json
 import os
 import re
 import shlex
-import secrets
 import shutil
 import signal
 import subprocess
@@ -58,7 +57,7 @@ _warned = set()
 
 
 def user_config_path():
-    return os.path.join(kurgu_paths.config_dir(), "config.json")
+    return kurgu_paths.config_file()
 
 
 def _load_json_dict(path):
@@ -88,7 +87,8 @@ def read_config(kurgu_dir):
 def read_brief(project_dir):
     """The creative brief (brief.md in the project dir) or ''."""
     try:
-        with open(os.path.join(project_dir, "brief.md"), encoding="utf-8") as f:
+        import diag
+        with diag.open_regular(os.path.join(project_dir, "brief.md")) as f:           # a shipped symlink / FIFO is not read as the brief
             return f.read().strip()
     except (OSError, ValueError):
         return ""
@@ -368,9 +368,9 @@ class Threads:
     def _save(self, ts):
         ts = sorted(ts, key=lambda x: x.get("updated", 0))[-MAX_THREADS:]
         os.makedirs(self.app.kurgu, exist_ok=True)
-        tmp = self.path + f".{secrets.token_hex(8)}.tmp"
+        tmp = kurgu_paths.tmp_path(self.path)
         try:
-            with open(tmp, "x", encoding="utf-8") as f:    # exclusive create: never through a planted symlink
+            with kurgu_paths.excl_open(tmp) as f:
                 json.dump({"threads": ts}, f, ensure_ascii=False, indent=1)
             os.replace(tmp, self.path)
         except BaseException:

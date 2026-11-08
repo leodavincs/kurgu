@@ -1,0 +1,2 @@
+@@ full
+**Which session gets woken.** Kurgu records the agent session that runs its commands (or the MCP server) in this project in `.kurgu/agents.json`, from the environment only, never from project files. The wake hook (`kurgu setup-agent --claude|--codex --wake`) then resumes exactly that session, not just "the last one in the folder"; a session older than a day, or one with no recorded id, falls back to a new headless run. You do nothing for this beyond running `kurgu` commands from the session the user talks to.

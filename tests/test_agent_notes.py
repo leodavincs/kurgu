@@ -195,7 +195,7 @@ def test_notlar_md_follows_note_edits_made_through_save_project(srv):
 
 def test_notes_commands_do_not_import_the_editor_modules(project_dir):
     seed(project_dir)
-    code = "import sys, agent_notes; agent_notes.main(['list', %r, '--all']); sys.exit(0 if not {'server', 'ai', 'media_tools', 'exports', 'mcp_server'} & set(sys.modules) else 1)" % project_dir
+    code = "import sys, agent_notes; agent_notes.main(['list', %r, '--all']); sys.exit(0 if not {'server', 'ai', 'exports', 'mcp_server'} & set(sys.modules) else 1)" % project_dir
     assert subprocess.run([sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True).returncode == 0
 
 
@@ -443,7 +443,7 @@ def test_marks_without_layers_get_them_from_the_server(project_dir):
     mk = json.loads(cli("list", project_dir, "--json").stdout)["notes"][0]["marks"][0]
     assert mk["layers"][-1] == "A clip" and "Big title" in mk["layers"]            # the full-frame clip is under the mark, the title in front of it
     assert not {"Music", "Logo", "Frozen frame", "Black gap"} & set(mk["layers"])   # audio, off-frame and inactive layers are left out
-    assert "altındaki katmanlar (üstten alta): " in mk["hint"] and mk["hint"].endswith("A clip")
+    assert "altındaki katmanlar (üstten alta): " in mk["hint"] and "A clip" in mk["hint"]
     a = agent_notes.layers_under_mark({"width": 1920, "height": 1080, "layers": [{"id": "v", "name": "Scene", "type": "video", "start": 0, "end": 5}]}, 1.0, [(10, 10)])
     assert a == ["Scene"]                                                           # a full-frame video without any box counts as covering the frame
 
@@ -486,6 +486,118 @@ def test_coloured_marks_are_burned_in_named_in_the_hint_and_redrawn_when_recolou
         if open(os.path.join(d, ".kurgu", "notes", "n_a.jpg"), "rb").read() != before:
             break
     assert count("n_a", (108, 197, 146)) > 150
+
+
+def test_launcher_dispatches_frame(project_dir, tmp_path):
+    out = os.path.join(project_dir, ".kurgu", "look", "via-launcher.jpg")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    r = launch("frame", project_dir, "1.0", "-o", out)
+    assert r.returncode == 0, r.stderr
+    assert r.stdout.strip().replace("\\", "/").endswith("via-launcher.jpg") and open(out, "rb").read(3) == b"\xff\xd8\xff"
+
+
+# ---------------------------------------------------------------- the "asked" state: the agent asks instead of guessing
+def test_cli_ask_marks_asked_and_notlar_shows_question(project_dir):
+    seed(project_dir, [dict(NOTES[0], sent="2026-11-07T10:05:00"), NOTES[1]])
+    assert cli("ask", project_dir, "n_a").returncode != 0                                   # --question is required
+    r = cli("ask", project_dir, "n_a", "--question", "earlier by 0.5 s or 1 s?")
+    assert r.returncode == 0 and "n_a" in r.stdout
+    n = {x["id"]: x for x in project(project_dir)["notes"]}["n_a"]
+    assert n["question"] == "earlier by 0.5 s or 1 s?" and n["asked"] and not n["done"]
+    assert agent_notes.status_of(n) == "asked"
+    assert [x["id"] for x in json.loads(cli("list", project_dir, "--asked", "--json").stdout)["notes"]] == ["n_a"]
+    assert json.loads(cli("list", project_dir, "--json").stdout)["count"] == 0              # no longer something to fix
+    md = open(os.path.join(project_dir, "NOTLAR.md"), encoding="utf-8").read()
+    assert "· asked · `n_a`" in md and "question: earlier by 0.5 s or 1 s?" in md and "waiting for the human" in md and "1 asked" in md
+    assert cli("ask", project_dir, "n_nope", "--question", "x").returncode == 1
+    cli("done", project_dir, "n_a", "--reply", "ok")                                          # closing it anyway clears the open question
+    assert "asked" not in {x["id"]: x for x in project(project_dir)["notes"]}["n_a"]
+
+
+def test_asked_note_is_not_delivered_until_answered_then_gets_a_new_seq(srv):
+    c, d = srv
+    assert c.req("POST", "/api/notes/send", {})[1]["sent"] == 2
+    assert agent_notes.wait_for_send(d, timeout=0) is not None                                # consume send #1
+    assert cli("ask", d, "n_a", "--question", "how much earlier?").returncode == 0
+    assert agent_notes.wait_for_send(d, timeout=0) is None
+    assert agent_notes.wait_for_send(d, since=0, timeout=0)[0]["notes"][0]["id"] == "n_b"    # the old entry no longer lists the asked note
+    # answering: needs a real question, an answer, and an asked note
+    assert c.req("POST", "/api/notes/answer", {"id": "n_a", "answer": " "})[0] == 400
+    assert c.req("POST", "/api/notes/answer", {"id": "n_b", "answer": "x"})[0] == 409
+    assert c.req("POST", "/api/notes/answer", {"id": "n_zzz", "answer": "x"})[0] == 404
+    st, data = c.req("POST", "/api/notes/answer", {"id": "n_a", "answer": "1 second"})
+    assert st == 200 and data["inbox"]["seq"] == 2 and data["ids"] == ["n_a"]
+    n = {x["id"]: x for x in project(d)["notes"]}["n_a"]
+    assert n["answer"] == "1 second" and "asked" not in n and n["question"] == "how much earlier?" and agent_notes.status_of(n) == "sent"
+    got = agent_notes.wait_for_send(d, timeout=0)
+    assert [e["seq"] for e in got] == [2]
+    v = got[0]["notes"][0]
+    assert v["id"] == "n_a" and v["question"] == "how much earlier?" and v["answer"] == "1 second"
+    assert "the human's answer: 1 second" in agent_notes.render_entries(got)
+    assert c.req("POST", "/api/notes/answer", {"id": "n_a", "answer": "again"})[0] == 409    # no open question any more
+    md = open(os.path.join(d, "NOTLAR.md"), encoding="utf-8").read()
+    assert "answer: 1 second" in md
+
+
+def test_mcp_notes_ask(project_dir):
+    seed(project_dir, [dict(NOTES[0], sent="2026-11-07T10:05:00"), NOTES[1]])
+    m = Mcp(project_dir)
+    try:
+        assert m.tool("notes_ask", ids=["n_a"])["isError"] and m.tool("notes_ask", ids=["n_nope"], question="?")["isError"]
+        out = first_text(m.ok("notes_ask", ids=["n_a"], question="which red?"))
+        assert "1 note(s) marked asked" in out
+        listed = json.loads(first_text(m.ok("notes_list", status="asked")))
+        assert listed["notes"][0]["id"] == "n_a" and listed["notes"][0]["status"] == "asked" and listed["notes"][0]["question"] == "which red?"
+        assert "notes_ask" in [t["name"] for t in m.call("tools/list")["result"]["tools"]]
+        got = json.loads(first_text(m.ok("get_notes", status="all")))["notes"]
+        assert {n["id"]: n["status"] for n in got}["n_a"] == "asked"
+    finally:
+        m.close()
+
+
+def test_old_notes_without_question_fields_are_unchanged(project_dir):
+    seed(project_dir, [dict(NOTES[0], sent="2026-11-07T10:05:00")])
+    v = agent_notes.list_views(project_dir, "sent")[0]
+    assert v["status"] == "sent" and "question" not in v and "answer" not in v
+
+
+def test_wake_prompt_and_guidance_carry_the_interpret_or_ask_rule():
+    import kurgu_cli
+    p = kurgu_cli.WAKE_PROMPT
+    assert "kurgu notes ask" in p and "değer" in p and len(p) < 1400
+    for text in (kurgu_cli.AGENT_BLOCK, open(os.path.join(ROOT, "skills", "kurgu", "SKILL.md"), encoding="utf-8").read(),
+                 open(os.path.join(ROOT, "AGENTS.md"), encoding="utf-8").read()):
+        assert "kurgu notes ask" in text and "stand-in" in text and "frozen" in text
+    assert "notes_ask" in open(os.path.join(ROOT, "README.md"), encoding="utf-8").read()
+
+
+def test_elements_under_falls_back_to_pixels_when_there_is_no_element_map(project_dir, monkeypatch):
+    import ocr_boxes
+    calls = []
+
+    def fake(d, n, m, frame_png=None):
+        calls.append(n["id"])
+        return [{"text": "GOAL", "box": [10.0, 10.0, 90.0, 40.0], "approx": True, "source": "ocr"},
+                {"kind": "card", "box": [0.0, 0.0, 200.0, 100.0], "approx": True, "source": "pixels", "color": "#112233"}]
+    monkeypatch.setattr(ocr_boxes, "things_under_mark", fake)
+    mark = dict(MARK, layers=[])
+    seed(project_dir, [dict(NOTES[0], sent="2026-11-07T10:05:00", marks=[mark])])
+    proj, notes = agent_notes.load_notes(project_dir)
+    v = agent_notes.note_view(project_dir, notes[0], proj)
+    eu = v["marks"][0]["elements_under"]
+    assert calls == ["n_a"] and [e["source"] for e in eu] == ["ocr", "pixels"] and all(e["approx"] for e in eu)
+    assert eu[0]["label"] == "GOAL" and eu[0]["kind"] == "text" and len(eu[0]["box"]) == 4 and eu[1]["kind"] == "card"
+    assert "approximate" in agent_notes.fmt_element(eu[0]) or agent_notes.fmt_element(eu[0])          # formats without a file/line
+    # an open (not yet sent) note does not pay for OCR
+    calls.clear()
+    seed(project_dir, [dict(NOTES[0], marks=[mark])])
+    proj, notes = agent_notes.load_notes(project_dir)
+    assert "elements_under" not in agent_notes.note_view(project_dir, notes[0], proj)["marks"][0] and calls == []
+    # a failing OCR never breaks the note
+    monkeypatch.setattr(ocr_boxes, "things_under_mark", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    seed(project_dir, [dict(NOTES[0], sent="2026-11-07T10:05:00", marks=[mark])])
+    proj, notes = agent_notes.load_notes(project_dir)
+    assert "elements_under" not in agent_notes.note_view(project_dir, notes[0], proj)["marks"][0]
 
 
 def test_listener_heartbeat_is_written_refreshed_and_removed(project_dir, monkeypatch):
@@ -536,3 +648,258 @@ def test_listener_liveness_needs_a_fresh_beat_and_a_living_pid(project_dir):
     assert agent_notes.is_listening(project_dir)                                           # several listeners: one alive is enough
     open(os.path.join(project_dir, ".kurgu", "listening.json"), "w").write("garbage")
     assert not agent_notes.is_listening(project_dir)
+
+
+# ---------------------------------------------------------------- a note id is a file name stem (security review S4)
+def test_a_note_id_cannot_walk_out_of_the_notes_folder(project_dir, tmp_path):
+    import schema
+    victim = tmp_path / "victim"
+    victim.mkdir()
+    for bad in ("../../../escape", "..\\..\\x", "/etc/passwd", "a/b", "x" * 200, "n_1\x00", "nöte"):
+        n = schema.normalize_note({"id": bad, "t": 1, "text": "x"})
+        assert schema.NOTE_ID_RE.match(n["id"]) and "/" not in n["id"] and ".." not in n["id"], bad
+        with pytest.raises(ValueError):
+            agent_notes.audio_path(project_dir, bad)
+        with pytest.raises(ValueError):
+            agent_notes.sig_path(project_dir, bad)
+    assert schema.normalize_note({"id": "n_ok-1", "t": 0, "text": ""})["id"] == "n_ok-1"
+    assert schema.normalize_note({"id": "../a", "t": 0, "text": ""})["id"] == schema.normalize_note({"id": "../a", "t": 1, "text": ""})["id"]      # stable
+
+
+def test_a_hostile_note_id_in_project_json_writes_nothing_outside_dot_kurgu_notes(project_dir, tmp_path):
+    import server
+    app = server.App(project_dir)
+    with pytest.raises(Exception):
+        app.note_frame_jpeg("../../../../tmp/kurgu-escape", 1.0)
+    assert not os.path.exists("/tmp/kurgu-escape.jpg")
+    p = json.load(open(os.path.join(project_dir, "project.json")))
+    p["notes"] = [{"id": "../../outside", "t": 1.0, "text": "x", "sent": "2026-11-07T10:00:00"}]
+    json.dump(p, open(os.path.join(project_dir, "project.json"), "w"))
+    proj, notes = agent_notes.load_notes(project_dir)
+    agent_notes.write_notes_md(project_dir, proj)
+    assert not os.path.exists(os.path.join(os.path.dirname(project_dir), "outside.audio.json"))
+    assert all(".." not in n["id"] for n in notes)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_symlinked_notes_folder_is_refused(project_dir, tmp_path):
+    other = tmp_path / "elsewhere"
+    other.mkdir()
+    os.makedirs(os.path.join(project_dir, ".kurgu"), exist_ok=True)
+    os.symlink(str(other), os.path.join(project_dir, ".kurgu", "notes"))
+    with pytest.raises(agent_notes.KurguRefusal):
+        agent_notes.check_writable(project_dir)
+
+
+# ---------------------------------------------------------------- which session a wake resumes (S6, T2) and which editor the CLI talks to (S5)
+UUID = "11111111-2222-3333-4444-555555555555"
+
+
+def _agent_env(tmp_path, **extra):
+    env = dict(os.environ, KURGU_CONFIG=str(tmp_path / "uc"), CLAUDE_CODE_SESSION_ID=UUID)
+    env.pop("KURGU_WAKE", None)
+    env.update(extra)
+    return env
+
+
+def test_only_a_listening_agent_is_recorded_as_the_session_to_wake(project_dir, tmp_path):
+    d = os.path.realpath(project_dir)
+    ag = os.path.join(d, ".kurgu", "agents.json")
+    env = _agent_env(tmp_path)
+    for args in (("frame", d, "0.5"), ("notes", "list", d), ("notes", "wait", d, "--timeout", "0")):
+        launch(*args, env=env)
+        assert not os.path.exists(ag), args                         # running a command inside a session is not listening
+    r = launch("notes", "wait", d, "--timeout", "1", env=env)
+    assert r.returncode == 3 and os.path.exists(ag)
+    import importlib
+    monkey_env = {"KURGU_CONFIG": str(tmp_path / "uc")}
+    old = {k: os.environ.get(k) for k in monkey_env}
+    os.environ.update(monkey_env)
+    try:
+        assert agent_notes.latest_session(d, "claude")["session_id"] == UUID
+    finally:
+        for k, v in old.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+    os.remove(ag)
+    launch("notes", "wait", d, "--timeout", "1", env=_agent_env(tmp_path, KURGU_WAKE="1"))
+    assert not os.path.exists(ag)                                   # a woken run never becomes "the user's session"
+
+
+def test_a_project_cannot_choose_the_session_a_wake_resumes(project_dir, tmp_path, monkeypatch):
+    monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "uc"))
+    d = os.path.realpath(project_dir)
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    now = time.time()
+    forged = [{"agent": "claude", "session_id": UUID, "pid": 1, "entrypoint": "cli", "last_seen": now},
+              {"agent": "claude", "session_id": UUID, "pid": 1, "last_seen": now, "mac": "0" * 64}]
+    json.dump(forged, open(os.path.join(d, ".kurgu", "agents.json"), "w"))
+    assert agent_notes.latest_session(d, "claude") is None                                         # no valid MAC: not this user's record
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", UUID)
+    monkeypatch.delenv("KURGU_WAKE", raising=False)
+    agent_notes._last_recorded.clear()
+    agent_notes.record_agent(d)
+    assert agent_notes.latest_session(d, "claude")["session_id"] == UUID
+    assert agent_notes.latest_session(d, "claude", now=time.time() - 3600) is None                 # a last_seen in the future is rejected
+    items = json.load(open(os.path.join(d, ".kurgu", "agents.json")))
+    items[-1]["session_id"] = UUID.replace("1", "2")
+    json.dump(items, open(os.path.join(d, ".kurgu", "agents.json"), "w"))
+    assert agent_notes.latest_session(d, "claude") is None                                         # edited after the fact: the MAC no longer fits
+    assert agent_notes._UUID.fullmatch(UUID + "\n") is None
+
+
+def test_server_json_cannot_point_the_cli_at_another_projects_editor(project_dir, tmp_path):
+    import shutil
+    import threading
+    import mcp_server
+    import server
+    other = tmp_path / "other"
+    shutil.copytree(project_dir, other)
+    a_dir = os.path.realpath(project_dir)
+    srv = server.make_server(a_dir, port=0)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        port = srv.server_address[1]
+        os.makedirs(other / ".kurgu", exist_ok=True)
+        json.dump({"port": port, "pid": os.getpid(), "started": "2026-01-01T00:00:00"}, open(other / ".kurgu" / "server.json", "w"))       # shipped with the "other" project
+        assert mcp_server.editor_port(str(other)) is None                                           # that editor serves a different folder
+        os.makedirs(os.path.join(a_dir, ".kurgu"), exist_ok=True)
+        json.dump({"port": port, "pid": os.getpid(), "started": "2026-01-01T00:00:00"}, open(os.path.join(a_dir, ".kurgu", "server.json"), "w"))
+        assert mcp_server.editor_port(a_dir) == port
+        json.dump({"port": port, "pid": os.getpid() + 1, "started": "x"}, open(os.path.join(a_dir, ".kurgu", "server.json"), "w"))
+        assert mcp_server.editor_port(a_dir) is None                                                # the pid must be the editor's
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="no FIFOs here")
+def test_state_json_and_hook_log_that_are_fifos_never_hang(project_dir):
+    import mcp_server
+    import threading
+    import server
+    d = os.path.realpath(project_dir)
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    for n in ("state.json", "hook.log"):
+        os.mkfifo(os.path.join(d, ".kurgu", n))
+    out = {}
+
+    def run():
+        out["state"] = mcp_server.tool_get_state({"project_dir": d}, {})
+        out["app"] = server.App(d).get_state()
+        out["log"] = agent_notes.hook_log_text(d)
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(20)
+    assert not t.is_alive() and out["log"] == "" and out["app"]["updated"] is None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="symlinks need privileges on Windows")
+def test_a_refusal_in_notes_wait_is_a_clean_message_not_a_traceback(project_dir, tmp_path):
+    d = os.path.realpath(project_dir)
+    seed(d, [dict(NOTES[0], sent="2026-11-07T10:05:00")])
+    os.makedirs(os.path.join(d, ".kurgu"), exist_ok=True)
+    os.symlink(str(tmp_path / "victim"), os.path.join(d, ".kurgu", "inbox.jsonl"))
+    r = launch("notes", "wait", d, "--timeout", "2")
+    assert r.returncode == 1 and "Traceback" not in r.stderr and "error:" in r.stderr and "symbolic link" in r.stderr
+    assert not (tmp_path / "victim").exists()
+
+
+def test_send_with_a_mark_and_no_element_map_does_not_deadlock_the_server(project_dir, tmp_path, monkeypatch):
+    """notes_send holds write_lock; the OCR fallback used to GET /api/frame on the same server, which needs write_lock: a deadlock until a 130 s timeout."""
+    import threading
+    import time as _t
+    import server
+    from test_server import Client
+    import ocr_boxes
+    seen = []
+    monkeypatch.setattr(ocr_boxes, "read_frame", lambda path, *a, **k: seen.append(path) or {"text": [{"text": "HELLO", "l": 0, "t": 0, "r": 900, "b": 900, "conf": 1}], "objects": [],
+                                                                                      "size": [960, 540], "backend": {"text": "fake", "objects": []}})
+    p = json.load(open(os.path.join(project_dir, "project.json")))
+    p["notes"] = [{"id": "n_1", "t": 1.0, "text": "x", "created": "2026-11-07T10:00:00", "marks": [MARK]}]
+    json.dump(p, open(os.path.join(project_dir, "project.json"), "w"))
+    s = server.make_server(project_dir, port=0)
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+    try:
+        t0 = _t.time()
+        st, res = Client(s.server_address[1]).req("POST", "/api/notes/send", {"ids": ["n_1"]})
+        took = _t.time() - t0
+        assert st == 200 and took < 60, took
+        assert seen, "the OCR fallback ran"
+        assert res["inbox"]["notes"][0]["marks"][0]["elements_under"][0]["label"] == "HELLO"
+    finally:
+        s.shutdown()
+        s.server_close()
+
+
+def test_notes_add_makes_a_human_note_with_a_mark_and_measured_bounds(project_dir):
+    """T7: a script-made note carries bounds measured by Kurgu (renderer font metrics / native media size), not 'estimated'."""
+    d = os.path.realpath(project_dir)
+    r = launch("notes", "add", d, "--t", "2.0", "--text", "Başlık sola", "--rect", "100,200,300,120")
+    assert r.returncode == 0, r.stderr
+    p = json.load(open(os.path.join(d, "project.json")))
+    n = [x for x in p["notes"] if x["text"] == "Başlık sola"][0]
+    assert n["author"] == "user" and n["t"] == 2.0 and n["marks"][0]["type"] == "rect" and n["marks"][0]["w"] == 300 and 0 < n["marks"][0]["nx"] < 1
+    assert launch("notes", "add", d, "--t", "1", "--text", "x", "--rect", "1,2,3").returncode == 1
+    assert launch("notes", "add", d, "--t", "-1", "--text", "x").returncode == 1
+    n["sent"] = "2026-11-07T10:00:00"
+    json.dump(p, open(os.path.join(d, "project.json"), "w"))
+    proj, notes = agent_notes.load_notes(d)
+    v = agent_notes.note_view(d, [x for x in notes if x["id"] == n["id"]][0], proj)
+    texts = [l for l in v["layers"] if l.get("type") == "text"]
+    assert texts and all("approx" not in l["bounds"] and "measured by Kurgu" in l["anchor"] for l in texts), texts
+    assert all(l["bounds"]["w"] > 5 and l["bounds"]["h"] > 5 for l in texts)
+
+
+# ---------------------------------------------------------------- the Send button names the agent that is really there
+def test_the_send_button_name_follows_who_listens_then_what_the_wake_starts(project_dir, tmp_path, monkeypatch):
+    import server
+    monkeypatch.setenv("KURGU_CONFIG", str(tmp_path / "uc"))
+    monkeypatch.delenv("KURGU_AGENT_NAME", raising=False)
+    monkeypatch.delenv("KURGU_ON_SEND", raising=False)
+    d = os.path.realpath(project_dir)
+    app = server.App(d)
+    name = lambda: app.notes_info()["agent_name"]
+    assert name() == ""                                                                                     # nobody: the editor says "Ajana gönder"
+    os.makedirs(tmp_path / "uc", exist_ok=True)
+    json.dump({"on_send": ["kurgu", "wake", "claude", "{dir}", "{seq}"]}, open(tmp_path / "uc" / "config.json", "w"))
+    assert name() == "Claude"                                                                               # a wake hook that starts claude, nobody listening
+    json.dump({"on_send": ["kurgu", "wake", "codex", "{dir}", "{seq}"]}, open(tmp_path / "uc" / "config.json", "w"))
+    assert name() == "Codex"
+    json.dump({"on_send": ["kurgu", "wake", "claude", "{dir}", "{seq}"]}, open(tmp_path / "uc" / "config.json", "w"))
+    agent_notes._write_listeners(d, {"1": {"pid": os.getpid(), "since": time.time(), "beat": time.time(), "agent": "Codex"}})
+    assert name() == "Codex"                                                                                # a listening codex beats the wake hook's claude
+    monkeypatch.setenv("KURGU_AGENT_NAME", "Newton")
+    assert name() == "Newton"                                                                               # an explicit name beats both
+    monkeypatch.delenv("KURGU_AGENT_NAME")
+    agent_notes._write_listeners(d, {"1": {"pid": os.getpid(), "since": time.time(), "beat": time.time() - 3600, "agent": "Codex"}})
+    assert name() == "Claude"                                                                               # a stale heartbeat does not count as listening
+
+
+def test_a_notes_wait_inside_codex_or_claude_beats_with_that_agents_label(project_dir, tmp_path):
+    d = os.path.realpath(project_dir)
+    for env_extra, want in (({"CODEX_THREAD_ID": UUID}, "Codex"), ({"CLAUDE_CODE_SESSION_ID": UUID}, "Claude")):
+        env = dict(os.environ, KURGU_CONFIG=str(tmp_path / "uc"))
+        for k in ("CODEX_THREAD_ID", "CODEX_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "KURGU_AGENT_NAME", "KURGU_WAKE"):
+            env.pop(k, None)
+        env.update(env_extra)
+        import subprocess
+        p = subprocess.Popen([sys.executable, os.path.join(ROOT, "agent_notes.py"), "wait", d, "--timeout", "6"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            for _ in range(60):
+                got = [e.get("agent") for e in agent_notes._read_listeners(d).values()]
+                if want in got:
+                    break
+                time.sleep(0.2)
+            assert want in got, got
+        finally:
+            p.terminate()
+            p.wait(10)
+
+
+@pytest.mark.parametrize("args", [["--t", "nan"], ["--t", "inf"], ["--t", "1", "--rect", "nan,2,3,4"], ["--t", "1", "--rect", "1,2,inf,4"]])
+def test_notes_add_rejects_non_finite_numbers_and_writes_nothing(project_dir, args):
+    d = os.path.realpath(project_dir)
+    before = open(os.path.join(d, "project.json"), "rb").read()
+    r = launch("notes", "add", d, "--text", "x", *args)
+    assert r.returncode == 1 and "finite" in r.stderr
+    assert open(os.path.join(d, "project.json"), "rb").read() == before

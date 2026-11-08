@@ -1,7 +1,7 @@
 // preview.js — canvas compositor (same geometry as SPEC §1-§2), media element sync, WebAudio gain,
 // playback clock, click-to-select / drag-to-move / corner-scale, snapping guides, film grain and the "real frame" comparison.
 import { S, emit, change, select, setTime, layer, isActive, fadeFactor, envelopeDb, zoomFactor, isFrozen, clamp, num, VISUAL, HAS_AUDIO } from './state.js';
-import { mediaUrl, mediaInfo, frameUrl, saveAndWait } from './api.js';
+import { mediaUrl, mediaInfo, mediaVersions, invalidateMedia, onMediaStamps, frameUrl, saveAndWait } from './api.js';
 import { ensureFont, fontStack, fontsEpoch, onFontLoaded } from './fonts.js';
 import { t } from './i18n.js';
 import { cv as tok } from './theme.js';
@@ -38,27 +38,36 @@ function attachAudio(g) {
 }
 function markFailed(g, v = true) { if (g.failed !== v) { g.failed = v; emit('media'); requestRedraw(); } }
 
+function newEl(g, type, candidate) {
+  const el = document.createElement(type === 'video' ? 'video' : 'audio');
+  el.preload = 'auto'; el.playsInline = true; el.style.display = 'none';
+  el.addEventListener('seeked', () => {
+    if (g.pendingSeek != null && g.el === el) { const h = g.pendingSeek; g.pendingSeek = null; if (Math.abs(el.currentTime - h) > 0.01) el.currentTime = h; }
+    requestRedraw();
+  });
+  if (!candidate) {
+    el.addEventListener('loadeddata', () => { g.ready = true; requestRedraw(); emit('media'); });
+    el.addEventListener('error', () => markFailed(g));
+  }
+  el.addEventListener('loadedmetadata', () => { sync(); requestRedraw(); });
+  dom.mediaHost.appendChild(el);
+  return el;
+}
 function create(l) {
-  const g = { id: l.id, src: l.src, type: l.type, el: null, failed: false, ready: false, info: null, pendingSeek: null, url: '', lastFix: 0 };
+  const g = { id: l.id, src: l.src, type: l.type, el: null, failed: false, ready: false, info: null, pendingSeek: null, url: '', lastFix: 0, stamp: null, reloading: null, retryAt: 0, alt: null };
   entries.set(l.id, g);
   if (l.type === 'image') {
     const im = new Image(); g.el = im;
     im.onload = () => { g.ready = true; requestRedraw(); emit('media'); };
     im.onerror = () => markFailed(g);
     im.src = mediaUrl(l.src); g.url = im.src;
-    mediaInfo(l.src).then(b => { if (b === null && !g.ready) markFailed(g); else if (b) { g.info = b; S.media.set(l.src, b); } });
+    mediaInfo(l.src).then(b => {
+      if (b === null && !g.ready) markFailed(g);
+      else if (b) { g.info = b; S.media.set(l.src, b); if (g.stamp == null) g.stamp = b.mtime_ns; loadVersions(l.src); }
+    });
     return g;
   }
-  const el = document.createElement(l.type === 'video' ? 'video' : 'audio');
-  el.preload = 'auto'; el.playsInline = true; el.style.display = 'none';
-  el.addEventListener('seeked', () => {
-    if (g.pendingSeek != null) { const h = g.pendingSeek; g.pendingSeek = null; if (Math.abs(el.currentTime - h) > 0.01) el.currentTime = h; }
-    requestRedraw();
-  });
-  el.addEventListener('loadeddata', () => { g.ready = true; requestRedraw(); emit('media'); });
-  el.addEventListener('loadedmetadata', () => { sync(); requestRedraw(); });
-  el.addEventListener('error', () => markFailed(g));
-  dom.mediaHost.appendChild(el); g.el = el;
+  g.el = newEl(g, l.type, false);
   attachAudio(g);
   loadInfo(g, l.src);
   return g;
@@ -69,9 +78,12 @@ async function loadInfo(g, src) {
   g.info = info;
   if (!info) { markFailed(g); return; }
   S.media.set(src, info); emit('media');
-  const url = info.proxy && info.proxy_ready ? info.proxy : mediaUrl(src); // proxy = 1280 px wide edit copy
+  if (g.stamp != null && info.mtime_ns != null && info.mtime_ns !== g.stamp) { reloadEntry(g, info.mtime_ns); return; }   // replaced while we were asking
+  if (g.stamp == null) g.stamp = info.mtime_ns;
+  const url = info.proxy && info.proxy_ready ? info.proxy : mediaUrl(src, g.stamp); // proxy = 1280 px wide edit copy
   if (g.url !== url) setSource(g, url);
   markFailed(g, false);
+  loadVersions(src);
 }
 function setSource(g, url) {
   const el = g.el; const t0 = g.url ? el.currentTime : 0; const wasPlaying = g.url && !el.paused;
@@ -79,6 +91,124 @@ function setSource(g, url) {
   if (t0 > 0) {
     const once = () => { el.removeEventListener('loadedmetadata', once); try { el.currentTime = t0; } catch (e) { /* */ } if (wasPlaying) el.play().catch(() => {}); };
     el.addEventListener('loadedmetadata', once);
+  }
+}
+
+// ---------------------------------------------------------------- hot reload: a file re-rendered to the same path
+/** The server's 1 s poll says a referenced file has a new mtime: build the new element beside the old one and swap when its first frame is ready (no black flash). */
+function onStamps(media) {
+  for (const [src, st] of Object.entries(media)) {
+    const m = st ? st.m : null;
+    if (m == null) continue;
+    const prev = lastStamp.get(src); lastStamp.set(src, m);
+    if (prev !== undefined && prev !== m) { invalidateMedia(src); window.dispatchEvent(new CustomEvent('kurgu:media', { detail: { src } })); }
+    for (const g of entries.values()) if (g.src === src && g.stamp != null && g.stamp !== m) reloadEntry(g, m);
+  }
+}
+const lastStamp = new Map();   // src -> mtime_ns as of the last poll
+function reloadEntry(g, stamp) {
+  if (g.reloading === stamp || performance.now() < g.retryAt) return;
+  g.reloading = stamp;
+  const src = g.src, fail = () => { g.reloading = null; g.retryAt = performance.now() + 3000; };    // half-written / unreadable: try again in 3 s
+  mediaInfo(src).then(info => {
+    if (entries.get(g.id) !== g || g.src !== src) return;
+    if (!info) { fail(); return; }
+    const st = info.mtime_ns != null ? info.mtime_ns : stamp, url = info.proxy && info.proxy_ready ? info.proxy : mediaUrl(src, st);
+    const done = (el) => {
+      if (entries.get(g.id) !== g || g.src !== src) { if (el !== g.el && g.type !== 'image') el.remove(); return; }
+      const old = g.el;
+      g.el = el; g.url = url; g.info = info; g.stamp = st; g.reloading = null; g.ready = true; g.failed = false;
+      S.media.set(src, info);
+      if (g.type !== 'image') {
+        try { g.node?.disconnect(); g.gain?.disconnect(); } catch (e) { /* */ }
+        g.node = g.gain = null; g.pendingSeek = null;
+        try { old.pause(); old.removeAttribute('src'); old.load(); old.remove(); } catch (e) { /* */ }
+        attachAudio(g); sync();
+      }
+      loadVersions(src); emit('media'); requestRedraw(); requestRealFrame();
+    };
+    if (g.type === 'image') {
+      const im = new Image(); im.onload = () => done(im); im.onerror = fail; im.src = url;
+      return;
+    }
+    const l = layer(g.id), el = newEl(g, g.type, true);
+    let swapped = false;
+    const swap = () => { if (swapped) return; swapped = true; done(el); };
+    el.addEventListener('error', () => { if (swapped) return; swapped = true; el.remove(); fail(); });
+    el.addEventListener('loadeddata', () => {
+      const dur = info.duration || 0;
+      const target = l && isActive(l, S.t) ? clamp(isFrozen(l) ? l.src_in : l.src_in + (S.t - l.start), 0, Math.max(0, dur - 0.001)) : (l ? l.src_in : 0);
+      if (target > 0.01) {
+        el.addEventListener('seeked', swap, { once: true });
+        try { el.currentTime = target; } catch (e) { swap(); }
+        setTimeout(swap, 4000);
+      } else swap();
+    }, { once: true });
+    el.src = url;
+  });
+}
+
+// ---------------------------------------------------------------- versions + before / after
+const versionsOf = new Map();       // src -> [{mtime_ns, size, current, url}] newest first
+const ab = { on: false, before: null, engaged: false };   // before = ms since epoch: show the version that existed then (a note's send time); null = the one before the current
+function loadVersions(src) {
+  mediaVersions(src).then(list => {
+    const same = JSON.stringify(versionsOf.get(src)) === JSON.stringify(list);
+    versionsOf.set(src, list);
+    if (!same) { updateAlts(); updateAbUi(); emit('media'); }
+  });
+}
+/** The version to compare against, or null. */
+export function previousVersion(src, before = ab.before) {
+  const list = versionsOf.get(src) || [];
+  if (before != null) { const c = list.find(v => v.mtime_ns / 1e6 <= before); return c && !c.current ? c : null; }
+  const i = list.findIndex(v => v.current);
+  return list[(i < 0 ? 0 : i) + 1] || null;
+}
+const comparable = g => (g.type === 'video' || g.type === 'image') && !g.failed;
+export const abAvailable = () => [...entries.values()].some(g => comparable(g) && previousVersion(g.src, null));
+export const abState = () => ({ on: ab.on, before: ab.before, available: abAvailable() });
+/** Has any of these media files been replaced after `ms`? (a closed note: "the picture changed since I sent this") */
+export const changedSince = (srcs, ms) => srcs.some(src => previousVersion(src, ms));
+function dropAlt(g) {
+  if (!g.alt) return;
+  if (g.type !== 'image') { try { g.alt.el.pause(); g.alt.el.removeAttribute('src'); g.alt.el.load(); g.alt.el.remove(); } catch (e) { /* */ } }
+  g.alt = null;
+}
+function updateAlts() {
+  for (const g of entries.values()) {
+    const p = ab.on && comparable(g) ? previousVersion(g.src) : null;
+    if (!p) { dropAlt(g); continue; }
+    if (g.alt && g.alt.url === p.url) continue;
+    dropAlt(g);
+    const a = { url: p.url, ready: false, el: null, info: null, pendingSeek: null };
+    if (g.type === 'image') { a.el = new Image(); a.el.onload = () => { a.ready = true; requestRedraw(); }; }
+    else {
+      a.el = document.createElement('video'); a.el.muted = true; a.el.preload = 'auto'; a.el.playsInline = true; a.el.style.display = 'none';
+      a.el.addEventListener('loadeddata', () => { a.ready = true; sync(); requestRedraw(); });
+      a.el.addEventListener('seeked', () => { if (a.pendingSeek != null) { const h = a.pendingSeek; a.pendingSeek = null; if (Math.abs(a.el.currentTime - h) > 0.01) a.el.currentTime = h; } requestRedraw(); });
+      dom.mediaHost.appendChild(a.el);
+    }
+    a.el.src = p.url; g.alt = a;
+  }
+}
+export function setAB(on, before = null) {
+  on = !!on && abAvailable();
+  if (on === ab.on && before === ab.before) return ab.on;
+  ab.on = on; ab.before = on ? before : null; if (on) ab.engaged = true;
+  updateAlts(); updateAbUi(); emit('media'); requestRedraw();
+  return ab.on;
+}
+export const toggleAB = () => setAB(!ab.on);
+function updateAbUi() {
+  const avail = abAvailable();
+  if (!avail) { ab.on = false; ab.before = null; ab.engaged = false; updateAlts(); }
+  const b = document.getElementById('b-ab'), badge = document.getElementById('ab-badge');
+  if (b) { b.hidden = !avail; b.classList.toggle('on', ab.on); b.setAttribute('aria-pressed', String(ab.on)); }
+  if (badge) {
+    badge.hidden = !(avail && ab.engaged);
+    const mk = (k, active) => { const sp = document.createElement('span'); sp.textContent = t(k); if (active) sp.className = 'on'; return sp; };
+    badge.replaceChildren(mk('ab.before', ab.on), document.createTextNode(' / '), mk('ab.after', !ab.on));
   }
 }
 export function syncMedia() {
@@ -94,6 +224,7 @@ export function syncMedia() {
 }
 function remove(id) {
   const g = entries.get(id); if (!g) return;
+  dropAlt(g);
   if (g.el && g.type !== 'image') { try { g.el.pause(); g.el.removeAttribute('src'); g.el.load(); g.el.remove(); } catch (e) { /* */ } try { g.node?.disconnect(); g.gain?.disconnect(); } catch (e) { /* */ } }
   entries.delete(id);
 }
@@ -142,7 +273,17 @@ function sync() {
     }
     if (g.gain) g.gain.gain.setTargetAtTime(gain, audioCtx.currentTime, 0.008);
     else el.volume = clamp(gain, 0, 1);
+    if (g.alt && ab.on && l.type === 'video') syncAlt(g, l, active, target, frozen);
   }
+}
+/** The "before" element follows the timeline like the real one, silently. */
+function syncAlt(g, l, active, target, frozen) {
+  const a = g.alt, el = a.el; if (!a.ready) return;
+  a.info = g.info;
+  if (active && S.playing && !S.scrubbing && !frozen) {
+    if (el.paused) { seekTo(a, target); el.play().catch(() => {}); }
+    else if (!el.seeking && Math.abs(el.currentTime - target) > 0.15 && performance.now() - (a.lastFix || 0) > 400) { a.lastFix = performance.now(); el.currentTime = target; }
+  } else { if (!el.paused) el.pause(); seekTo(a, active ? target : l.src_in); }
 }
 
 // ---------------------------------------------------------------- playback clock
@@ -323,6 +464,22 @@ export function layerBox(l) {
   if (g.dim) out.dim = g.dim;
   return out;
 }
+/** Rendered bounding box of a visual layer at the playhead, in project px (rotation included: the box of the four rotated corners), plus a short
+ *  plain-language statement of what the layer's x / y mean. Used by notes so an agent can align edges. Same geometry as the selection handles. */
+export function layerBounds(l) {
+  const r = v => Math.round(v * 10) / 10;
+  if (l.type === 'color') return { left: 0, top: 0, right: W, bottom: H, w: W, h: H, anchor: 'colour layer: fills the whole frame' };
+  const g = geom(l); if (!g) return null;
+  const xs = [], ys = [];
+  for (const [hx, hy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const p = toProjectPt(g, hx * g.w1 / 2, hy * g.h1 / 2); xs.push(p.x); ys.push(p.y); }
+  const left = Math.min(...xs), right = Math.max(...xs), top = Math.min(...ys), bottom = Math.max(...ys);
+  const ax = g.T.ax ?? 0.5, ay = g.T.ay ?? 0.5, centred = Math.abs(ax - 0.5) < 1e-6 && Math.abs(ay - 0.5) < 1e-6;
+  let anchor = l.type === 'text'
+    ? `x,y is the text block ${centred ? 'centre' : `anchor point (${r(ax)}, ${r(ay)} of the box)`}${l.align ? ` (align=${l.align} only aligns the lines inside the block)` : ''}`
+    : `x,y is the layer ${centred ? 'centre' : `anchor point (${r(ax)}, ${r(ay)} of the box)`}`;
+  if (centred) anchor += `; block left edge = x - ${r(right - left)}/2`;
+  return { left: r(left), top: r(top), right: r(right), bottom: r(bottom), w: r(right - left), h: r(bottom - top), anchor };
+}
 /** Viewer geometry for overlays on the stage: frame origin (css px in the stage), zoom, and the project size. */
 export const viewGeom = () => ({ vox, voy, vz, W, H });
 /** Visual layers under any of the given project-pixel points at the playhead, front-most first (layers hit by the FIRST point come first). Colour layers are skipped. */
@@ -433,10 +590,12 @@ function drawLayer(l, alpha, time) {
   if (!g || g.failed || !g.el) return;
   if (l.type === 'video') { if (g.el.readyState < 2 || !g.el.videoWidth) return; }
   else if (!g.ready) return;
-  const d = sourceGeometry(l, g); if (!d) return;
+  const a = ab.on && g.alt && g.alt.ready && (l.type === 'image' || g.alt.el.readyState >= 2) ? g.alt : null;   // before / after: the previous version, same time
+  const pic = a ? { el: a.el, info: null } : g;
+  const d = sourceGeometry(l, pic); if (!d) return;
   const z = l.type === 'video' ? zoomFactor(l, time) : 1;
   ctx.save(); applyTf(layerTf(l, time, z), d.dw, d.dh);
-  ctx.drawImage(g.el, d.sx, d.sy, d.sw, d.sh, -d.dw / 2, -d.dh / 2, d.dw, d.dh); ctx.restore();
+  ctx.drawImage(pic.el, d.sx, d.sy, d.sw, d.sh, -d.dw / 2, -d.dh / 2, d.dw, d.dh); ctx.restore();
 }
 
 // ---------------------------------------------------------------- overlay (selection box, guides, real-frame compare, safe areas)
@@ -794,6 +953,7 @@ export function startPreview(d) {
   new ResizeObserver(resize).observe(dom.stage);
   bindInteraction();
   syncMedia();
+  onMediaStamps(onStamps);
   onFontLoaded(() => requestRedraw());
   const signature = () => S.project.layers.map(l => l.id + l.src + l.type).join();
   let lastSig = signature();
@@ -803,7 +963,8 @@ export function startPreview(d) {
     project() { const s = signature(); if (s !== lastSig) { lastSig = s; syncMedia(); } if (S.project.width !== W || S.project.height !== H) applyProjectSize(); if (!S.playing) { sync(); requestRealFrame(); } requestRedraw(); },
     time() { if (!S.playing) { sync(); requestRealFrame(); } requestRedraw(); },
     selection() { requestRedraw(); },
-    lang() { requestRedraw(); },
+    lang() { updateAbUi(); requestRedraw(); },
+    media() { updateAbUi(); },
     theme() { requestRedraw(); },
     fonts() { requestRedraw(); },
   };

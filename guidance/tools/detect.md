@@ -1,0 +1,2 @@
+@@ description
+OCR + shape detection on the frame at time t: text lines (Vision on macOS, tesseract on Linux) and objects/cards/circles with boxes [left, top, right, bottom] in PROJECT px, a dominant colour and `approx: true`. Use it for text or graphics BURNED INTO a clip (footage, 3D, other tools' renders) that has no layer bounds, before aligning something to it. Boxes are approximate: still look with render_frame. `layer` analyses that video/image layer's own media frame. CLI twin: `kurgu detect <dir> <seconds> [--layer ID] [--json]` (alias `kurgu ocr`).

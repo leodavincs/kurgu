@@ -1,0 +1,1 @@
+Kurgu'dan yeni notlar geldi. `kurgu notes wait {dir} --timeout 0` ile oku. {{rules/align#wake}} {{rules/look#wake}} {{rules/detect#wake}} {{rules/interpret-or-ask#wake}} {{rules/asked#wake}} {{rules/source#wake}} {{rules/one-command#wake}}

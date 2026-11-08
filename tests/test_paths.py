@@ -27,3 +27,18 @@ def test_data_root_has_bundled_assets():
     root = kurgu_paths.data_root()
     assert os.path.isfile(os.path.join(root, "web", "index.html"))
     assert os.path.isdir(os.path.join(root, "fonts"))
+
+
+def test_kurgu_config_may_name_the_folder_or_the_config_file(tmp_path, monkeypatch):
+    import json
+    import kurgu_paths
+    folder = tmp_path / "conf"
+    folder.mkdir()
+    monkeypatch.setenv("KURGU_CONFIG", str(folder))
+    assert kurgu_paths.config_dir() == str(folder) and kurgu_paths.config_file() == str(folder / "config.json")
+    f = tmp_path / "my-kurgu.json"
+    f.write_text(json.dumps({"on_send": ["echo", "x"]}))
+    monkeypatch.setenv("KURGU_CONFIG", str(f))
+    assert kurgu_paths.config_file() == str(f) and kurgu_paths.config_dir() == str(tmp_path)
+    import agent_notes
+    assert agent_notes.on_send_command() == ["echo", "x"]

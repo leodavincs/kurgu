@@ -67,13 +67,19 @@ def draw_ellipse_and_send_note(page, enter_target):
     page.send("Input.insertText", text="circle this")
     page.key("Enter", code="Enter")
     page.wait_for("__kurgu.S.project.notes.some(n=>n.text==='circle this')")
-    n = [x for x in page.eval("__kurgu.S.project.notes") if x["text"] == "circle this"][0]
+    n = [x for x in page.eval("__kurgu.S.project.notes") if x["text"] == "circle this"][-1]
     m = n["marks"][0]
     assert len(n["marks"]) == 1 and m["type"] == "ellipse"
     assert abs(m["nx"] - 0.30) < 0.01 and abs(m["ny"] - 0.25) < 0.01 and abs(m["nw"] - 0.20) < 0.01 and abs(m["nh"] - 0.30) < 0.01
     W, H = page.eval("[__kurgu.S.project.width, __kurgu.S.project.height]")
     assert abs(m["x"] - m["nx"] * W) <= 1 and abs(m["h"] - m["nh"] * H) <= 1       # pixels and normalised say the same thing
     assert isinstance(m["layers"], list)
+    # the editor measures the bounds of every layer the note refers to (same geometry as the selection handles) and stores them on the note
+    assert n.get("bounds"), "the note carries layer bounds"
+    for lid, b in n["bounds"].items():
+        assert {"left", "top", "right", "bottom", "w", "h", "anchor"} <= set(b) and b["anchor"]
+        assert abs(b["right"] - b["left"] - b["w"]) <= 0.2 and abs(b["bottom"] - b["top"] - b["h"]) <= 0.2
+    assert all(l["id"] in n["bounds"] for l in m["layers"] if l.get("id") and l["id"] in {x["id"] for x in page.eval("__kurgu.S.project.layers")})
     return n
 
 
@@ -87,8 +93,16 @@ def test_draw_an_ellipse_in_review_mode(page):
     page.eval("__kurgu.S.t=4; __kurgu.emit('time')")
     page.eval("__kurgu.S.t=1.5; __kurgu.emit('time')")
     time.sleep(0.3)
-    px = page.eval("(()=>{const c=document.getElementById('mark-canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>0)n++;return n})()")
-    assert px > 200
+    assert page.eval("(()=>{const c=document.getElementById('mark-canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>0)n++;return n})()") == 0                                                  # resting on the second is not enough: no note is selected
+    assert page.eval("!!document.querySelector('#review-panel .w-note .mk-badge')")      # the list says which note has a drawing
+    page.click_sel("#review-panel .w-note .mk-badge")                                  # selecting the note brings its mark back
+    time.sleep(0.3)
+    assert page.eval("(()=>{const c=document.getElementById('mark-canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>0)n++;return n})()") > 200
+    page.mouse("mouseMoved", 5, 5)                                                     # (a hovered note shows its mark too)
+    page.eval("__kurgu.S.t=4; __kurgu.emit('time')")                                   # leaving the second deselects it
+    page.eval("__kurgu.S.t=1.5; __kurgu.emit('time')")
+    time.sleep(0.3)
+    assert page.eval("(()=>{const c=document.getElementById('mark-canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let n=0;for(let i=3;i<d.length;i+=4)if(d[i]>0)n++;return n})()") == 0
 
 
 def test_draw_an_ellipse_in_watch_mode(page):
@@ -125,7 +139,21 @@ def test_colour_row_picks_red_and_the_ellipse_is_stored_red(page):
     marks = [x for x in page.eval("__kurgu.S.project.notes") if x["text"] == "red and white"][0]["marks"]
     assert [m["color"] for m in marks] == ["#ff5446", "#ffffff"]
     assert page.eval("localStorage.getItem('kurgu.markColor')") == "#ffffff"                              # remembered for the next mark
-    page.eval("__kurgu.S.t=0; __kurgu.emit('time'); __kurgu.S.t=1.5; __kurgu.emit('time')")
+    page.eval("__kurgu.S.t=0; __kurgu.emit('time')")
+    page.click_sel("#review-panel .w-note:last-child .w-ntc")
     time.sleep(0.4)
     px = page.eval("(()=>{const c=document.getElementById('mark-canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let r=0;for(let i=0;i<d.length;i+=4)if(d[i+3]>200&&d[i]>230&&d[i+1]<120&&d[i+2]<110)r++;return r})()")
     assert px > 100                                                                                         # the saved red mark is redrawn in red
+
+
+def test_text_layer_bounds_use_the_block_geometry_and_say_what_xy_mean(page):
+    page.eval("""(()=>{const P=__kurgu.S.project;const l=P.layers.find(x=>x.type==='text');window.__tl=l.id;})()""")
+    tl = page.eval("__kurgu.S.project.layers.find(x=>x.type==='text')")
+    assert tl, "the example has a text layer"
+    page.eval(f"__kurgu.S.t={tl['start']}+0.2; __kurgu.emit('time')")
+    time.sleep(0.4)
+    b = page.eval(f"__kurgu.layerBounds(__kurgu.S.project.layers.find(x=>x.id==={tl['id']!r}))")
+    assert b and b["w"] > 10 and b["h"] > 5
+    if not tl.get("rotation") and float(tl.get("anchor_x", 0.5)) == 0.5:
+        assert abs((b["left"] + b["right"]) / 2 - float(tl.get("x", 960))) < 1.5      # x is the block centre, whatever align says
+    assert "text block" in b["anchor"] and "centre" in b["anchor"]

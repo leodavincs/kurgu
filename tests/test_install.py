@@ -247,6 +247,29 @@ def test_doctor_missing_ffmpeg_exit_1(tmp_path, monkeypatch, capsys):
     assert any("kurgu setup-ffmpeg" in p for p in out["problems"])
 
 
+@pytest.mark.parametrize("line,want", [
+    ("ffmpeg version n7.1.5-12-g1fdbca85aa-20260731 Copyright (c) 2000-2026", (7, 1)),
+    ("ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023", (6, 1)),
+    ("ffmpeg version 8.0 Copyright", (8, 0)),
+    ("ffmpeg version 4.4.2-0ubuntu0.22.04.1", (4, 4)),
+    ("ffmpeg version N-118000-gabcdef Copyright", None),
+    (None, None),
+])
+def test_doctor_parses_ffmpeg_version(line, want):
+    assert doctor.parse_ffmpeg_version(line) == want
+
+
+@pytest.mark.parametrize("line,warns", [("ffmpeg version 5.1.4 Copyright", True), ("ffmpeg version n6.1.3 Copyright", False),
+                                        ("ffmpeg version N-118000-gabcdef Copyright", False)])
+def test_doctor_warns_below_min_ffmpeg(tmp_path, monkeypatch, line, warns):
+    monkeypatch.setattr(doctor, "_version_line", lambda p: line)
+    rep = doctor.collect(str(tmp_path))
+    old = [w for w in rep["warnings"] if "oldest version" in w]
+    assert bool(old) == warns
+    if warns:
+        assert rep["ffmpeg_version"] == "5.1" and "6.1" in old[0]
+
+
 def test_doctor_missing_project_folder(tmp_path):
     rep = doctor.collect(str(tmp_path / "nope"))
     assert not rep["ok"] and rep["project"]["exists"] is False
@@ -313,3 +336,16 @@ def test_entry_point_is_cli():
     d = tomllib.loads(_read("pyproject.toml").decode())
     assert d["project"]["scripts"]["kurgu"] == "kurgu_cli:main"
     assert {"kurgu_cli", "doctor", "ffmpeg_fetch"} <= set(d["tool"]["setuptools"]["py-modules"])
+
+
+def test_ci_workflows_are_least_privilege_and_pinned():
+    import glob
+    import re
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    files = glob.glob(os.path.join(root, ".github", "workflows", "*.yml"))
+    assert files
+    for f in files:
+        s = open(f, encoding="utf-8").read()
+        assert re.search(r"^permissions:\s*\n\s+contents: read", s, re.M), f
+        for m in re.finditer(r"uses:\s*([^\s#]+)", s):
+            assert re.search(r"@[0-9a-f]{40}$", m.group(1)), f"{f}: {m.group(1)} is not pinned by commit SHA"

@@ -23,6 +23,7 @@ const expanded = new Set();        // layer ids whose keyframe lanes are shown
 const headerCache = new Map();
 const waves = new Map();           // src -> {rate, peaks} | false | null (loading)
 const filmstrips = new Map();      // src -> {imgs, loaded, failed}
+window.addEventListener('kurgu:media', e => { waves.delete(e.detail.src); filmstrips.delete(e.detail.src); redraw(true); });   // a clip was re-rendered: its waveform / filmstrip are stale
 const dpr = () => Math.min(2, window.devicePixelRatio || 1);
 let visibleOrder = [];
 let lastSelectionKey = '';
