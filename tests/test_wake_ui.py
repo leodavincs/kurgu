@@ -60,13 +60,19 @@ def env():
             os.environ[k] = v
 
 
+WAIT = 60 if cdp.CI else 20      # a slow runner (macOS CI) can need much longer than a laptop for the editor to come back after a reload
+
+
 def add_and_send(page, text):
+    # the note box must be there and laid out before the click: right after test_1's reloads a slow runner may still be bringing the editor up
+    page.wait_for("(()=>{const e=document.querySelector('#nb-input');if(!e)return false;const r=e.getBoundingClientRect();"
+                  "return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'})()", WAIT)
     page.click_sel("#nb-input")
     page.send("Input.insertText", text=text)
     page.key("Enter", code="Enter")
-    page.wait_for("__kurgu.S.project.notes.some(n=>n.text===%s)" % json.dumps(text))
+    page.wait_for("__kurgu.S.project.notes.some(n=>n.text===%s)" % json.dumps(text), WAIT)
     page.click_sel("#b-send")
-    page.wait_for("__kurgu.S.project.notes.find(n=>n.text===%s).sent" % json.dumps(text))
+    page.wait_for("__kurgu.S.project.notes.find(n=>n.text===%s).sent" % json.dumps(text), WAIT)
 
 
 def test_1_working_then_failure_with_cause_hint_and_log_link(env):

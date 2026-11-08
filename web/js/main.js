@@ -71,10 +71,11 @@ async function boot() {
   API.startPolling();
   API.startStateSync();
   startExport({ toast });
-  window.addEventListener('beforeunload', e => { if (API.savePending()) { API.save(); e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('beforeunload', e => { if (API.savePending()) { API.save({ leaving: true }); e.preventDefault(); e.returnValue = ''; } });
+  window.addEventListener('pagehide', () => { if (API.savePending()) API.save({ leaving: true }); });   // closed without the prompt (mobile, bfcache): same
   window.addEventListener('pointerdown', startAudio, { once: true });
   window.addEventListener('keydown', startAudio, { once: true });
-  window.__kurgu = { S, change, debugInfo, viewGeom, setLang, emit, viewInfo, setZoom, zoomStep, layerBox, layerBounds, LK, select, splitLayers, removeLayers, duplicateLayers, rippleDelete, abState, toggleAB };  // debugging / tests
+  window.__kurgu = { S, change, saveAndWait: API.saveAndWait, debugInfo, viewGeom, setLang, emit, viewInfo, setZoom, zoomStep, layerBox, layerBounds, LK, select, splitLayers, removeLayers, duplicateLayers, rippleDelete, abState, toggleAB };  // debugging / tests
   const q = new URLSearchParams(location.search); // tests only: ?t=5&sel=l_1
   if (q.has('t')) setTime(parseFloat(q.get('t')));
   if (q.has('sel')) select(q.get('sel').split(','));

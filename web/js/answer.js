@@ -3,7 +3,6 @@
 import * as API from './api.js';
 import { t } from './i18n.js';
 import { el } from './dom.js';
-import { loadExternal } from './state.js';
 
 /** Question text + answer box for one note (or just the answer once it is answered). `toast(msg, kind, ms)` is optional. */
 export function answerBlock(n, toast = () => {}) {
@@ -18,9 +17,9 @@ export function answerBlock(n, toast = () => {}) {
     const submit = async () => {
       const v = inp.value.trim(); if (!v || busy) return; busy = true; go.disabled = true;
       try {
-        const r = await API.answerNote(n.id, v);
+        await API.saveAndWait();                                // a pending edit goes first, so the answer is stamped on top of it
+        const r = await API.answerNote(n.id, v);                // takes the answer's project in (merged with anything typed meanwhile)
         if (!r.ok) { toast(t('ask.failed', { reason: API.errorText(r.status, r.data) }), 'error', 6000); return; }
-        loadExternal(r.data.project, r.data.version);
         toast(t('ask.sent'), 'ok', 4000);
       } catch (e) { toast(t('ask.failed', { reason: String(e.message || e) }), 'error', 6000); }
       finally { busy = false; go.disabled = false; }

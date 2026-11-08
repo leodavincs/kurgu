@@ -140,7 +140,8 @@ def test_colour_row_picks_red_and_the_ellipse_is_stored_red(page):
     assert [m["color"] for m in marks] == ["#ff5446", "#ffffff"]
     assert page.eval("localStorage.getItem('kurgu.markColor')") == "#ffffff"                              # remembered for the next mark
     page.eval("__kurgu.S.t=0; __kurgu.emit('time')")
-    page.click_sel("#review-panel .w-note:last-child .w-ntc")
+    nid = page.eval("__kurgu.S.project.notes.find(n=>n.text==='red and white').id")
+    page.click_sel("#review-panel .w-note[data-id='%s'] .w-ntc" % nid)        # this note's row (an earlier test's note, saved when its tab closed, may sort after it)
     time.sleep(0.4)
     px = page.eval("(()=>{const c=document.getElementById('mark-canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let r=0;for(let i=0;i<d.length;i+=4)if(d[i+3]>200&&d[i]>230&&d[i+1]<120&&d[i+2]<110)r++;return r})()")
     assert px > 100                                                                                         # the saved red mark is redrawn in red

@@ -4,11 +4,11 @@
 //   • writeProp() is the one place that decides "static value or key at the playhead" (auto-key)
 //   • key selection (used by the lanes), key clipboard, Delete / copy / paste / E shortcuts (capture phase, only while keys are selected)
 //   • the easing popover (presets + cubic-bezier editor) and the "Animate" presets menu
-import { S, change, layer, clamp, loadExternal, setTime } from './state.js';
+import { S, change, layer, clamp, setTime } from './state.js';
 import { el, icon } from './dom.js';
 import { t, getLang } from './i18n.js';
 import * as A from './anim.js';
-import { saveAndWait } from './api.js';
+import { saveAndWait, serverWrite } from './api.js';
 import { isMod } from './platform.js';
 
 const EPS = 0.0006;                                   // two key times closer than this are the same key
@@ -350,10 +350,9 @@ async function applyPreset(layerId, p, msg) {
   else if (p.default_at === 'playhead') at = round3(clamp(S.t, l.start, Math.max(l.start, l.end - 0.05)));
   await saveAndWait();
   try {
-    const r = await fetch('/api/presets/apply', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ layer_id: layerId, preset: p.id, at }) });
-    const data = await r.json().catch(() => null);
+    const r = await serverWrite('/api/presets/apply', { layer_id: layerId, preset: p.id, at });   // the server writes the keys; its project is taken in there
+    const data = r.data;
     if (!r.ok || !data || !data.project) { msg.textContent = t('animate.failed', { reason: (data && data.error) || r.status }); return false; }
-    loadExternal(data.project, data.version, 'external');
     return true;
   } catch (e) { msg.textContent = t('animate.failed', { reason: String(e.message || e) }); return false; }
 }

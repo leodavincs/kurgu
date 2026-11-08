@@ -1,7 +1,7 @@
 // watch.js — "watch + note": the top-bar note box, the Send button and the full-screen watch mode.
 // Notes are the ones of notes.js (project.notes, addNote); sending goes through POST /api/notes/send, which stamps `sent`,
 // writes NOTLAR.md + a frame JPEG per note and wakes the agent (`kurgu notes wait`). Styling: web/watch.css.
-import { S, change, setTime, clamp, loadExternal, timecode, sceneName } from './state.js';
+import { S, change, setTime, clamp, timecode, sceneName } from './state.js';
 import * as API from './api.js';
 import { t, getLang } from './i18n.js';
 import { $, el, icon } from './dom.js';
@@ -34,14 +34,12 @@ export async function sendNotes() {
   sending = true; refreshSend();
   try {
     await API.saveAndWait();
-    const r = await API.sendNotes(ids);
+    const r = await API.sendNotes(ids, d => watchSent.push(...d.ids));    // the ids before the project: the watch list keeps them (as "sent") in every render
     if (!r.ok) {
       if (r.data && r.data.reason) showReason({ code: r.data.reason, params: r.data.params });   // refused for safety: nothing was recorded, NOT a success
       else toast(t('send.failed', { reason: API.errorText(r.status, r.data) }), 'error', 6000);
       return false;
     }
-    loadExternal(r.data.project, r.data.version);               // the server wrote project.json: one undo step
-    watchSent.push(...r.data.ids);
     const woke = r.data.hook === 'started' || r.data.hook === 'queued';     // the user's on_send hook ran: the agent was started for these notes
     live = { listening: !!r.data.listening, wake: r.data.wake === 'configured' }; refreshSend();
     if (r.data.hook_reason) showReason(r.data.hook_reason);                  // the notes are saved, but the agent was not started: say why
@@ -369,7 +367,10 @@ function makeList(visible) {
   };
   return L;
 }
-const countText = list => { const u = unsent().length; return !list.length ? '' : u ? t('watch.status', { n: list.length, u }) : t('watch.allSent', { n: list.length }); };
+const countText = list => {   // "1 note": a `…1` key is the catalogue's singular, as for send.toast1 (Turkish keeps one form)
+  const u = unsent().length, n = list.length, one = n === 1 ? '1' : '';
+  return !n ? '' : u ? t('watch.status' + one, { n, u }) : t('watch.allSent' + one, { n });
+};
 let watchList = null, reviewList = null, reviewCount = null;
 function renderLists() {
   if (watchList && isOpen) { watchList.render(); countEl.textContent = countText(watchList.notes()); }

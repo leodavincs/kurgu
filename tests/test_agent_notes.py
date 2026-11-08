@@ -80,6 +80,40 @@ def test_send_marks_notes_writes_notlar_frames_and_inbox(srv, monkeypatch):
     assert c.req("GET", "/api/notes/info")[1]["inbox"] == 2
 
 
+def test_send_and_answer_say_whether_someone_else_wrote_since_base_version(srv):
+    """The editor loads the send's answer itself; `changed_outside` tells it whether that answer also carries a write by someone else."""
+    c, d = srv
+    v0 = c.req("GET", "/api/version")[1]["version"]
+    st, data = c.req("POST", "/api/notes/send", {"ids": ["n_a"], "base_version": v0})
+    assert st == 200 and data["changed_outside"] is False and data["version"] != v0      # its own write is not "outside"
+    assert data["previous_version"] == v0                                                  # the version this write replaced
+    p = project(d)
+    p["name"] = "renamed by someone else"
+    json.dump(p, open(os.path.join(d, "project.json"), "w", encoding="utf-8"))
+    st, data = c.req("POST", "/api/notes/send", {"ids": ["n_b"], "base_version": data["version"]})
+    assert st == 200 and data["changed_outside"] is True and data["project"]["name"] == "renamed by someone else"
+    assert c.req("POST", "/api/notes/send", {"ids": ["n_a"], "resend": True})[1]["changed_outside"] is False   # no base_version: no claim
+    assert cli("ask", d, "n_a", "--question", "which one?").returncode == 0
+    st, data = c.req("POST", "/api/notes/answer", {"id": "n_a", "answer": "the first", "base_version": "0" * 40})
+    assert st == 200 and data["changed_outside"] is True
+
+
+def test_the_server_remembers_which_editor_tab_wrote_each_version(srv):
+    """An editor tab sends its `client` id with saves and server writes; /api/version and a 409 name the tab that wrote the current version,
+    so a tab recognises its own write (e.g. a send that answered late) and does not report it as the agent's."""
+    c, d = srv
+    v0 = c.req("GET", "/api/version")[1]["version"]
+    assert c.req("GET", "/api/version")[1]["writer"] == ""                                   # written by nobody we know (the fixture)
+    st, data = c.req("POST", "/api/notes/send", {"ids": ["n_a"], "base_version": v0, "client": "tab-a"})
+    assert st == 200
+    v = c.req("GET", "/api/version")[1]
+    assert v["version"] == data["version"] and v["writer"] == "tab-a"
+    st, res = c.req("PUT", "/api/project", {"project": data["project"], "summary": ["x"], "base_version": v0, "client": "tab-a"})
+    assert st == 409 and res["writer"] == "tab-a"                                           # stale base, but the newer file is this tab's own
+    st, res = c.req("PUT", "/api/project", {"project": data["project"], "summary": ["x"], "base_version": data["version"], "client": "tab-b"})
+    assert st == 200 and c.req("GET", "/api/version")[1]["writer"] == "tab-b"
+
+
 def test_agent_name_from_env_and_config(project_dir, monkeypatch):
     monkeypatch.delenv("KURGU_AGENT_NAME", raising=False)
     assert agent_notes.agent_name(project_dir) == ""

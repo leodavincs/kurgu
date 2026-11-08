@@ -42,7 +42,7 @@ function newEl(g, type, candidate) {
   const el = document.createElement(type === 'video' ? 'video' : 'audio');
   el.preload = 'auto'; el.playsInline = true; el.style.display = 'none';
   el.addEventListener('seeked', () => {
-    if (g.pendingSeek != null && g.el === el) { const h = g.pendingSeek; g.pendingSeek = null; if (Math.abs(el.currentTime - h) > 0.01) el.currentTime = h; }
+    if (g.pendingSeek != null && g.el === el) { const h = g.pendingSeek; g.pendingSeek = null; if (Math.abs(el.currentTime - h) > 0.01) { holdFrame(g); el.currentTime = h; } }
     requestRedraw();
   });
   if (!candidate) {
@@ -87,6 +87,7 @@ async function loadInfo(g, src) {
 }
 function setSource(g, url) {
   const el = g.el; const t0 = g.url ? el.currentTime : 0; const wasPlaying = g.url && !el.paused;
+  holdFrame(g);                                    // the new source has no frame for a moment: keep showing the old one
   g.url = url; el.src = url;
   if (t0 > 0) {
     const once = () => { el.removeEventListener('loadedmetadata', once); try { el.currentTime = t0; } catch (e) { /* */ } if (wasPlaying) el.play().catch(() => {}); };
@@ -186,7 +187,7 @@ function updateAlts() {
     else {
       a.el = document.createElement('video'); a.el.muted = true; a.el.preload = 'auto'; a.el.playsInline = true; a.el.style.display = 'none';
       a.el.addEventListener('loadeddata', () => { a.ready = true; sync(); requestRedraw(); });
-      a.el.addEventListener('seeked', () => { if (a.pendingSeek != null) { const h = a.pendingSeek; a.pendingSeek = null; if (Math.abs(a.el.currentTime - h) > 0.01) a.el.currentTime = h; } requestRedraw(); });
+      a.el.addEventListener('seeked', () => { if (a.pendingSeek != null) { const h = a.pendingSeek; a.pendingSeek = null; if (Math.abs(a.el.currentTime - h) > 0.01) { holdFrame(a); a.el.currentTime = h; } } requestRedraw(); });
       dom.mediaHost.appendChild(a.el);
     }
     a.el.src = p.url; g.alt = a;
@@ -241,7 +242,40 @@ function seekTo(g, target) {
   if (g.info && g.info.duration) target = clamp(target, 0, Math.max(0, g.info.duration - 0.001));
   if (Math.abs(el.currentTime - target) < 0.008) return;
   if (el.seeking) { g.pendingSeek = target; return; }
+  holdFrame(g);
   try { el.currentTime = target; } catch (e) { /* */ }
+}
+// While a <video> seeks (or loads a new source) it has no drawable frame: readyState falls to HAVE_METADATA until `seeked`. Drawing nothing
+// for it showed the background, black, for a frame or more on every pause, play, jump and scrub step. So right before such a seek of the video
+// element that is on screen (the clip, or its "before" version in A/B) its current picture is copied, at no more pixels than the preview
+// canvas has, and drawn in its place until the element has a frame again; then the copy is let go. A decode that does not come back within
+// HOLD_MS lets it go too, so no old picture stays frozen on screen.
+let drawSeq = 0;
+const HOLD_MS = 2000;
+const holdPool = [];                               // a few canvases are reused: scrubbing seeks on every step
+const holdStats = { made: 0, maxW: 0, maxH: 0 };   // for debugInfo / tests
+const liveVideo = x => x.el.readyState >= 2 && x.el.videoWidth > 0;
+function holdFrame(x) {                            // x = a media entry, or its A/B "before" element
+  const el = x.el;
+  if (!el || el.tagName !== 'VIDEO' || x.drawn !== drawSeq || el.readyState < 2 || el.seeking || !el.videoWidth || !el.videoHeight) return;
+  const side = Math.max(64, dom.canvas.width, dom.canvas.height);
+  const k = Math.min(1, side / Math.max(el.videoWidth, el.videoHeight)), w = Math.max(1, Math.round(el.videoWidth * k)), h = Math.max(1, Math.round(el.videoHeight * k));
+  const c = (x.hold && x.hold.c) || holdPool.pop() || document.createElement('canvas');
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  try { c.getContext('2d').drawImage(el, 0, 0, w, h); } catch (e) { dropHold(x); return; }
+  x.hold = { c, k, vw: el.videoWidth, vh: el.videoHeight, t0: performance.now() };
+  holdStats.made++; holdStats.maxW = Math.max(holdStats.maxW, w); holdStats.maxH = Math.max(holdStats.maxH, h);
+  setTimeout(requestRedraw, HOLD_MS + 50);        // the frame loop sleeps when idle: look again once a stalled hold is due to go
+}
+function dropHold(x) { if (!x.hold) return; if (holdPool.length < 3) holdPool.push(x.hold.c); x.hold = null; }
+/** The held picture of a video element that cannot be drawn right now (same crop, fit and transform as the element itself). */
+function drawHeld(l, x, info, time) {
+  const h = x.hold; if (!h) return;
+  if (performance.now() - h.t0 > HOLD_MS) { dropHold(x); return; }
+  const d = sourceGeometry(l, { el: { videoWidth: h.vw, videoHeight: h.vh }, info }); if (!d) return;
+  ctx.save(); applyTf(layerTf(l, time, zoomFactor(l, time)), d.dw, d.dh);
+  ctx.drawImage(h.c, d.sx * h.k, d.sy * h.k, d.sw * h.k, d.sh * h.k, -d.dw / 2, -d.dh / 2, d.dw, d.dh); ctx.restore();
+  x.drawn = drawSeq;
 }
 const fadeOutFactor = time => { const n = S.project.global.fade_out; return n > 0 ? clamp((S.project.duration - time) / n, 0, 1) : 1; };
 function sync() {
@@ -260,7 +294,7 @@ function sync() {
         const ended = g.info && g.info.duration && target >= g.info.duration - 0.02;
         if (ended) { if (!el.paused) el.pause(); }
         else if (el.paused) { if (el.readyState >= 1) { seekTo(g, target); el.play().catch(() => {}); } }
-        else if (!el.seeking && Math.abs(el.currentTime - target) > 0.15 && performance.now() - g.lastFix > 400) { g.lastFix = performance.now(); el.currentTime = target; }
+        else if (!el.seeking && Math.abs(el.currentTime - target) > 0.15 && performance.now() - g.lastFix > 400) { g.lastFix = performance.now(); holdFrame(g); el.currentTime = target; }
       } else { if (!el.paused) el.pause(); seekTo(g, target); }
     } else {
       if (!el.paused) el.pause();
@@ -282,7 +316,7 @@ function syncAlt(g, l, active, target, frozen) {
   a.info = g.info;
   if (active && S.playing && !S.scrubbing && !frozen) {
     if (el.paused) { seekTo(a, target); el.play().catch(() => {}); }
-    else if (!el.seeking && Math.abs(el.currentTime - target) > 0.15 && performance.now() - (a.lastFix || 0) > 400) { a.lastFix = performance.now(); el.currentTime = target; }
+    else if (!el.seeking && Math.abs(el.currentTime - target) > 0.15 && performance.now() - (a.lastFix || 0) > 400) { a.lastFix = performance.now(); holdFrame(a); el.currentTime = target; }
   } else { if (!el.paused) el.pause(); seekTo(a, active ? target : l.src_in); }
 }
 
@@ -556,6 +590,7 @@ function grainPattern(g) {
 
 function draw(P = S.project) {
   const time = S.t;
+  drawSeq++;
   ctx.setTransform(rs, 0, 0, rs, 0, 0);
   ctx.globalAlpha = 1; ctx.filter = 'none'; ctx.globalCompositeOperation = 'source-over';
   ctx.fillStyle = P.background; ctx.fillRect(0, 0, W, H);
@@ -566,6 +601,10 @@ function draw(P = S.project) {
     const alpha = av(l, 'opacity', time) * fadeFactor(l, time);
     if (alpha <= 0) continue;
     try { drawLayer(l, alpha, time); } catch (e) { console.warn('layer draw failed', l.id, e); }
+  }
+  for (const g of entries.values()) {              // off screen now: the held picture is not needed
+    if (g.hold && g.drawn !== drawSeq) dropHold(g);
+    if (g.alt && g.alt.hold && g.alt.drawn !== drawSeq) dropHold(g.alt);
   }
   ctx.globalAlpha = 1; ctx.filter = 'none';
   const v = P.global.vignette;
@@ -588,13 +627,22 @@ function drawLayer(l, alpha, time) {
   }
   const g = entries.get(l.id);
   if (!g || g.failed || !g.el) return;
-  if (l.type === 'video') { if (g.el.readyState < 2 || !g.el.videoWidth) return; }
-  else if (!g.ready) return;
-  const a = ab.on && g.alt && g.alt.ready && (l.type === 'image' || g.alt.el.readyState >= 2) ? g.alt : null;   // before / after: the previous version, same time
+  if (l.type === 'video') {
+    const alt = ab.on && g.alt && g.alt.ready ? g.alt : null;                 // before / after: the previous version, same time
+    const src = alt && (liveVideo(alt) || alt.hold) ? alt : g;               // "before" stays on screen (held) while it seeks
+    const info = src === g ? g.info : null;
+    if (!liveVideo(src)) { drawHeld(l, src, info, time); return; }
+    const d = sourceGeometry(l, { el: src.el, info }); if (!d) return;
+    ctx.save(); applyTf(layerTf(l, time, zoomFactor(l, time)), d.dw, d.dh);
+    ctx.drawImage(src.el, d.sx, d.sy, d.sw, d.sh, -d.dw / 2, -d.dh / 2, d.dw, d.dh); ctx.restore();
+    src.drawn = drawSeq; dropHold(src);
+    return;
+  }
+  if (!g.ready) return;
+  const a = ab.on && g.alt && g.alt.ready ? g.alt : null;
   const pic = a ? { el: a.el, info: null } : g;
   const d = sourceGeometry(l, pic); if (!d) return;
-  const z = l.type === 'video' ? zoomFactor(l, time) : 1;
-  ctx.save(); applyTf(layerTf(l, time, z), d.dw, d.dh);
+  ctx.save(); applyTf(layerTf(l, time, 1), d.dw, d.dh);
   ctx.drawImage(pic.el, d.sx, d.sy, d.sw, d.sh, -d.dw / 2, -d.dh / 2, d.dw, d.dh); ctx.restore();
 }
 
@@ -970,4 +1018,4 @@ export function startPreview(d) {
   };
 }
 
-export function debugInfo() { return { audio: audioCtx && audioCtx.state, entries: [...entries.values()].map(g => ({ id: g.id, failed: g.failed, ready: g.ready, url: g.url, gain: g.gain ? g.gain.gain.value : null, paused: g.el && g.el.paused, ct: g.el && g.el.currentTime })) }; }
+export function debugInfo() { return { holds: { ...holdStats, live: [...entries.values()].filter(g => g.hold || (g.alt && g.alt.hold)).length }, audio: audioCtx && audioCtx.state, entries: [...entries.values()].map(g => ({ id: g.id, failed: g.failed, ready: g.ready, url: g.url, gain: g.gain ? g.gain.gain.value : null, paused: g.el && g.el.paused, ct: g.el && g.el.currentTime })) }; }

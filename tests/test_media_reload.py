@@ -160,6 +160,31 @@ def test_4_b_key_flips_to_the_previous_version(page, server):
     page.wait_for("(" + PIX + ")[2]>150", 10)
 
 
+RB = """window.__rb=[];(function f(){const c=document.getElementById('canvas');const d=c.getContext('2d').getImageData(c.width>>1,c.height>>1,1,1).data;
+window.__rb.push([d[0],d[2]]);if(!window.__stopRb)requestAnimationFrame(f)})()"""
+
+
+@needs_chrome
+def test_4b_seeking_while_before_is_shown_never_flashes_after(page, server):
+    """With B on, the "before" clip is on screen; while it seeks, its own last picture stands in (not the current version, not black).
+    A seek of this tiny clip is over within a frame, so a slow one is made by having the "before" element report no frame for 0.4 s."""
+    page.key("b", code="KeyB", text="b")
+    page.wait_for("(" + PIX + ")[0]>150", 10)                       # red = before
+    page.eval("window.__stopRb=false;" + RB)
+    before = "[...document.querySelectorAll('video')].filter(v=>v.src.includes('versions'))"
+    assert page.eval(before + ".length") == 1
+    for t in (4.0, 9.0, 2.5, 14.0, 1.0):
+        page.eval("__kurgu.S.t=%s; __kurgu.emit('time'); for(const v of %s)Object.defineProperty(v,'readyState',{get:()=>1,configurable:true})" % (t, before))
+        time.sleep(0.4)
+        page.eval("for(const v of %s)delete v.readyState; __kurgu.emit('time')" % before)
+        time.sleep(0.3)
+    page.eval("window.__stopRb=true")
+    rb = page.eval("window.__rb")
+    assert len(rb) > 10 and all(r > 150 and b < 100 for r, b in rb), [x for x in rb if not (x[0] > 150 and x[1] < 100)][:10]
+    page.key("b", code="KeyB", text="b")
+    page.wait_for("(" + PIX + ")[2]>150", 10)
+
+
 @needs_chrome
 def test_5_closed_note_button_jumps_and_shows_the_picture_from_when_it_was_sent(page, server):
     from datetime import datetime

@@ -346,6 +346,7 @@ class App:
         if agent_notes._linkish(self.kurgu):                # a downloaded project could point .kurgu anywhere; everything Kurgu writes lives there
             raise agent_notes.KurguRefusal("symlink", f"refusing to open this project: {self.kurgu} is a symbolic link", path=".kurgu")
         self.write_lock = threading.Lock()
+        self.writers = {}                                      # project.json version -> editor tab (`client`) whose request wrote it
         self.info_cache, self.info_lock = {}, threading.Lock()
         self.proxy_state, self.proxy_lock = {}, threading.Lock()
         self.proxy_prog, self.prewarmed = {}, set()
@@ -654,6 +655,14 @@ class App:
             raise HttpError(500, f"project.json is not valid JSON: {e}")
         return {"project": schema.normalize(data), "version": sha1(raw)}
 
+    def mark_writer(self, version, body):
+        """Remember which editor tab wrote `version` (its `client` id), so that tab recognises its own write in /api/version and in a 409."""
+        client = body.get("client") if isinstance(body, dict) else None
+        if isinstance(client, str) and client and version:
+            self.writers[version] = client[:64]
+            while len(self.writers) > 64:
+                self.writers.pop(next(iter(self.writers)))
+
     def save_project(self, body):
         project, summary, base = body.get("project"), body.get("summary") or [], body.get("base_version")
         if not isinstance(project, dict) or not isinstance(project.get("layers", []), list):
@@ -667,8 +676,10 @@ class App:
                     cur = schema.normalize(json.loads(old))
                 except Exception:
                     cur = None
-                return 409, {"error": "conflict: project.json changed on disk", "project": cur, "version": current}
-            return 200, {"version": self._write_project(project, summary, old)}
+                return 409, {"error": "conflict: project.json changed on disk", "project": cur, "version": current, "writer": self.writers.get(current, "")}
+            version = self._write_project(project, summary, old)
+            self.mark_writer(version, body)
+            return 200, {"version": version}
 
     def _write_project(self, project, summary, old):
         """Back up `old`, stamp `requires` (motion features actually used, like schema.normalize) and write project.json. Caller holds write_lock."""
@@ -721,7 +732,7 @@ class App:
             if probs:
                 raise HttpError(400, "; ".join(probs))
             proj["layers"][idx] = presets.bake_layer(layer, proj["width"], proj["height"])
-            self._write_project(proj, [f'"{layer.get("name") or lid}": preset {pid} applied'], old)
+            self.mark_writer(self._write_project(proj, [f'"{layer.get("name") or lid}": preset {pid} applied'], old), body)
         return self.get_project()
 
     def save_state(self, body):
@@ -1299,9 +1310,11 @@ class App:
                 pass
 
     def notes_send(self, body):
-        """POST /api/notes/send {ids?, resend?}: hand notes to the agent. Without ids: every note of the human that is neither sent nor done.
+        """POST /api/notes/send {ids?, resend?, base_version?}: hand notes to the agent. Without ids: every note of the human that is neither sent nor done.
         Stamps `sent` in project.json (one write, one changes.md line, the editor takes it as one undo step), saves a frame
-        JPEG per note, rewrites NOTLAR.md and appends one line to .kurgu/inbox.jsonl (what `kurgu notes wait` listens for)."""
+        JPEG per note, rewrites NOTLAR.md and appends one line to .kurgu/inbox.jsonl (what `kurgu notes wait` listens for).
+        `base_version` = the version the editor last saved / loaded: the answer's `changed_outside` says whether the file was written since, and
+        `previous_version` is the version this write replaced (the editor checks it against the versions it wrote itself)."""
         ids = body.get("ids")
         if ids is not None and (not isinstance(ids, list) or any(not isinstance(x, str) for x in ids)):
             raise HttpError(400, "ids must be a list of note ids")
@@ -1335,6 +1348,7 @@ class App:
         snapshot = {n["id"]: n["sent"] for n in want}
         with self.write_lock:
             old = self.project_bytes()
+            outside = self._changed_since(body, old)
             cur = json.loads(old)
             cur_notes = [schema.normalize_note(n, i) for i, n in enumerate(cur.get("notes") or []) if isinstance(n, dict)]
             sent_notes = []
@@ -1349,6 +1363,7 @@ class App:
             name = agent_notes.agent_name(self.dir) or "agent"
             version = self._write_project(cur, [f"{len(sent_notes)} note(s) sent to {name}: " + "; ".join(
                 f'{agent_notes.tc(n["t"])} {n["text"][:60]}' for n in sorted(sent_notes, key=lambda n: n["t"]))], old)
+            self.mark_writer(version, body)
             proj = schema.normalize(cur)
             sent_norm = [n for n in proj["notes"] if n["id"] in sent_ids]
             entry = agent_notes.append_inbox(self.dir, proj, sorted(sent_norm, key=lambda n: n["t"]), stamp)
@@ -1361,7 +1376,14 @@ class App:
         diag.event(self.dir, "send", "notes sent", ctx={"count": len(sent_notes), "listening": listening, "wake": wake, "hook": hook.get("hook", "") or "none",
                                                         "failed_frames": len(failed)})
         return {"sent": len(sent_notes), "ids": sorted(sent_ids), "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "hook_reason": hook.get("reason"), "listening": listening, "wake": wake, "wake_route": agent_notes.wake_route(self.dir), "at": stamp, "file": agent_notes.NOTES_MD,
-                "failed_frames": failed, "inbox": entry, "project": proj, "version": version}
+                "failed_frames": failed, "inbox": entry, "project": proj, "version": version, "changed_outside": outside, "previous_version": sha1(old)}
+
+    @staticmethod
+    def _changed_since(body, old):
+        """Send / answer: did someone else write project.json after the editor's `base_version` (its last save or load)? The editor loads the
+        answer's project itself, so without this it could not tell an outside change folded into that answer from its own write."""
+        base = body.get("base_version")
+        return isinstance(base, str) and bool(base) and sha1(old) != base
 
     def notes_answer(self, body):
         """POST /api/notes/answer {id, answer}: the human answers the agent's question on a note (state `asked`). The note gets `answer`, loses `asked`, is
@@ -1373,6 +1395,7 @@ class App:
         stamp = agent_notes.now_iso()
         with self.write_lock:
             old = self.project_bytes()
+            outside = self._changed_since(body, old)
             cur = json.loads(old)
             cur_notes = [schema.normalize_note(n, i) for i, n in enumerate(cur.get("notes") or []) if isinstance(n, dict)]
             n = next((x for x in cur_notes if x["id"] == nid), None)
@@ -1384,6 +1407,7 @@ class App:
             n.pop("asked", None)
             cur["notes"] = cur_notes
             version = self._write_project(cur, [f'answer to the agent on note {agent_notes.tc(n["t"])}: {answer.strip()[:60]}'], old)
+            self.mark_writer(version, body)
             proj = schema.normalize(cur)
             entry = agent_notes.append_inbox(self.dir, proj, [x for x in proj["notes"] if x["id"] == nid], stamp)
             agent_notes.write_notes_md(self.dir, proj)
@@ -1391,7 +1415,7 @@ class App:
             hook = agent_notes.run_on_send(self.dir, entry["seq"], 1)
         except Exception as e:
             hook = {"hook": "error", "error": f"{type(e).__name__}: {e}"}
-        return {"ids": [nid], "sent": 1, "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "wake_route": agent_notes.wake_route(self.dir), "at": stamp, "inbox": entry, "project": proj, "version": version}
+        return {"ids": [nid], "sent": 1, "hook": hook.get("hook", ""), "hook_error": hook.get("error", ""), "listening": agent_notes.is_listening(self.dir), "wake": "configured" if agent_notes.wake_configured() else "none", "wake_route": agent_notes.wake_route(self.dir), "at": stamp, "inbox": entry, "project": proj, "version": version, "changed_outside": outside, "previous_version": sha1(old)}
 
     def reveal(self, rel):
         full = os.path.realpath(os.path.join(self.dir, str(rel)))
@@ -1590,7 +1614,8 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/diag/client" and method == "POST":
             return self.reply(*app.client_error(self.read_json()))
         elif path == "/api/version" and method == "GET":
-            return self.reply(200, {"version": app.version(), "app": "kurgu", "dir": app.dir, "pid": os.getpid(), "media": app.media_stamps()})
+            v = app.version()
+            return self.reply(200, {"version": v, "writer": app.writers.get(v, ""), "app": "kurgu", "dir": app.dir, "pid": os.getpid(), "media": app.media_stamps()})
         elif path == "/api/versions" and method == "GET":
             real = app.media_path(q.get("path", ""))
             return self.reply(200, {"path": q.get("path", ""), "versions": app.media_versions(real)})
