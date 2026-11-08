@@ -476,7 +476,8 @@ _PROBE = {}
 
 
 def probe(path):
-    key = (path, os.stat(path).st_mtime_ns)
+    st = os.stat(path)
+    key = (path, st.st_mtime_ns, st.st_size)                # size too: a rewrite inside one clock tick keeps the mtime (Windows)
     if key not in _PROBE:
         try:
             data = kserver.App.ffprobe(path)

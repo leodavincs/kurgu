@@ -111,6 +111,21 @@ def test_missing_and_corrupt_sidecars_degrade_to_error(cdir):
     assert "error" in source_map.elements_at(l, 3.0, 1920, 1080, None)
 
 
+def test_a_rewrite_that_keeps_the_mtime_is_still_seen(cdir):
+    """Windows (and coarse file systems) can give two writes in one clock tick the same mtime; the cache key carries the size too."""
+    p = os.path.join(cdir, "renders", "same.json")
+    with open(p, "w") as f:
+        f.write("{oops")
+    l = schema.normalize_layer(layer(source={**SRC, "elements": "renders/same.json"}))
+    assert "unreadable" in source_map.elements_at(l, 3.0, 1920, 1080, cdir)["error"]
+    ns = os.stat(p).st_mtime_ns
+    with open(p, "w") as f:
+        json.dump({"fps": 24, "size": [1920, 1080], "elements": []}, f)
+    os.utime(p, ns=(ns, ns))                                                   # the same tick as the broken write
+    r = source_map.elements_at(l, 3.0, 1920, 1080, cdir)
+    assert "error" not in r and r["elements"] == []
+
+
 def test_cache_follows_mtime(cdir):
     p = os.path.join(cdir, "renders", "S03.kurgu.json")
     l = schema.normalize_layer(layer())

@@ -46,9 +46,11 @@ def _resolve(d, source, key):
 
 
 def load(path):
-    """(map, error). map = {"fps", "size", "elements"} with boxes sorted by frame; cached by path + mtime."""
+    """(map, error). map = {"fps", "size", "elements"} with boxes sorted by frame; cached by path + mtime + size (a rewrite inside one
+    clock tick keeps the mtime on Windows and on coarse file systems, the size almost never)."""
     try:
-        key = (path, os.stat(path).st_mtime_ns)
+        st = os.stat(path)
+        key = (path, st.st_mtime_ns, st.st_size)
     except OSError:
         return None, f"element map not found: {os.path.basename(path or '')}"
     if key in _cache:

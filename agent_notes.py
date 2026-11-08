@@ -297,7 +297,8 @@ def native_size(d, l):
         return None
     path = os.path.realpath(os.path.join(d, os.path.expanduser(str(src))))
     try:
-        key = (path, os.stat(path).st_mtime_ns)
+        st = os.stat(path)
+        key = (path, st.st_mtime_ns, st.st_size)            # size too: a rewrite inside one clock tick keeps the mtime (Windows)
     except OSError:
         return None
     if key not in _size_cache:
