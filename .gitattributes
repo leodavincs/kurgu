@@ -3,3 +3,6 @@
 *.bat text eol=crlf
 *.sh text eol=lf
 kurgu text eol=lf
+# generated / compared byte-for-byte by tests/test_guidance_sync.py: same line endings on every OS
+*.md text eol=lf
+*.py text eol=lf

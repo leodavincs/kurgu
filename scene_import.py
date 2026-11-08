@@ -135,7 +135,7 @@ def read_cinecode(folder, path):
 def _confine(folder, rel, what):
     """`rel` (a path written in scenes.json) resolved inside the imported folder: refuses absolute paths, `..` escapes and symlinks that leave it.
     A list from a downloaded folder must not make Kurgu (or the page measurer, or `kurgu rerender`) touch files elsewhere on the machine."""
-    if not isinstance(rel, str) or not rel or os.path.isabs(rel) or rel.startswith("~") or re.match(r"^[A-Za-z]:", rel) or "\x00" in rel:
+    if not isinstance(rel, str) or not rel or os.path.isabs(rel) or rel.startswith(("/", "\\", "~")) or re.match(r"^[A-Za-z]:", rel) or "\x00" in rel:
         raise SceneImportError(f"scenes.json {what} must be a relative path inside the folder, not {rel!r}")
     root = os.path.realpath(folder)
     p = os.path.realpath(os.path.join(root, rel))

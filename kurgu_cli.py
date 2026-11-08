@@ -282,14 +282,20 @@ def wake_attempts(agent, d, session=None):
     except Exception:
         roots = []
     if agent == "codex":
-        cfg = ["-c", 'approval_policy="never"']
+        cfg = ["-c", "approval_policy=never"]                 # no double quotes anywhere: codex.cmd goes through cmd.exe (codex reads a bare word as a string)
         if roots:
-            cfg += ["-c", "sandbox_workspace_write.writable_roots=" + json.dumps(roots, ensure_ascii=False)]
+            lit = [r for r in roots if "'" not in r and not any(ord(c) < 32 and c != "\t" or c == "\x7f" for c in r)]   # TOML literal strings ('...'): no escaping
+            for r in roots:
+                if r not in lit:
+                    print(f"kurgu wake: codex will not get write access to {r!r} (a ' or a control character cannot travel in its settings); rename it to use it",
+                          file=sys.stderr)
+            if lit:
+                cfg += ["-c", "sandbox_workspace_write.writable_roots=[" + ",".join(f"'{r}'" for r in lit) + "]"]
         new = ("new session", ["codex", "exec", "-s", "workspace-write", *cfg, "--skip-git-repo-check", "-C", d, "--json", prompt])
         if sid and codex_rollout_active(sid):
             return [(f"new session (Codex session {sid} was active in the last {ACTIVE_SESSION_SECS} s, not resuming it)", new[1])]
         which = ["resume", sid] if sid else ["resume", "--last"]
-        return [(f"resume Codex session {sid}" if sid else "continue the last session", ["codex", "exec", *which, "--skip-git-repo-check", "--json", "-c", 'sandbox_mode="workspace-write"', *cfg, prompt]), new]
+        return [(f"resume Codex session {sid}" if sid else "continue the last session", ["codex", "exec", *which, "--skip-git-repo-check", "--json", "-c", "sandbox_mode=workspace-write", *cfg, prompt]), new]
     # --setting-sources user: a downloaded project folder is untrusted; its .claude/settings*.json (hooks, permissions) and .mcp.json servers must not load in a
     # non-interactive run (claude -p skips the workspace trust prompt). The user's own settings still apply.
     common = ["--setting-sources", "user", "--output-format", "json", "--permission-mode", "acceptEdits", "--allowedTools", CLAUDE_TOOLS]

@@ -214,6 +214,8 @@ def test_media_tools_uses_managed_folder(data, tmp_path, monkeypatch):
 
 
 def test_media_tools_order_env_then_path_then_managed(data, tmp_path, monkeypatch):
+    monkeypatch.delenv("KURGU_FFMPEG", raising=False)                             # the ffmpeg-compat CI job points this at its pinned build
+    media_tools.reset()
     managed = _bin(data / "ffmpeg", "ffmpeg")
     on_path = _bin(tmp_path / "pathdir", "ffmpeg")
     monkeypatch.setenv("PATH", str(tmp_path / "pathdir"))

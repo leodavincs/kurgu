@@ -480,7 +480,7 @@ def test_launcher_routes_rerender(tmp_path, cfg):
     d = mkproj(tmp_path)
     r = launch("rerender", d, "S01", "--dry-run", env=dict(os.environ, KURGU_CONFIG=str(cfg)))
     assert r.returncode == 0 and "html-frames" in r.stdout and "No such folder" not in r.stderr
-    assert 'rerender' in open(os.path.join(ROOT, "kurgu.cmd")).read()
+    assert 'kurgu_cli.py" %*' in open(os.path.join(ROOT, "kurgu.cmd")).read()
 
 
 @NEED
@@ -514,7 +514,7 @@ def test_codex_wake_gets_writable_roots_for_trusted_source_folders_only(tmp_path
     assert "writable_roots" not in flat()
     assert scene_import.main([str(f), "--out", str(out), "--force"]) == 0
     for _, argv in kurgu_cli.wake_attempts("codex", str(out)):         # resume has no --add-dir; the config key is accepted by both forms
-        i = argv.index("sandbox_workspace_write.writable_roots=" + json.dumps([os.path.realpath(str(f))]))
+        i = argv.index("sandbox_workspace_write.writable_roots=['" + os.path.realpath(str(f)) + "']")
         assert argv[i - 1] == "-c" and "--add-dir" not in argv
 
 

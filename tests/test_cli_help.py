@@ -30,8 +30,8 @@ def test_the_launchers_route_every_command():
     sh, cmd = (open(os.path.join(ROOT, f), encoding="utf-8").read() for f in ("kurgu", "kurgu.cmd"))
     for n in kurgu_cli.COMMANDS:
         assert f'"{n}"' in sh, n
-        assert f'"%~1"=="{n}"' in cmd, n
-    assert '"--help"' in sh and '"--help"' in cmd
+    assert 'kurgu_cli.py" %*' in cmd                                             # kurgu.cmd hands every command, as typed, to kurgu_cli.main (the `kurgu` entry point)
+    assert '"--help"' in sh
 
 
 def test_help_output_lists_commands_and_exits_zero():

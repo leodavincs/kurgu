@@ -503,7 +503,7 @@ def _source_problems(s):
             p.append(f"source.{k} must be a string")
     for k in ("root", "file", "elements"):
         v = s.get(k)
-        if isinstance(v, str) and v and (os.path.isabs(v) or re.match(r"^[A-Za-z]:", v) or v.startswith("~")):
+        if isinstance(v, str) and v and (os.path.isabs(v) or v.startswith(("/", "\\", "~")) or re.match(r"^[A-Za-z]:", v)):   # 3.13 on Windows: "/x" is not isabs
             p.append(f"source.{k} must be a path relative to the project folder")
     r = s.get("render")
     if isinstance(r, str) and r and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", r):

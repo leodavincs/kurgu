@@ -155,7 +155,7 @@ def test_wake_codex_runs_under_the_policy_home_with_the_same_argv(tmp_path, proj
     r = subprocess.run([PY, os.path.join(ROOT, "kurgu_cli.py"), "wake", "codex", project_dir, "3"], capture_output=True, text=True, env=wake_env_for(tmp_path, bin_dir), timeout=60)
     call = json.loads(open(log).read().splitlines()[0])
     assert r.returncode == 0 and call[0] == str(tmp_path / "kconf" / "codex-home") and "rules on" in r.stdout
-    assert call[1:4] == ["exec", "resume", "--last"] and 'approval_policy="never"' in call and 'sandbox_mode="workspace-write"' in call
+    assert call[1:4] == ["exec", "resume", "--last"] and "approval_policy=never" in call and "sandbox_mode=workspace-write" in call
     assert os.path.isfile(tmp_path / "kconf" / "codex-home" / "rules" / "kurgu.rules")
 
 

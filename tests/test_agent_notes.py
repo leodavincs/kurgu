@@ -213,8 +213,8 @@ def test_kurgu_cmd_passes_the_exit_code_on():
         if l.startswith("%PYEXE% ") and "-c " not in l:
             assert code[i + 1] == "exit /b %errorlevel%", l
     launches = [l for l in code if l.startswith("%PYEXE% ") and "-c " not in l]
-    assert any("server.py" in l for l in launches) and any("agent_notes.py" in l for l in launches)
-    assert any("kurgu_cli.py" in l and "setup-agent" in l for l in launches)       # setup-agent is routed here too
+    assert launches == ['%PYEXE% "%~dp0kurgu_cli.py" %*']                          # one launch: kurgu_cli.py routes every command (notes, setup-agent, a folder ...)
+    assert not any(l.lower().startswith("shift") for l in code)                   # SHIFT also moves %0: %~dp0 after it pointed at the current folder
 
 
 def test_launcher_dispatches_notes_and_keeps_editor_args(project_dir):
@@ -423,7 +423,7 @@ def test_launcher_prefers_a_python_310_and_cmd_keeps_long_argument_lists(tmp_pat
     text = open(LAUNCHER, encoding="utf-8").read()
     assert "python3.10" in text and "sys.version_info >= (3, 10)" in text and "needs Python 3.10" in text
     cmd = open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read()
-    assert "NARGS" in cmd and "%1 %2" not in cmd and "sys.version_info >= (3, 10)" in cmd and "nopython" in cmd
+    assert 'kurgu_cli.py" %*' in cmd and "%1 %2" not in cmd and "sys.version_info >= (3, 10)" in cmd and "nopython" in cmd
 
 
 def test_explicit_resend_needs_the_flag_and_does_not_wake_the_agent_twice(srv):

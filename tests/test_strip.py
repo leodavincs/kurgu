@@ -161,7 +161,7 @@ def test_mark_layer_bounds_carry_keys(project_dir):
 
 def test_launcher_dispatches_strip():
     raw = open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "kurgu.cmd"), "rb").read().decode()
-    assert 'strip' in raw and 'kurgu_cli.py" strip' in raw
+    assert 'kurgu_cli.py" %*' in raw
 
 
 def test_output_is_confined_to_the_look_folder(project_dir, tmp_path):

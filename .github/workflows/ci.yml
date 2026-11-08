@@ -15,7 +15,7 @@ jobs:
   test:
     name: ${{ matrix.os }} / py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60     # macOS runners take ~40 min for the full suite (browser tests)
     strategy:
       fail-fast: false
       matrix:
@@ -47,6 +47,8 @@ jobs:
       # Chrome powers the UI and preview/render parity tests; they skip themselves when it is missing.
       - name: Install Chrome
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce  # v1
+        with:
+          chrome-version: stable   # Chrome, not the default Chromium snapshot: Chromium cannot decode H.264, the codec of every rendered clip
         continue-on-error: true
         id: chrome
 

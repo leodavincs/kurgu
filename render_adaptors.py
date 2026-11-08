@@ -151,7 +151,7 @@ def _num(v):
 
 
 def _rel_ok(rel):
-    return isinstance(rel, str) and rel != "" and not os.path.isabs(rel) and not rel.startswith("~") and not re.match(r"^[A-Za-z]:", rel) and "\x00" not in rel
+    return isinstance(rel, str) and rel != "" and not os.path.isabs(rel) and not rel.startswith(("/", "\\", "~")) and not re.match(r"^[A-Za-z]:", rel) and "\x00" not in rel
 
 
 def source_root(d, src):

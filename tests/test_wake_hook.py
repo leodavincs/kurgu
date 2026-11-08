@@ -214,7 +214,8 @@ def test_wake_codex_falls_back_to_a_new_session_when_there_is_nothing_to_resume(
     calls = [json.loads(l) for l in open(log).read().splitlines()]
     assert r.returncode == 0 and len(calls) == 2 and "new session" in r.stdout
     first, second = calls
-    assert first[:3] == ["exec", "resume", "--last"] and "--json" in first and 'sandbox_mode="workspace-write"' in first and 'approval_policy="never"' in first
+    assert first[:3] == ["exec", "resume", "--last"] and "--json" in first and "sandbox_mode=workspace-write" in first and "approval_policy=never" in first
+    assert not any('"' in a for a in first[:-1])                                    # nothing cmd.exe would read as a quote toggle (codex.cmd)
     assert second[:3] == ["exec", "-s", "workspace-write"] and "--skip-git-repo-check" in second and "-C" in second
     assert second[second.index("-C") + 1] == os.path.abspath(project_dir) and "--json" in second and "resume" not in second
     assert "kurgu notes wait " + os.path.abspath(project_dir) in first[-1] and "{dir}" not in first[-1]       # the prompt carries the real folder
@@ -258,7 +259,7 @@ def test_wake_reports_a_missing_agent_and_a_double_failure(tmp_path, project_dir
 def test_the_launchers_route_wake():
     assert 'if [ "$1" = "wake" ]' in open(os.path.join(ROOT, "kurgu"), encoding="utf-8").read()
     cmd = open(os.path.join(ROOT, "kurgu.cmd"), encoding="utf-8").read()
-    assert 'goto wake' in cmd and 'kurgu_cli.py" wake' in cmd
+    assert 'kurgu_cli.py" %*' in cmd
 
 
 def test_hook_log_prefixes_agent_output_so_it_cannot_forge_log_lines(srv, cfg, tmp_path):
@@ -314,9 +315,9 @@ def test_cmd_shims_never_get_shell_metacharacters_on_the_command_line(tmp_path, 
     evil = tmp_path / "a&calc"
     evil.mkdir()
     (evil / "project.json").write_text(open(os.path.join(project_dir, "project.json")).read())
-    assert kurgu_cli.wake_main(["claude", str(evil), "1"]) == 0                      # the path only travels inside the stdin prompt, never on the command line
-    assert str(evil) in calls[0][1]["input"] and all("&" not in a for a in calls[0][0])
-    calls.clear()
+    monkeypatch.setattr(agent_notes, "IS_WINDOWS", True)
+    assert kurgu_cli.wake_main(["claude", str(evil), "1"]) == 1 and calls == []     # a project path cmd.exe would read is refused as a whole (shim_refusal), like the hook
+    monkeypatch.setattr(agent_notes, "IS_WINDOWS", os.name == "nt")
     monkeypatch.setattr(kurgu_cli, "wake_attempts", lambda agent, d, session=None: [("x", ["claude", "-p", "x", "--add-dir", "C:/a&b"])])
     assert kurgu_cli.wake_main(["claude", project_dir, "1"]) == 126 and calls == []   # an argument that cmd.exe would interpret: refuse to spawn
     # the on_send hook refuses too
@@ -656,3 +657,14 @@ def test_claude_wake_never_loads_the_project_s_own_claude_settings_or_mcp_server
     for _, argv in kurgu_cli.wake_attempts("claude", "/tmp/p"):
         i = argv.index("--setting-sources")
         assert argv[i + 1] == "user"
+
+
+def test_codex_writable_roots_skip_what_a_toml_literal_string_cannot_hold(monkeypatch, capsys):
+    import render_adaptors
+    monkeypatch.setattr(render_adaptors, "agent_roots", lambda d: ["/films/ok", "/films/O'Brien", "/films/a\nb"])
+    att = kurgu_cli.wake_attempts("codex", "/tmp/p", None)
+    for _, argv in att:
+        roots = [a for a in argv if a.startswith("sandbox_workspace_write.writable_roots=")]
+        assert roots == ["sandbox_workspace_write.writable_roots=['/films/ok']"], argv
+    err = capsys.readouterr().err
+    assert "O'Brien" in err and "a\\nb" in err

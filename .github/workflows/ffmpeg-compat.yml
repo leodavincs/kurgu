@@ -80,6 +80,8 @@ jobs:
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@c785b87e244131f27c9f19c1a33e2ead956ab7ce  # v1
+        with:
+          chrome-version: stable   # Chrome, not the Chromium snapshot (no H.264)
         continue-on-error: true
         id: chrome
 
