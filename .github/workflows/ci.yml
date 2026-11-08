@@ -64,7 +64,9 @@ jobs:
         env:
           KURGU_CHROME: ${{ steps.chrome.outputs.chrome-path }}
           PYTHONUTF8: "1"
-        run: python -m pytest -q
+        # a test that runs past 5 min dumps every thread's stack into the log (a macOS runner once sat 50 min at ~28% with no clue);
+        # --durations names the slow tests so the 60-min job limit is never a surprise
+        run: python -m pytest -q -o faulthandler_timeout=300 --durations=25
 
   package:
     name: build wheel + smoke test
