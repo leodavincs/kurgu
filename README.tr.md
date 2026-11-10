@@ -54,6 +54,7 @@ Chrome (ya da Chromium) yalnızca kodla video araçları için gerekir: `kurgu e
 
 Kullanıcı "Kurgu'yu kur ve projemi aç" dediğinde aynen şunu uygula:
 
+0. **Zaten kurulu mu?** Önce `kurgu --version` dene (ya da `~/.local/bin/kurgu`, `%USERPROFILE%\.local\bin\kurgu.exe`). Cevap veriyorsa doğrudan 4. adıma geç. Kurgu'yu her açılışta GitHub'dan başlatma (`uvx --from git+https://...`): kurulu `kurgu` bilgisayarda çalışır, bir daha hiçbir şey indirilmez.
 1. **İşletim sistemini bul** (macOS/Linux'ta `uname -s`, Windows'ta `$env:OS` / `ver`).
 2. **O sistemin tek satırlık komutunu çalıştır** (yukarıdaki tablo). Çıktıyı sonuna kadar oku; `Done. Next step:  kurgu <your project folder>` ile biter.
 3. **Denetle:** `kurgu doctor --json` (komut bu kabukta henüz PATH'te değilse `%USERPROFILE%\.local\bin\kurgu.exe` ya da `~/.local/bin/kurgu`). `"ok": true` hazır demektir.
@@ -63,6 +64,7 @@ Bir şey ters giderse:
 
 - **PowerShell "komut dosyası çalıştırma devre dışı" / yürütme ilkesi.** Tek satırlık komut bu tek süreç için zaten `-ExecutionPolicy Bypass` kullanır; aynen yaz, normal (yönetici olmayan) PowerShell'den. Kabuk şirket ilkesiyle kilitliyse kullanıcıdan kendi PowerShell penceresinden çalıştırmasını iste.
 - **Şirket proxy'si / indirme yok.** `HTTPS_PROXY` (ve `HTTP_PROXY`) değişkenini proxy adresine ayarla: `$env:HTTPS_PROXY="http://proxy.sirket:8080"` (PowerShell) ya da `export HTTPS_PROXY=...`; komutu yeniden çalıştır. Yalnız ffmpeg inmezse Kurgu yine kurulur; bir ffmpeg sürümünü elle indir, `KURGU_FFMPEG` ve `KURGU_FFPROBE` değişkenlerini `ffmpeg` ve `ffprobe` dosyalarının tam yoluna ayarla, sonra `kurgu doctor` çalıştır.
+- **Ajanın izin denetimi indirmeyi engelliyor** (örneğin Claude Code'un otomatik modu GitHub'dan kod çekip çalıştırmayı reddediyor). Bu Kurgu hatası değil, ajanın kendi güvenlik kuralı ve sorması yerinde. Etrafından dolanmaya çalışma: kullanıcıya kendi sisteminin tek satırlık komutunu ver, kendisi çalıştırsın (Claude Code'da komutun başına `!` yazarak), sonra 3. adımdan devam et.
 - **Kurulumdan hemen sonra `kurgu` bulunamıyor.** Kurulumu çalıştıran terminalin PATH'i eskidir. Yeni terminal aç ya da tam yolla çağır (kurulum yazdırır; klasör `uv tool dir --bin` ile görünür).
 - **Yalnız ffmpeg:** `kurgu setup-ffmpeg` (`--force` yeniden indirir, `--json` ajanlar için).
 - **Windows Defender / SmartScreen.** Bir betiğin indirdiği dosyalarda "internetten indirildi" işareti olmaz; SmartScreen normalde sessiz kalır. Defender `ffmpeg.exe`'yi ilk açılışta birkaç saniye tarayabilir; normaldir.
@@ -81,7 +83,7 @@ Kullanılan statik derlemeler (hepsi FFmpeg'in GPL derlemesi, özgür yazılım;
 Tek gereksinim Python 3.10+ ve ffmpeg/ffprobe'dur; tek satırlık komut ikisini de sağlar. Yeni Python kurulumları sistem Python'una çıplak `pip install`'ı reddeder (PEP 668), o yüzden yalıtılmış ortam kullan:
 
 ```bash
-uvx --from git+https://github.com/leodavincs/kurgu kurgu proje/klasoru     # kurulum yok, doğrudan git'ten çalışır
+uvx --from git+https://github.com/leodavincs/kurgu kurgu proje/klasoru     # kurulum yok, doğrudan git'ten çalışır (elle; ajanlar kurulum komutunu kullansın, izin denetimi bunu engelleyebilir)
 pipx install git+https://github.com/leodavincs/kurgu                         # kalıcı komut (ffmpeg için: kurgu setup-ffmpeg)
 ```
 

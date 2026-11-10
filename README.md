@@ -54,6 +54,7 @@ Chrome (or Chromium) is only needed for the code-video tools, `kurgu elements` a
 
 When the user says "install Kurgu and open my project", follow this verbatim:
 
+0. **Already installed?** Try `kurgu --version` (or `~/.local/bin/kurgu`, `%USERPROFILE%\.local\bin\kurgu.exe`). If it answers, go straight to step 4. Do not start Kurgu from GitHub (`uvx --from git+https://...`) on every run: an installed `kurgu` runs locally and nothing is downloaded again.
 1. **Detect the OS** (`uname -s` on macOS/Linux, `$env:OS` / `ver` on Windows).
 2. **Run the one-liner for that OS** (table above). Read its output to the end; it ends with `Done. Next step:  kurgu <your project folder>`.
 3. **Check:** `kurgu doctor --json` (use `%USERPROFILE%\.local\bin\kurgu.exe` or `~/.local/bin/kurgu` if the new command is not on PATH yet in your shell). `"ok": true` means ready.
@@ -63,6 +64,7 @@ When something goes wrong:
 
 - **PowerShell says "running scripts is disabled" / execution policy.** The one-liner already uses `-ExecutionPolicy Bypass` for that one process; use it exactly as written, from a normal (non-admin) PowerShell. If the shell is locked by a company policy, ask the user to run it from their own PowerShell window.
 - **Company proxy / no download.** Set `HTTPS_PROXY` (and `HTTP_PROXY`) to the proxy URL, e.g. `$env:HTTPS_PROXY="http://proxy.company:8080"` (PowerShell) or `export HTTPS_PROXY=...`, and run the one-liner again. If ffmpeg alone cannot be fetched, Kurgu still installs; download any ffmpeg build by hand and set `KURGU_FFMPEG` and `KURGU_FFPROBE` to the full paths of `ffmpeg` and `ffprobe`, then run `kurgu doctor`.
+- **Your agent's permission check blocks the download** (for example Claude Code's auto mode refusing to fetch code from GitHub and run it). That is the agent's own safety rule, not a Kurgu error, and it is right to ask. Do not look for a way around it: give the user the one-liner for their OS and ask them to run it themselves (in Claude Code they can type `!` followed by the command), then continue from step 3.
 - **`kurgu` not found right after install.** The terminal that ran the installer has the old PATH. Open a new terminal, or call it by its full path (printed by the installer; `uv tool dir --bin` shows the folder).
 - **ffmpeg only:** `kurgu setup-ffmpeg` (`--force` re-downloads, `--json` for agents).
 - **Windows Defender / SmartScreen.** Files that a script downloads carry no "from the internet" mark, so SmartScreen normally stays quiet. Defender may scan `ffmpeg.exe` for a few seconds on the first start; that is normal.
@@ -81,7 +83,7 @@ Static builds used (all GPL builds of FFmpeg, free software, fetched on your mac
 Python 3.10+ and ffmpeg/ffprobe are the only requirements; the one-liner just provides both. Recent Python installs refuse a bare `pip install` into the system Python (PEP 668), so use an isolated environment:
 
 ```bash
-uvx --from git+https://github.com/leodavincs/kurgu kurgu path/to/project    # no install, runs from git
+uvx --from git+https://github.com/leodavincs/kurgu kurgu path/to/project    # no install, runs from git (by hand; agents: use the installer, permission checks may block this)
 pipx install git+https://github.com/leodavincs/kurgu                         # permanent command (needs ffmpeg: kurgu setup-ffmpeg)
 ```
 
